@@ -23,6 +23,47 @@ void CellTable::Log10() {
   }
 }
 
+CellTable::CellTable(const char* file, bool verbose) {
+
+  // make the csv reader
+  io::LineReader reader(file, stdin);
+  
+  // If fname is "-" read from standard input
+  if (strcmp(file, "-") == 0) {
+    //reader = std::make_shared<io::LineReader>(io::LineReader(file, stdin));
+  } else {
+    //reader = io::LineReader(file);
+  }
+
+  // for verbose
+  size_t count = 0;
+  
+  // Read and process the lines
+  std::string line;
+  while ((line = reader.next_line()).size() > 0) {
+    // If the line starts with '@', parse it as a Tag and add it to m_header
+    if (line[0] == '@') {
+      Tag tag(line);
+      m_header.addTag(tag);
+    } else {
+      
+      // container to store just one line
+      CellRow values(col_order.size()); // m_table.size());
+
+      // read one line
+      read_one_line__(line, values);
+
+      // will throw an error if detects type mismatch
+      add_row_to_table__(values);
+      
+      // verbose output
+      if (verbose)
+	verbose_line_read__(count);
+      count++;
+    }
+  }
+}
+
 CellTable::CellTable(const char* file, const char* markers_file, bool verbose) {
 
   // read markers first
@@ -30,13 +71,20 @@ CellTable::CellTable(const char* file, const char* markers_file, bool verbose) {
 
   // make the csv reader
   io::LineReader reader(file, stdin);
+  
+  // If fname is "-" read from standard input
+  if (strcmp(file, "-") == 0) {
+    //reader = std::make_shared<io::LineReader>(io::LineReader(file, stdin));
+  } else {
+    //reader = io::LineReader(file);
+  }
       
   // reader the header
   header_read__(reader.next_line());
       
   // container to store just one line
   CellRow values(col_order.size()); // m_table.size());
-      
+  
   // for verbose
   size_t count = 0;
       
@@ -85,6 +133,47 @@ void CellTable::verbose_line_read__(int count) const {
   }
   
   return;
+}
+
+void CellTable::read_one_line__(const std::string& line,
+				CellRow& values) const {
+  
+  char *cstr = new char[line.length() + 1];
+  std::strcpy(cstr, line.c_str());
+  char *value_str = strtok(cstr, ",");
+  
+  size_t n = 0;
+  while (value_str) {
+    
+    std::string val(value_str);
+    std::istringstream iss(val);
+    float float_val;
+    int int_val;
+    char decimal_point;
+    char extra_char;
+    
+    if (iss >> int_val && !(iss >> decimal_point)) {
+      
+      // Integer
+      values[n] = int_val;
+    } else {
+      
+      iss.clear();
+      iss.str(val);
+      if (iss >> float_val && !(iss >> extra_char)) {
+	// Float
+	values[n] = float_val;
+      } else {
+	// String
+	values[n] = val;
+      }
+    }
+    
+    value_str = strtok(nullptr, ",");
+    n++;
+  }
+  
+  delete[] cstr;
 }
 
 bool CellTable::read_csv_line__(io::LineReader& reader,
@@ -184,17 +273,17 @@ void CellTable::add_row_to_table__(const CellRow& values) {
       switch (col_type) {
       case ColumnType::INT:
 	if (std::holds_alternative<int>(value)) {
-	  static_cast<NumericColumn<int>*>(col_ptr.get())->AddElem(std::get<int>(value));
+	  static_cast<NumericColumn<int>*>(col_ptr.get())->PushElem(std::get<int>(value));
 	}
 	break;
       case ColumnType::FLOAT:
 	if (std::holds_alternative<float>(value)) {
-	  static_cast<NumericColumn<float>*>(col_ptr.get())->AddElem(std::get<float>(value));
+	  static_cast<NumericColumn<float>*>(col_ptr.get())->PushElem(std::get<float>(value));
 	}
 	break;
       case ColumnType::STRING:
 	if (std::holds_alternative<std::string>(value)) {
-	  static_cast<StringColumn*>(col_ptr.get())->AddElem(std::get<std::string>(value));
+	  static_cast<StringColumn*>(col_ptr.get())->PushElem(std::get<std::string>(value));
 	}
 	break;
       default:
@@ -205,7 +294,10 @@ void CellTable::add_row_to_table__(const CellRow& values) {
     } else {
       // create new column with appropriate type
       if (std::holds_alternative<int>(value)) {
-	m_table[col_name] = std::make_shared<NumericColumn<int>>(std::get<int>(value));
+	//m_table[col_name] = std::make_shared<NumericColumn<int>>(std::get<int>(value));
+	std::shared_ptr<NumericColumn<int>> new_ptr = std::make_shared<NumericColumn<int>>();
+	new_ptr->PushElem(std::get<int>(value));
+	m_table[col_name] = new_ptr; 
       } else if (std::holds_alternative<float>(value)) {
 	m_table[col_name] = std::make_shared<NumericColumn<float>>(std::get<float>(value));
       } else if (std::holds_alternative<std::string>(value)) {
@@ -437,4 +529,119 @@ void CellTable::PrintPearson(bool csv) const {
     std::cout << std::endl;
   }
   
+}
+
+
+void CellTable::PlotASCII(int width, int height) const { 
+
+  if (width <= 0 || height <= 0) {
+    std::cerr << "Warning: No plot generated, height and/or width <= 0" << std::endl;
+    return;
+  }
+
+  // find the max size of the original cell table
+  float x_min = m_table.at(x)->Min();
+  float x_max = m_table.at(x)->Max();
+  float y_min = m_table.at(y)->Min();
+  float y_max = m_table.at(y)->Max();
+  
+  // scale it to fit on the plot
+  size_t nc = CellCount();
+  std::vector<std::pair<int, int>> scaled_coords;
+  for (size_t i = 0; i < nc; i++) {
+    float x_ = m_table.at(x)->GetNumericElem(i);
+    float y_ = m_table.at(y)->GetNumericElem(i);    
+    
+    int x = static_cast<int>((x_ - x_min) / (x_max - x_min) * (width  - 2)) + 1;
+    int y = static_cast<int>((y_ - y_min) / (y_max - y_min) * (height - 2)) + 1;
+    scaled_coords.push_back({x, y});  //non-rotated    
+					//scaled_coords.push_back({y, x}); // rotated
+  }
+
+  // make the plot pixel grid
+  std::vector<std::string> grid(height, std::string(width, ' ')); // non-rotated
+  //std::vector<std::string> grid(width, std::string(height, ' '));  // rotated
+
+  // Draw the border
+  for (int i = 0; i < width; i++) {
+    grid[0][i] = '-';
+    grid[height - 1][i] = '-';
+  }
+  for (int i = 1; i < height - 1; i++) {
+    grid[i][0] = '|';
+    grid[i][width - 1] = '|';
+  }
+
+  grid[0][0] = '+';
+  grid[0][width - 1] = '+';
+  grid[height - 1][0] = '+';
+  grid[height - 1][width - 1] = '+';
+
+  // Plot the cells
+  for (const auto &coord : scaled_coords) {
+    grid[coord.second][coord.first] = 'o';
+  }
+  
+  // Print the grid
+  for (const auto &row : grid) {
+    std::cout << row << std::endl;
+  }
+  
+}
+
+void CellTable::AddMetaColumn(const std::string& key, const std::shared_ptr<Column> value) {
+
+  // warn if creating a ragged table, but proceed anyway
+  if (value->size() != CellCount()) {
+    throw std::runtime_error("Adding meta column of incorrect size");
+  }
+  
+  // check if already exists in the table
+  if (m_table.find(key) != m_table.end()) {
+    throw std::runtime_error("Adding meta column already in table");
+  }
+  
+  // insert as a meta key
+  meta.insert(key);
+
+  // add to the print order at the back
+  col_order.push_back(key);
+
+  // add the table
+  m_table[key] = value;
+  
+  return;
+  
+}
+
+void CellTable::SubsetROI(const std::vector<Polygon> &polygons) {
+
+  size_t nc = CellCount();
+  
+  // Initialize the "sparoi" column
+  std::shared_ptr<NumericColumn<int>> new_data = std::make_shared<NumericColumn<int>>();
+  new_data->reserve(nc);
+  
+  //Column new_data = std::vector<int>(nc, 0);
+  //AddMetaColumn("sparoi", new_data); 
+  
+  // Loop the table and check if the cell is in the ROI
+  for (size_t i = 0; i < nc; i++) {
+    float x_ = m_table.at(x)->GetNumericElem(i);
+    float y_ = m_table.at(y)->GetNumericElem(i);    
+
+    // Loop through all polygons and check if the point is inside any of them
+    for (const auto &polygon : polygons) {
+
+      // if point is in this polygon, add the polygon id number to the roi
+      if (polygon.PointIn(x_,y_)) {
+	new_data->SetNumericElem(polygon.Id, i);
+	
+	//std::visit([i, id = polygon.Id](auto& vec) { vec[i] = id; }, table["sparoi"]);
+	
+        // uncomment below if want to prevent over-writing existing
+        // break;
+      }
+    }
+  }
 }

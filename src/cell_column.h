@@ -59,8 +59,9 @@ public:
     virtual float Mean() const = 0;
     virtual float Min() const = 0;
     virtual float Max() const = 0;
-        
 
+    virtual void reserve(size_t n) = 0;
+    
 };
 
 template <typename T>
@@ -69,27 +70,50 @@ class NumericColumn : public Column {
   
  public:
   
+  NumericColumn() {
+    
+    if (std::is_same_v<T, int>) {
+      m_type = ColumnType::INT;
+    } else if (std::is_same_v<T, float>) {
+      m_type = ColumnType::FLOAT;
+    } else {
+      throw std::runtime_error("NumericColumn constructor: arg is neither an int nor a float");
+    }
+    
+  }
+  
   NumericColumn(const T& initial_elem) {
     
     if (std::is_same_v<T, int>) {
       m_type = ColumnType::INT;
     } else if (std::is_same_v<T, float>) {
-	m_type = ColumnType::FLOAT;
-      } else {
-	std::cerr << "arg is neither an int nor a float" << std::endl;
-      }
-      
-      m_vec.push_back(initial_elem);
+      m_type = ColumnType::FLOAT;
+    } else {
+      throw std::runtime_error("NumericColumn constructor: arg is neither an int nor a float");      
     }
+    
+    m_vec.push_back(initial_elem);
+  }
   
   std::shared_ptr<Column> clone() const override {
     return std::make_shared<NumericColumn<T>>(*this);
   }
 
+  void reserve(size_t n) override {
+    m_vec.clear();
+    m_vec.reserve(n);
+  }
+  
   float GetNumericElem(size_t i) const override {
     if (i >= m_vec.size())
       throw std::out_of_range("Index out of range");
     return m_vec.at(i);
+  }
+
+  void SetNumericElem(T val, size_t i) {
+    if (i >= m_vec.size())
+      throw std::out_of_range("Index out of range");
+    m_vec[i] = val;
   }
 
   float Pearson(const Column& c) const override {
@@ -127,7 +151,7 @@ class NumericColumn : public Column {
     m_vec[index] = value;
   }
 
-  void AddElem(const T& elem) {
+  void PushElem(const T& elem) {
     m_vec.push_back(elem);
   }
 
@@ -255,7 +279,7 @@ public:
     }
     
     
-    void AddElem(const std::string& elem) {
+    void PushElem(const std::string& elem) {
         m_vec.push_back(elem);
     }
 
@@ -310,6 +334,11 @@ public:
       } else {
 	throw std::runtime_error("Out of bounds in PrintElem");
       }
+    }
+    
+    void reserve(size_t n) override {
+      m_vec.clear();
+      m_vec.reserve(n);
     }
     
  private:
