@@ -189,13 +189,15 @@ class NumericColumn : public Column {
   }
   
   std::string toString() const override {
+    const size_t print_lim = 3;
         std::stringstream ss;
-        ss << "NumericColumn<" << typeid(T).name() << ">: [";
-        for (size_t i = 0; i < std::min(size(), (size_t)3); i++) {
+        ss << "NumericColumn<" << typeid(T).name() << ">: Size: " <<
+	  m_vec.size() << " [";
+        for (size_t i = 0; i < std::min(size(), print_lim); i++) {
 	  if (i > 0) ss << ", ";
 	  ss << m_vec[i];
         }
-        if (size() > 3) ss << ", ...";
+        if (size() > print_lim) ss << ", ...";
         ss << "]";
         return ss.str();
     }

@@ -2,6 +2,10 @@
 
 #include <random>
 
+const CellHeader& CellTable::GetHeader() const {
+  return m_header;
+}
+
 void CellTable::AddColumn(const std::string& key, std::shared_ptr<Column> column) {
   m_table[key] = column;
 }
@@ -14,7 +18,8 @@ void CellTable::SetPrecision(size_t n) {
 
 void CellTable::Log10() {
   for (auto& k : m_table) {
-    if (markers.count(k.first)) {
+    if (m_header.hasMarker(k.first)) {
+      //    if (markers.count(k.first)) {
       if (k.second->GetType() == ColumnType::INT) {
 	k.second = k.second->CopyToFloat();
       }
@@ -40,18 +45,39 @@ CellTable::CellTable(const char* file, bool verbose) {
   
   // Read and process the lines
   std::string line;
-  while ((line = reader.next_line()).size() > 0) {
+  bool header_read = false;
+  char* next_line_ptr;
+  while ((next_line_ptr = reader.next_line()) != nullptr) {
+    line = std::string(next_line_ptr);
+    if (line.size() == 0) {
+      break;
+    }
     // If the line starts with '@', parse it as a Tag and add it to m_header
     if (line[0] == '@') {
       Tag tag(line);
       m_header.addTag(tag);
-    } else {
-      
-      // container to store just one line
-      CellRow values(col_order.size()); // m_table.size());
+    } else if (!header_read) {
 
+      x = m_header.GetX();
+      y = m_header.GetY();
+
+      header_read__(line);
+      header_read = true;
+
+      check_header__();
+      
+    } else {
+
+      // container to store just one line
+      CellRow values(m_header.col_order.size()); 
+      
       // read one line
-      read_one_line__(line, values);
+      int num_elems = read_one_line__(line, values);
+      if (num_elems != m_header.col_order.size()) {
+	throw std::runtime_error("Error on line: " + line + "\n\tread " +
+				 std::to_string(num_elems) + " expected " +
+				 std::to_string(m_header.col_order.size()));
+      }
 
       // will throw an error if detects type mismatch
       add_row_to_table__(values);
@@ -64,7 +90,7 @@ CellTable::CellTable(const char* file, bool verbose) {
   }
 }
 
-CellTable::CellTable(const char* file, const char* markers_file, bool verbose) {
+/*CellTable::CellTable(const char* file, const char* markers_file, bool verbose) {
 
   // read markers first
   read_markers_json__(markers_file);
@@ -83,7 +109,7 @@ CellTable::CellTable(const char* file, const char* markers_file, bool verbose) {
   header_read__(reader.next_line());
       
   // container to store just one line
-  CellRow values(col_order.size()); // m_table.size());
+  CellRow values(m_header.col_order.size()); // m_table.size());
   
   // for verbose
   size_t count = 0;
@@ -102,8 +128,9 @@ CellTable::CellTable(const char* file, const char* markers_file, bool verbose) {
   }
       
 }
+*/
 
-
+/*
 void CellTable::read_markers_json__(const char* markers_file) {
       
   // read the markers first
@@ -124,7 +151,7 @@ void CellTable::read_markers_json__(const char* markers_file) {
   meta = json_reader.GetMetaCells();  
       
 }
-
+*/
 void CellTable::verbose_line_read__(int count) const {
   
   // verbose output
@@ -135,16 +162,16 @@ void CellTable::verbose_line_read__(int count) const {
   return;
 }
 
-void CellTable::read_one_line__(const std::string& line,
+int CellTable::read_one_line__(const std::string& line,
 				CellRow& values) const {
   
   char *cstr = new char[line.length() + 1];
   std::strcpy(cstr, line.c_str());
   char *value_str = strtok(cstr, ",");
-  
+
   size_t n = 0;
   while (value_str) {
-    
+
     std::string val(value_str);
     std::istringstream iss(val);
     float float_val;
@@ -156,6 +183,7 @@ void CellTable::read_one_line__(const std::string& line,
       
       // Integer
       values[n] = int_val;
+      
     } else {
       
       iss.clear();
@@ -172,8 +200,10 @@ void CellTable::read_one_line__(const std::string& line,
     value_str = strtok(nullptr, ",");
     n++;
   }
-  
+
   delete[] cstr;
+
+  return n;
 }
 
 bool CellTable::read_csv_line__(io::LineReader& reader,
@@ -239,15 +269,26 @@ void CellTable::header_read__(const std::string& header_line) {
     header_item.erase(std::remove(header_item.begin(), header_item.end(), '\r'), header_item.end());
 	
     // store the original order
-    col_order.push_back(header_item);
+    m_header.col_order.push_back(header_item);
   }
 }
 
 
 std::ostream& operator<<(std::ostream& os, const CellTable& table) {
-  for (const auto& key : table.col_order) {
+  for (const auto& key : table.m_header.GetColOrder()) {
     auto col_ptr = table.m_table.at(key);
-    os << key << " -- " << col_ptr->toString() << std::endl;
+    std::string ctype;
+    if (table.m_header.hasMarker(key))
+      ctype = "Marker";
+    else if (table.m_header.hasMeta(key))
+      ctype = "Meta";
+    else if (key == table.x || key == table.y)
+      ctype = "Dim";
+    else if (key == table.m_header.GetID())
+      ctype = "ID";
+    else
+      ctype = "\nUNKNOWN COLUMN TYPE";
+    os << key << " -- " << ctype << " -- " << col_ptr->toString() << std::endl;
   }
   return os;
 }
@@ -256,13 +297,13 @@ std::ostream& operator<<(std::ostream& os, const CellTable& table) {
 void CellTable::add_row_to_table__(const CellRow& values) {
       
   // make sure that the row is expected length
-  // if col_order.size() is zero, you may not have read the header first
-  if (values.size() != col_order.size()) {
-    throw std::runtime_error("Row size and expected size (from col_order) must be the same.");
+  // if m_header.col_order.size() is zero, you may not have read the header first
+  if (values.size() != m_header.col_order.size()) {
+    throw std::runtime_error("Row size and expected size (from m_header.col_order) must be the same.");
   }
       
-  for (size_t i = 0; i < col_order.size(); i++) {
-    const std::string& col_name = col_order[i];
+  for (size_t i = 0; i < m_header.col_order.size(); i++) {
+    const std::string& col_name = m_header.col_order[i];
     const std::variant<int, float, std::string>& value = values.at(i);
 	
     if (ContainsColumn(col_name)) {
@@ -279,7 +320,12 @@ void CellTable::add_row_to_table__(const CellRow& values) {
       case ColumnType::FLOAT:
 	if (std::holds_alternative<float>(value)) {
 	  static_cast<NumericColumn<float>*>(col_ptr.get())->PushElem(std::get<float>(value));
+	} else if (std::holds_alternative<int>(value)) {
+	  static_cast<NumericColumn<float>*>(col_ptr.get())->PushElem(static_cast<float>(std::get<int>(value)));
 	}
+	/*	if (std::holds_alternative<float>(value) || std::holds_alternative<int>(value)) {
+		static_cast<NumericColumn<float>*>(col_ptr.get())->PushElem(std::get<float>(value));
+	  }*/
 	break;
       case ColumnType::STRING:
 	if (std::holds_alternative<std::string>(value)) {
@@ -372,7 +418,8 @@ size_t CellTable::CellCount() const {
     size_t current_size = c.second->size();
     
     if (prev_size.has_value() && current_size != prev_size.value()) {
-      std::cerr << "Warning: Column sizes do not match. Column: " << c.first << std::endl;
+      std::cerr << "Warning: Column sizes do not match. Column: " <<
+	c.first << " prev size " << prev_size.value() << " current_size " << current_size << std::endl;
     }
     
     prev_size = current_size;
@@ -386,7 +433,7 @@ void CellTable::PrintHeader() const {
 
   // Write the header (keys)
   size_t count = 0;
-  for (auto& c: col_order) {
+  for (auto& c: m_header.col_order) {
     count++;
     auto it = m_table.find(c);
     
@@ -397,7 +444,7 @@ void CellTable::PrintHeader() const {
     
     std::cout << it->first;
     //if (std::next(it) != table.end()) {
-    if (count != col_order.size())
+    if (count != m_header.col_order.size())
       std::cout << ",";
   }
 
@@ -405,14 +452,37 @@ void CellTable::PrintHeader() const {
   
 }
 
-void CellTable::PrintTable() const {
+void CellTable::Cut(const std::set<std::string>& tokens) {
+  
+  m_header.Cut(tokens);
+
+  // cut the table itself
+  std::unordered_map<std::string, std::shared_ptr<Column>> new_m_table;
+  for (const auto& token : tokens) {
+    auto it = m_table.find(token);
+    if (it != m_table.end()) {
+      new_m_table.emplace(token, it->second);
+    } else {
+      std::cerr << "Warning: Token '" << token << "' not found in m_table" << std::endl;
+    }
+  }
+  
+  m_table.swap(new_m_table);
+
+}
+
+
+void CellTable::PrintTable(bool header) const {
+
+  if (header)
+    m_header.Print();
   
   PrintHeader();
   std::cout << std::endl;
   
   // Create a lookup table with pointers to the Column values
   std::vector<const std::shared_ptr<Column>> lookup_table;
-  for (const auto& c : col_order) {
+  for (const auto& c : m_header.col_order) {
     auto it = m_table.find(c);
     if (it != m_table.end()) {
       lookup_table.push_back(it->second);
@@ -421,10 +491,9 @@ void CellTable::PrintTable() const {
 
   // Write the data (values)
   size_t numRows = CellCount();
-
-  size_t count = 0;
+  
   for (size_t row = 0; row < numRows; ++row) {
-    
+    size_t count = 1;
     for (const auto& c : lookup_table) {
       c->PrintElem(row);
       if (count < lookup_table.size())
@@ -468,14 +537,12 @@ void CellTable::Crop(float xlo, float xhi, float ylo, float yhi) {
   }
 }
 
-
-
-void CellTable::PrintPearson(bool csv) const {
+void CellTable::PrintPearson(bool csv, bool sort) const {
 
   // collect the marker data in one structure
-  std::vector<std::pair<std::string, const std::shared_ptr<Column>>> data;  
+  std::vector<std::pair<std::string, const std::shared_ptr<Column>>> data;
   for (const auto &t : m_table) {
-    if (markers.count(t.first)) {
+    if (m_header.hasMarker(t.first)) {
       data.push_back({t.first, t.second});
     }
   }
@@ -491,18 +558,22 @@ void CellTable::PrintPearson(bool csv) const {
   
   // if csv, print to csv instead of triangle table
   if (csv) {
+    print_correlation_matrix(data, correlation_matrix, sort);
+    /*
+
+    
     for (int i = 0; i < n; i++) {
       for (int j = i + 1; j < n; j++) {
 	std::cout << data[i].first << "," << data[j].first << 
 	  "," << correlation_matrix[i][j] << std::endl;
       }
-    }
+      }*/
     return;
   }
   
   // find the best spacing
   size_t spacing = 8;
-  for (const auto& c : markers)
+  for (const auto& c : m_header.markers_)
     if (c.length() > spacing)
       spacing = c.length() + 2;
   
@@ -600,12 +671,13 @@ void CellTable::AddMetaColumn(const std::string& key, const std::shared_ptr<Colu
   if (m_table.find(key) != m_table.end()) {
     throw std::runtime_error("Adding meta column already in table");
   }
-  
+
   // insert as a meta key
-  meta.insert(key);
+  //meta.insert(key);
+  m_header.addTag(Tag("CA",key));
 
   // add to the print order at the back
-  col_order.push_back(key);
+  m_header.col_order.push_back(key);
 
   // add the table
   m_table[key] = value;
@@ -644,4 +716,58 @@ void CellTable::SubsetROI(const std::vector<Polygon> &polygons) {
       }
     }
   }
+}
+
+void CellTable::check_header__() const {
+  
+  std::string x = m_header.GetX();
+  if (std::find(m_header.col_order.begin(), m_header.col_order.end(), x) == m_header.col_order.end()) {
+    throw std::runtime_error("x in header @XD NM:" + x + " not found in header line");
+  }
+
+  std::string y = m_header.GetY();
+  if (std::find(m_header.col_order.begin(), m_header.col_order.end(), y) == m_header.col_order.end()) {
+    throw std::runtime_error("y in header @YD NM:" + y + " not found in header line");
+  }
+
+  for (const auto& m : m_header.markers_) {
+    if (std::find(m_header.col_order.begin(), m_header.col_order.end(), m) == m_header.col_order.end()) {
+      throw std::runtime_error("Header def @MA NM:" + m + " not found in header line");
+    }
+  }
+
+  for (const auto& m : m_header.meta_) {
+    if (std::find(m_header.col_order.begin(), m_header.col_order.end(), m) == m_header.col_order.end()) {
+      throw std::runtime_error("Header def @CA NM:" + m + " not found in header line");
+    }
+  }
+  
+}
+
+void CellTable::print_correlation_matrix(const std::vector<std::pair<std::string, const std::shared_ptr<Column>>>& data,
+					 //std::vector<std::pair<int, std::string>>& data,
+					 const std::vector<std::vector<float>>& correlation_matrix, bool sort) const {
+    int n = data.size();
+    std::vector<std::tuple<int, int, double>> sorted_correlations;
+
+    for (int i = 0; i < n; i++) {
+        for (int j = i + 1; j < n; j++) {
+            sorted_correlations.push_back(std::make_tuple(i, j, correlation_matrix[i][j]));
+        }
+    }
+
+    if (sort) {
+        std::sort(sorted_correlations.begin(), sorted_correlations.end(),
+            [](const std::tuple<int, int, double>& a, const std::tuple<int, int, double>& b) {
+                return std::get<2>(a) < std::get<2>(b);
+            });
+    }
+
+    for (const auto& item : sorted_correlations) {
+        int i = std::get<0>(item);
+        int j = std::get<1>(item);
+        double corr = std::get<2>(item);
+
+        std::cout << data[i].first << "," << data[j].first << "," << corr << std::endl;
+    }
 }

@@ -8,26 +8,29 @@ namespace opt {
   static bool verbose = false;
   static std::string infile;
   static std::string quantfile;
-  static std::string markerfile;  
   static std::string outfile;
   static std::string module;
 
+  static bool header = false;
+  
   static bool csv = false; // should we print as csv instead of screen readable
   
   static std::string roifile;
 
   static std::string cropstring;
 
+  static std::string cut; // list of markers, csv separated, to cut on
+  static bool strict_cut = false; // if true, don't carry ID or dims
+  
   static int width = 50;
   static int height = 50;
   
-  static std::string redfile;
-  static std::string greenfile;
-  static std::string bluefile;
   static int threads = 1;
 
   static int seed = 1337;
   static int n = 0;
+
+  static bool sort = false;
 }
 
 #define DEBUG(x) std::cerr << #x << " = " << (x) << std::endl
@@ -37,10 +40,9 @@ namespace opt {
     std::cerr << msg << std::endl; \
   }
 
-static const char* shortopts = "jhvr:t:g:b:q:c:m:s:n:r:w:l:";
+static const char* shortopts = "jhyvr:t:g:b:q:c:s:n:r:w:l:x:X:";
 static const struct option longopts[] = {
   { "verbose",                    no_argument, NULL, 'v' },
-  { "marker-file",                required_argument, NULL, 'm' },  
   { "threads",                    required_argument, NULL, 't' },
   { "quant-file",                 required_argument, NULL, 'q' },
   { "seed",                       required_argument, NULL, 's' },
@@ -49,6 +51,9 @@ static const struct option longopts[] = {
   { "w",                          required_argument, NULL, 'w' },
   { "l",                          required_argument, NULL, 'l' },
   { "crop",                       required_argument, NULL, 'c' },
+  { "cut",                        required_argument, NULL, 'x' },
+  { "strict-cut",                 required_argument, NULL, 'X' },    
+  { "sort",                       no_argument, NULL, 'y' },  
   { "csv",                        no_argument, NULL, 'j'},
   { NULL, 0, NULL, 0 }
 };
@@ -56,6 +61,7 @@ static const struct option longopts[] = {
 static const char *RUN_USAGE_MESSAGE =
 "Usage: cysift [module] <options> \n"
 "Modules:\n"
+"  cut - Select only given markers and metas\n"
 "  subsample - Subsample cells randomly\n"
 "  plot - Generate an ASCII style plot\n"
 "  roi - Trim cells to a region of interest within a given polygon\n"
@@ -75,6 +81,8 @@ static int debugfunc();
 static int cropfunc();
 static int roundfunc();
 static int subsamplefunc();
+static int log10func();
+static int cutfunc();
 
 static void parseRunOptions(int argc, char** argv);
 
@@ -106,6 +114,12 @@ int main(int argc, char **argv) {
     return(correlatefunc());
   } else if (opt::module == "histogram") {
     return(histogramfunc());
+  } else if (opt::module == "log10") {
+    return (log10func());
+  } else if (opt::module == "cut") {
+    cutfunc();
+  } else if (opt::module == "info") {
+    infofunc();
   } else {
     assert(false);
   }
@@ -113,9 +127,98 @@ int main(int argc, char **argv) {
   return 1;
 }
 
+static int infofunc() {
+  
+  // display help if no input
+  if (opt::infile.empty()) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift info [csvfile]\n"
+      "  Display basic information on the cell table\n"
+      "  csvfile: filepath or a '-' to stream to stdin\n"
+      "  -v, --verbose             Increase output to stderr\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 0;
+  }
+
+  CellTable table(opt::quantfile.c_str(), false);
+
+  std::cout << table;
+  
+  return 0;
+}
+
+static int cutfunc() {
+  
+  // display help if no input
+  if (opt::infile.empty()) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift cut [csvfile] <marker1,markers2>\n"
+      "  Cut the file to only certain markers\n"
+      "  csvfile: filepath or a '-' to stream to stdin\n"
+      "  -x, --cut                 Comma-separated list of markers to cut to\n"
+      "  -v, --verbose             Increase output to stderr\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 0;
+  }
+
+  CellTable table(opt::quantfile.c_str(), false);
+  
+  // parse the markers
+  std::set<std::string> tokens;
+  std::stringstream ss(opt::cut);
+  std::string token;
+  while (std::getline(ss, token, ',')) {
+    tokens.insert(token);
+  }
+
+  // if not a strict cut, keep dims and id
+  if (!opt::strict_cut) {
+    tokens.insert(table.GetHeader().GetX());
+    tokens.insert(table.GetHeader().GetY());
+    tokens.insert(table.GetHeader().GetZ());
+    tokens.insert(table.GetHeader().GetID());
+  }
+  tokens.erase(std::string());
+  
+  // cut from the table and header
+  table.Cut(tokens);
+
+  table.PrintTable(opt::header);
+  
+  return 0;
+}
+
+static int log10func()  {
+
+  // display help if no input
+  if (opt::infile.empty()) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift log10 [csvfile] <options>\n"
+      "  Calculate the log10 of marker intensities\n"
+      "  csvfile: filepath or a '-' to stream to stdin\n"
+      "  -v, --verbose             Increase output to stderr"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 0;
+  }
+
+  CellTable table(opt::quantfile.c_str(), false);
+
+  table.Log10();
+
+  table.PrintTable(opt::header);
+
+  return 0;
+}
+
 // parse the command line options
 static void parseRunOptions(int argc, char** argv) {
-  bool die = false;
+    bool die = false;
 
   if (argc <= 1) 
     die = true;
@@ -131,14 +234,16 @@ static void parseRunOptions(int argc, char** argv) {
     case 't' : arg >> opt::threads; break;
     case 'c' : arg >> opt::cropstring; break;
     case 'j' : opt::csv = true; break;
-    case 'm' : arg >> opt::markerfile; break;            
+    case 'x' : arg >> opt::cut; break;
+    case 'X' : opt::strict_cut = true; arg >> opt::cut; break;
     case 'q' : arg >> opt::quantfile; break;
     case 's' : arg >> opt::seed; break;
     case 'n' : arg >> opt::n; break;
     case 'r' : arg >> opt::roifile; break;
-    case 'h' : help = true; break;
+    case 'h' : opt::header = true; break;
     case 'w' : arg >> opt::width; break;
-    case 'l' : arg >> opt::height; break;            
+    case 'l' : arg >> opt::height; break;
+    case 'y' : opt::sort = true; break;
     default: die = true;
     }
   }
@@ -159,7 +264,8 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "plot"  || opt::module == "roi" ||
 	 opt::module == "histogram" || opt::module == "log10" ||
 	 opt::module == "crop"  || opt::module == "round" || 
-	 opt::module == "correlate" || opt::module == "info")) {
+	 opt::module == "correlate" || opt::module == "info" ||
+	 opt::module == "cut")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
     die = true;
   }
@@ -184,7 +290,6 @@ static int roifunc() {
       "  Subset the cells to only those contained in the rois\n"
       "  csvfile: filepath or a '-' to stream to stdin\n"
       "  -r                        ROI file\n"
-      "  -m, --marker-file         JSON file specifying column identities\n"
       "  -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -195,13 +300,13 @@ static int roifunc() {
   std::vector<Polygon> rois = read_polygons_from_file(opt::roifile);
 
   // read in the file
-  CellTable table(opt::quantfile.c_str(), opt::markerfile.c_str(), opt::verbose);
+  CellTable table(opt::quantfile.c_str(), opt::verbose);  
 
   // subset the vertices
   table.SubsetROI(rois);
 
   // write to stdout
-  table.PrintTable();
+  table.PrintTable(opt::header);
   
   return 0;
   
@@ -218,7 +323,6 @@ static int histogramfunc() {
       "  csvfile: filepath or a '-' to stream to stdin\n"
       "  -n  [50]                  Number of bins\n"
       "  -w  [50]                  Binwidth\n"
-      "  -m, --marker-file         JSON file specifying column identities\n"
       "  -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -234,7 +338,7 @@ static int histogramfunc() {
     opt::n = 0;
 
   // read in the file
-  CellTable table(opt::quantfile.c_str(), opt::markerfile.c_str(), opt::verbose);
+  CellTable table(opt::quantfile.c_str(), opt::verbose);    
   
   //table.histogram(opt::n, opt::width);
 
@@ -253,7 +357,6 @@ static int plotfunc() {
       "  csvfile: filepath or a '-' to stream to stdin\n"
       "  -l, --length        [50]  Height (length) of output plot, in characters\n"   
       "  -w, --width         [50]  Width of output plot, in characters\n"
-      "  -m, --marker-file         JSON file specifying column identities\n"
       "  -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -261,7 +364,7 @@ static int plotfunc() {
   }
 
   // read in the file
-  CellTable table(opt::quantfile.c_str(), opt::markerfile.c_str(), opt::verbose);
+  CellTable table(opt::quantfile.c_str(), opt::verbose);    
   
   // make an ASCII plot of this
   table.PlotASCII(opt::width, opt::height);
@@ -279,7 +382,6 @@ static int roundfunc() {
       "  Rounds all of the numerics to <-n> decimals\n"
       "  csvfile: filepath or a '-' to stream to stdin\n"
       "  -n  [0]                   Number of decimals to keep\n"
-      "  -m, --marker-file         JSON file specifying column identities\n"
       "  -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -287,11 +389,13 @@ static int roundfunc() {
   }
 
   // read in the file
-  CellTable table(opt::quantfile.c_str(), opt::markerfile.c_str(), opt::verbose);
-  
+  CellTable table(opt::quantfile.c_str(), opt::verbose);      
+
   table.SetPrecision(opt::n);
 
-  table.PrintTable();
+  std::cerr << " priting" << std::endl;
+  
+  table.PrintTable(opt::header);
   
   return 0;
   
@@ -308,7 +412,6 @@ static int subsamplefunc() {
       "  csvfile: filepath or a '-' to stream to stdin\n"
       "  -n, --numrows             Number of rows to subsample\n"
       "  -s, --seed         [1337] Seed for random subsampling\n"
-      "  -m, --marker-file         JSON file specifying column identities\n"
       "  -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << SUBSAMPLE_USAGE_MESSAGE;
@@ -316,13 +419,13 @@ static int subsamplefunc() {
   }
 
   // read in the file
-  CellTable table(opt::quantfile.c_str(), opt::markerfile.c_str(), opt::verbose);
+  CellTable table(opt::quantfile.c_str(), opt::verbose);      
 
   // subsample
   table.Subsample(opt::n, opt::seed);
 
   // output
-  table.PrintTable();
+  table.PrintTable(opt::header);
   
   return 0;
   
@@ -337,18 +440,18 @@ static int correlatefunc() {
       "Usage: cysift correlate [csvfile] <options>\n"
       "  Outputs an ASCII-style plot of marker intensity pearson correlations\n"
       "  csvfile: filepath or a '-' to stream to stdin\n"
-      "  -m, --marker-file         JSON file specifying column identities\n"
-      "  -v, --verbose             Increase output to stderr"
+      "  -v, --verbose             Increase output to stderr\n"
+      "  -j                        Output as a csv file\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 0;
   }
 
   // read in the file
-  CellTable table(opt::quantfile.c_str(), opt::markerfile.c_str(), opt::verbose);
+  CellTable table(opt::quantfile.c_str(), opt::verbose);      
 
   //
-  table.PrintPearson(opt::csv);
+  table.PrintPearson(opt::csv, opt::sort);
   
   return 0;
 }
@@ -363,7 +466,6 @@ static int cropfunc() {
       "  Crop the table to a given rectangle (in pixels)\n"
       "  csvfile: filepath or a '-' to stream to stdin\n"
       "  --crop                    String of form xlo,xhi,ylo,yhi\n"
-      "  -m, --marker-file         JSON file specifying column identities\n"
       "  -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -398,13 +500,13 @@ static int cropfunc() {
   }
 
   // read the table
-  CellTable table(opt::quantfile.c_str(), opt::markerfile.c_str(), opt::verbose);
+  CellTable table(opt::quantfile.c_str(), opt::verbose);        
 
   //
   table.Crop(xlo, xhi, ylo, yhi);
 
   // write it out
-  table.PrintTable();
+  table.PrintTable(opt::header);
   
   return 0;
   
@@ -412,8 +514,14 @@ static int cropfunc() {
 
 static int debugfunc() {
 
-  CellTable table(opt::quantfile.c_str(), opt::markerfile.c_str(), opt::verbose);
+  CellTable table(opt::quantfile.c_str(), false);
+
+  std::cerr << table << std::endl;
   
+  table.PrintTable(opt::header);
+  
+  return 1;
+    
   std::cerr << "...subset roi" << std::endl;
   std::vector<std::pair<float,float>> roi(
 {{21910.26,41337.85},

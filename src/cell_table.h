@@ -18,7 +18,7 @@ public:
 
   void SetPrecision(size_t n);
   
-  CellTable(const char* file, const char* markers_file, bool verbose);
+  //CellTable(const char* file, const char* markers_file, bool verbose);
   
   friend std::ostream& operator<<(std::ostream& os, const CellTable& table);
   
@@ -26,6 +26,8 @@ public:
 
   size_t CellCount() const;
 
+  const CellHeader& GetHeader() const;
+  
   // insertion
   void AddMetaColumn(const std::string& key, const std::shared_ptr<Column> value);
   
@@ -35,12 +37,12 @@ public:
   // IO
   void PrintHeader() const;
 
-  void PrintTable() const;
+  void PrintTable(bool header) const;
 
   // numeric operations
   void Log10();
 
-  void PrintPearson(bool csv) const;
+  void PrintPearson(bool csv, bool sort) const;
   
   // filtering
   void Subsample(int n, int s);
@@ -48,15 +50,14 @@ public:
   void Crop(float xlo, float xhi, float ylo, float yhi);
 
   void SubsetROI(const std::vector<Polygon> &polygons);
+
+  void Remove(const std::string& token);
+  
+  void Cut(const std::set<std::string>& tokens);
   
  private:
   
   unordered_map<string, shared_ptr<Column>> m_table;
-  
-  vector<string> col_order;
-  
-  set<string> markers;
-  set<string> meta;
   
   string x;
   string y;
@@ -65,7 +66,7 @@ public:
   
   // internal member functions
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
-  void read_markers_json__(const char* markers_file);
+  //void read_markers_json__(const char* markers_file);
   
   void verbose_line_read__(int count) const;
   
@@ -75,8 +76,16 @@ public:
   
   void add_row_to_table__(const CellRow& values);
 
-  void read_one_line__(const std::string& line, CellRow& values) const;
+  int read_one_line__(const std::string& line, CellRow& values) const;
 
+  void check_header__() const;
+
+  //void print_correlation_matrix(const std::vector<std::pair<int, std::string>>& data, const std::vector<std::vector<double>>& correlation_matrix, bool sort) const;
+
+  void print_correlation_matrix(const std::vector<std::pair<std::string, const std::shared_ptr<Column>>>& data,
+				const std::vector<std::vector<float>>& correlation_matrix, bool sort) const;
+
+  
 #endif    
 };
 
