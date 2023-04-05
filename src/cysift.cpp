@@ -20,9 +20,6 @@ namespace opt {
 
   static std::string cropstring;
 
-  static std::string cut; // list of markers, csv separated, to cut on
-  static bool strict_cut = false; // if true, don't carry ID or dims
-  
   static int width = 50;
   static int height = 50;
   
@@ -63,31 +60,33 @@ static const struct option longopts[] = {
 
 static const char *RUN_USAGE_MESSAGE =
 "Usage: cysift [module] <options> \n"
-"Modules:\n"
-"  view - View the cell table\n"
-"  cut - Select only given markers and metas\n"
+"  view      - View the cell table\n"
+"  cut       - Select only given markers and metas\n"
 "  subsample - Subsample cells randomly\n"
-"  plot - Generate an ASCII style plot\n"
-"  roi - Trim cells to a region of interest within a given polygon\n"
+"  plot      - Generate an ASCII style plot\n"
+"  roi       - Trim cells to a region of interest within a given polygon\n"
 "  histogram - Create a histogram of the data\n"
-"  log10 - Apply a base-10 logarithm transformation to the data\n"
+"  log10     - Apply a base-10 logarithm transformation to the data\n"
 "  correlate - Calculate the correlation between variables\n"
-"  info - Display information about the dataset\n"
+"  info      - Display information about the dataset"
+"  knn       - Construct the marker space KNN graph\n"
 "\n";
 
-static int subsamplefunc();
-static int viewfunc();
-static int infofunc();
-static int roifunc();
-static int correlatefunc();
-static int histogramfunc();
-static int plotfunc();
-static int debugfunc();
-static int cropfunc();
-static int roundfunc();
-static int subsamplefunc();
-static int log10func();
-static int cutfunc();
+static void read_table();
+
+static int subsamplefunc(int argc, char** argv);
+static int viewfunc(int argc, char** argv);
+static int infofunc(int argc, char** argv);
+static int roifunc(int argc, char** argv);
+static int correlatefunc(int argc, char** argv);
+static int histogramfunc(int argc, char** argv);
+static int plotfunc(int argc, char** argv);
+static int debugfunc(int argc, char** argv);
+static int cropfunc(int argc, char** argv);
+static int subsamplefunc(int argc, char** argv);
+static int log10func(int argc, char** argv);
+static int cutfunc(int argc, char** argv);
+static int knnfunc(int argc, char** argv);
 
 static void parseRunOptions(int argc, char** argv);
 
@@ -95,43 +94,39 @@ int main(int argc, char **argv) {
   
   // Check if a command line argument was provided
   if (argc < 2) {
-    std::cerr << "Error: missing command line argument" << std::endl;
     std::cerr << RUN_USAGE_MESSAGE;
     return 1;
   }
 
   parseRunOptions(argc, argv);
-  if (!opt::infile.empty()) {
-    table = CellTable(opt::quantfile.c_str(), opt::verbose, opt::header_only);
-  }
 
   int val = 0;
   
   // get the module
   if (opt::module == "debug") {
-    val = debugfunc();
+    val = debugfunc(argc, argv);
   } else if (opt::module == "subsample") {
-    val = subsamplefunc();
+    val = subsamplefunc(argc, argv);
   } else if (opt::module == "plot") {
-    return(plotfunc());
-  } else if (opt::module == "round") {
-    val = roundfunc();
+    return(plotfunc(argc, argv));
   } else if (opt::module == "roi") {
-    val = roifunc();
+    val = roifunc(argc, argv);
   } else if (opt::module == "crop") {
-    val = cropfunc();
+    val = cropfunc(argc, argv);
   } else if (opt::module == "correlate") {
-    return(correlatefunc());
+    return(correlatefunc(argc, argv));
   } else if (opt::module == "histogram") {
-    return(histogramfunc());
+    return(histogramfunc(argc, argv));
   } else if (opt::module == "log10") {
-    val = log10func();
+    val = log10func(argc, argv);
   } else if (opt::module == "cut") {
-    val = cutfunc();
+    val = cutfunc(argc, argv);
   } else if (opt::module == "info") {
-    return(infofunc());
+    return(infofunc(argc, argv));
   } else if (opt::module == "view") {
-    val = viewfunc();
+    val = viewfunc(argc, argv);
+  } else if (opt::module == "knn") {
+    val = knnfunc(argc, argv);
   } else {
     assert(false);
   }
@@ -147,7 +142,79 @@ int main(int argc, char **argv) {
   return 1;
 }
 
-static int infofunc() {
+static void read_table() {
+
+  if (!opt::infile.empty()) {
+    table = CellTable(opt::quantfile.c_str(), opt::verbose, opt::header_only);
+  }
+  
+}
+
+static int knnfunc(int argc, char** argv) {
+
+  int n = 10;
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'h' : opt::header = true; break;
+    case 't' : arg >> opt::threads; break;
+    case 'n' : arg >> n; break;
+    default: die = true;
+    }
+  }
+
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+  
+  // display help if no input
+  if (opt::infile.empty()) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift knn [csvfile]\n"
+      "  Construct the KNN graph (in marker space)\n"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -n [10]                   Number of neighbors\n"
+      "    -v, --verbose             Increase output to stderr\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  read_table();
+  
+  table.KNN_marker(n, opt::verbose, opt::threads);
+
+  return 0;
+}
+
+static int infofunc(int argc, char** argv) {
+
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    default: die = true;
+    }
+  }
+
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+  
   
   // display help if no input
   if (opt::infile.empty()) {
@@ -155,49 +222,81 @@ static int infofunc() {
     const char *USAGE_MESSAGE =
       "Usage: cysift info [csvfile]\n"
       "  Display basic information on the cell table\n"
-      "  csvfile: filepath or a '-' to stream to stdin\n"
-      "  -v, --verbose             Increase output to stderr\n"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -v, --verbose             Increase output to stderr\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
+
+  read_table();
+  
   std::cout << table;
   
   return 0;
 }
 
-static int cutfunc() {
+static int cutfunc(int argc, char** argv) {
+
+  bool strict_cut = false;
+  std::string cut; // list of markers, csv separated, to cut on
+  
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'x' : arg >> cut; break;
+    case 'X' : strict_cut = true; arg >> cut; break;
+    case 'n' : arg >> opt::n; break;
+    case 'h' : opt::header = true; break;
+    case 'H' : opt::header_only = true; break;
+    default: die = true;
+    }
+  }
+
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
   
   // display help if no input
-  if (opt::infile.empty()) {
+  if (opt::infile.empty() || die || cut.empty()) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift cut [csvfile] <marker1,markers2>\n"
       "  Cut the file to only certain markers\n"
-      "  csvfile: filepath or a '-' to stream to stdin\n"
-      "  -x, --cut                 Comma-separated list of markers to cut to\n"
-      "  -v, --verbose             Increase output to stderr\n"
-      "\n";
+      "    <file>: filepath or a '-' to stream to stdin\n"
+      "    -x, --cut                 Comma-separated list of markers to cut to\n"
+      "    -X, --strict-cut          Comma-separated list of markers to cut to\n"      
+      "    -v, --verbose             Increase output to stderr\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
-
+  
   // parse the markers
   std::set<std::string> tokens;
-  std::stringstream ss(opt::cut);
+  std::stringstream ss(cut);
   std::string token;
   while (std::getline(ss, token, ',')) {
     tokens.insert(token);
   }
 
   // if not a strict cut, keep dims and id
-  if (!opt::strict_cut) {
+  if (!strict_cut) {
     tokens.insert(table.GetHeader().GetX());
     tokens.insert(table.GetHeader().GetY());
     tokens.insert(table.GetHeader().GetZ());
     tokens.insert(table.GetHeader().GetID());
   }
   tokens.erase(std::string());
+
+  // read the table
+  read_table();
   
   // cut from the table and header
   table.Cut(tokens);
@@ -205,21 +304,44 @@ static int cutfunc() {
   return 0;
 }
 
-static int log10func()  {
+static int log10func(int argc, char** argv)  {
+  
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'n' : arg >> opt::n; break;
+    case 'h' : opt::header = true; break;
+    default: die = true;
+    }
+  }
 
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+  
   // display help if no input
-  if (opt::infile.empty()) {
+  if (opt::infile.empty() || die) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift log10 [csvfile] <options>\n"
       "  Calculate the log10 of marker intensities\n"
       "  csvfile: filepath or a '-' to stream to stdin\n"
       "  -v, --verbose             Increase output to stderr"
+      "  -h                        Output with the header\n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
+  read_table();
+  
   table.Log10();
 
   return 0;
@@ -227,15 +349,27 @@ static int log10func()  {
 
 // parse the command line options
 static void parseRunOptions(int argc, char** argv) {
-    bool die = false;
+  bool die = false;
 
   if (argc <= 1) 
     die = true;
+  else {
+    // get the module
+    opt::module = argv[1];
+  }
 
-  bool help = false;
-  std::stringstream ss;
+  // make sure module is implemented
+  if (! (opt::module == "debug" || opt::module == "subsample" ||
+	 opt::module == "plot"  || opt::module == "roi" ||
+	 opt::module == "histogram" || opt::module == "log10" ||
+	 opt::module == "crop"  || opt::module == "knn" || 
+	 opt::module == "correlate" || opt::module == "info" ||
+	 opt::module == "cut" || opt::module == "view")) {
+    std::cerr << "Module " << opt::module << " not implemented" << std::endl;
+    die = true;
+  }
 
-  std::string tmp;
+  /*
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -257,31 +391,19 @@ static void parseRunOptions(int argc, char** argv) {
     default: die = true;
     }
   }
-
+*/
+  /*
+  optind++;
   // Process any remaining no-flag options
   while (optind < argc) {
-    if (opt::module.empty()) {
-      opt::module = argv[optind];      
-    } else if (opt::infile.empty()) {
+    if (opt::infile.empty()) {
       opt::infile = argv[optind];
-    } else if (opt::outfile.empty()) {
-      opt::outfile = argv[optind];
     } 
     optind++;
   }
-
-  if (! (opt::module == "debug" || opt::module == "subsample" ||
-	 opt::module == "plot"  || opt::module == "roi" ||
-	 opt::module == "histogram" || opt::module == "log10" ||
-	 opt::module == "crop"  || opt::module == "round" || 
-	 opt::module == "correlate" || opt::module == "info" ||
-	 opt::module == "cut" || opt::module == "view")) {
-    std::cerr << "Module " << opt::module << " not implemented" << std::endl;
-    die = true;
-  }
+  */
   
-  if (die || help) 
-    {
+  if (die) {
       std::cerr << "\n" << RUN_USAGE_MESSAGE;
       if (die)
 	exit(EXIT_FAILURE);
@@ -290,16 +412,39 @@ static void parseRunOptions(int argc, char** argv) {
     }
 }
 
-static int roifunc() {
+static int roifunc(int argc, char** argv) {
+
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'n' : arg >> opt::n; break;
+    case 'h' : opt::header = true; break;
+    case 'r' : arg >> opt::roifile;
+    default: die = true;
+    }
+  }
+
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+
 
   // display help if no input
-  if (opt::infile.empty()) {
+  if (opt::infile.empty() || die || opt::roifile.empty()) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift roi [csvfile] <options>\n"
       "  Subset the cells to only those contained in the rois\n"
       "  csvfile: filepath or a '-' to stream to stdin\n"
       "  -r                        ROI file\n"
+      "  -h                        Output with the header\n"
       "  -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -309,8 +454,11 @@ static int roifunc() {
   // read in the roi file
   std::vector<Polygon> rois = read_polygons_from_file(opt::roifile);
 
-  for (const auto& c : rois)
-    std::cerr << c << std::endl;
+  if (opt::verbose)
+    for (const auto& c : rois)
+      std::cerr << c << std::endl;
+
+  read_table();
   
   // subset the vertices
   table.SubsetROI(rois);
@@ -319,8 +467,31 @@ static int roifunc() {
   
 }
 
-static int viewfunc() {
+static int viewfunc(int argc, char** argv) {
 
+  int precision = 2;
+  
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'n' : arg >> precision; break;
+    case 'h' : opt::header = true; break;
+    case 'H' : opt::header_only = true;
+    default: die = true;
+    }
+  }
+  
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+  
   // display help if no input
   if (opt::infile.empty()) {
     
@@ -328,20 +499,50 @@ static int viewfunc() {
       "Usage: cysift view [csvfile] <options>\n"
       "  View the contents of a cell table\n" 
       "  csvfile: filepath or a '-' to stream to stdin\n"
-      "  -H                        View only the header\n"
+      "  -n  [2]                   Number of decimals to keep\n"     
+      "  -H                        View only the header\n"      
+      "  -h                        Output with the header\n"
       "  -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
+
+  read_table();
+  
+  table.SetPrecision(precision);
   
   return 0;  
 }
 
-static int histogramfunc() {
+static int histogramfunc(int argc, char** argv) {
+
+  int n_bins = 50;
+  int w_bins = 50;
+  
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'n' : arg >> n_bins; break;
+    case 'w' : arg >> w_bins; break;      
+    case 'r' : arg >> opt::roifile;
+    default: die = true;
+    }
+  }
+
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
 
   // display help if no input
-  if (opt::infile.empty()) {
+  if (opt::infile.empty() || die) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift histogram [csvfile] <options>\n"
@@ -355,122 +556,191 @@ static int histogramfunc() {
     return 1;
   }
 
-  // default is to use numbins. If binwidth is specified,
-  // then that takes precedence
-  if (opt::n == 0)
-    opt::n = 50;
-
-  if (opt::width != 50)
-    opt::n = 0;
-
+  //read_table();
   //table.histogram(opt::n, opt::width);
 
   return 0;
   
 }
 
-static int plotfunc() {
+static int plotfunc(int argc, char** argv) {
 
+  int length = 50;
+  int width = 50;
+  
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'l' : arg >> length; break;
+    case 'w' : arg >> width; break;      
+    default: die = true;
+    }
+  }
+
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+
+  
   // display help if no input
   if (opt::infile.empty()) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift plot [csvfile] <options>\n"
       "  Outputs an ASCII-style plot of cell locations\n"
-      "  csvfile: filepath or a '-' to stream to stdin\n"
-      "  -l, --length        [50]  Height (length) of output plot, in characters\n"   
-      "  -w, --width         [50]  Width of output plot, in characters\n"
-      "  -v, --verbose             Increase output to stderr"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -l, --length        [50]  Height (length) of output plot, in characters\n"   
+      "    -w, --width         [50]  Width of output plot, in characters\n"
+      "    -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
+  read_table();
+  
   // make an ASCII plot of this
-  table.PlotASCII(opt::width, opt::height);
+  table.PlotASCII(width, length);
 
   return 0;
 }
 
-static int roundfunc() {
+static int subsamplefunc(int argc, char** argv) {
 
-  // display help if no input
-  if (opt::infile.empty()) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift round [csvfile] <options>\n"
-      "  Rounds all of the numerics to <-n> decimals\n"
-      "  csvfile: filepath or a '-' to stream to stdin\n"
-      "  -n  [0]                   Number of decimals to keep\n"
-      "  -v, --verbose             Increase output to stderr"
-      "\n";
-    std::cerr << USAGE_MESSAGE;
-    return 1;
+  int n = 0;
+  
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'n' : arg >> n; break;
+    case 's' : arg >> opt::seed; break;      
+    case 'h' : opt::header = true; break;
+    default: die = true;
+    }
   }
 
-  table.SetPrecision(opt::n);
-  
-  return 0;
-  
-}
-
-static int subsamplefunc() {
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
 
   // display help if no input
-  if (opt::infile.empty()) {
+  if (opt::infile.empty() || die) {
     
     const char *SUBSAMPLE_USAGE_MESSAGE =
       "Usage: cysift subsample [csvfile] <options>\n"
       "  Subsamples a cell quantification table, randomly.\n"
-      "  csvfile: filepath or a '-' to stream to stdin\n"
-      "  -n, --numrows             Number of rows to subsample\n"
-      "  -s, --seed         [1337] Seed for random subsampling\n"
-      "  -v, --verbose             Increase output to stderr"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -n, --numrows             Number of rows to subsample\n"
+      "    -s, --seed         [1337] Seed for random subsampling\n"
+      "    -h                        Output with the header\n"            
+      "    -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << SUBSAMPLE_USAGE_MESSAGE;
     return 1;
   }
 
+  read_table();
+  
   // subsample
-  table.Subsample(opt::n, opt::seed);
+  table.Subsample(n, opt::seed);
   
   return 0;
   
 }
 
-static int correlatefunc() {
+static int correlatefunc(int argc, char** argv) {
+
+  bool sorted = false;
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 's' : sorted = true; break;
+    default: die = true;
+    }
+  }
+
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
 
   // display help if no input
-  if (opt::infile.empty()) {
+  if (opt::infile.empty() || die) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift correlate [csvfile] <options>\n"
       "  Outputs an ASCII-style plot of marker intensity pearson correlations\n"
-      "  csvfile: filepath or a '-' to stream to stdin\n"
-      "  -v, --verbose             Increase output to stderr\n"
-      "  -j                        Output as a csv file\n"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -j                        Output as a csv file\n"
+      "    -s                        Sort the output by Pearson correlation\n"
+      "    -v, --verbose             Increase output to stderr\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
+  read_table();
+  
   //
   table.PrintPearson(opt::csv, opt::sort);
   
   return 0;
 }
 
-static int cropfunc() {
+static int cropfunc(int argc, char** argv) {
 
+  std::string cropstring;
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'c' : arg >> cropstring; break;
+    case 'h' : opt::header = true; break;      
+     default: die = true;
+    }
+  }
+
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+
+  
   // display help if no input
-  if (opt::infile.empty() || opt::cropstring.empty()) {
+  if (opt::infile.empty() || cropstring.empty()) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift crop [csvfile] <options>\n"
       "  Crop the table to a given rectangle (in pixels)\n"
-      "  csvfile: filepath or a '-' to stream to stdin\n"
-      "  --crop                    String of form xlo,xhi,ylo,yhi\n"
-      "  -v, --verbose             Increase output to stderr"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    --crop                    String of form xlo,xhi,ylo,yhi\n"
+      "    -h                        Output with the header\n"
+      "    -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
@@ -503,6 +773,8 @@ static int cropfunc() {
     throw std::runtime_error("Error: Fewer than 4 numbers provided");
   }
 
+  read_table();
+  
   //
   table.Crop(xlo, xhi, ylo, yhi);
 
@@ -510,7 +782,7 @@ static int cropfunc() {
   
 }
 
-static int debugfunc() {
+static int debugfunc(int argc, char** argv) {
   
   table.PrintTable(opt::header);
   

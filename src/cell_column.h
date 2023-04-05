@@ -16,6 +16,9 @@ using namespace std;
 /// @brief Alias for a row of cells, which can contain integers, floats, or strings.
 using CellRow = vector<variant<int, float, string>>;
 
+// Function pointer type definition
+using CellRowFunc = CellRow(*)(const CellRow&);
+
 /// @brief Enum class representing the different types a Column can have.
 enum class ColumnType {
     INT,
@@ -256,6 +259,10 @@ class NumericColumn : public Column {
     void SetPrecision(size_t n) override {
       m_precision = n;
     }
+
+    const std::vector<T>& getData() const {
+      return m_vec;
+    }
     
 protected:
     
@@ -268,44 +275,46 @@ protected:
 
 class StringColumn : public Column {
 public:
-    StringColumn(const std::string& initial_elem) {
-        m_vec.push_back(initial_elem);
-    }
-
-    std::shared_ptr<Column> clone() const override {
-      return std::make_shared<StringColumn>(*this);
-    }
-    
-    ColumnType GetType() const override {
-      return ColumnType::STRING; 
-    }
-    
-    
-    void PushElem(const std::string& elem) {
-        m_vec.push_back(elem);
-    }
-
-    size_t size() const override {
-        return m_vec.size();
-    }
-
-    std::string toString() const override {
+  StringColumn() = default;
+  
+  StringColumn(const std::string& initial_elem) {
+    m_vec.push_back(initial_elem);
+  }
+  
+  std::shared_ptr<Column> clone() const override {
+    return std::make_shared<StringColumn>(*this);
+  }
+  
+  ColumnType GetType() const override {
+    return ColumnType::STRING; 
+  }
+  
+  
+  void PushElem(const std::string& elem) {
+    m_vec.emplace_back(elem);
+  }
+  
+  size_t size() const override {
+    return m_vec.size();
+  }
+  
+  std::string toString() const override {
         std::stringstream ss;
         ss << "StringColumn<string>: [";
         for (size_t i = 0; i < std::min(size(), (size_t)3); i++) {
-            if (i > 0) ss << ", ";
-            ss << m_vec[i];
+	  if (i > 0) ss << ", ";
+	  ss << m_vec[i];
         }
         if (size() > 3) ss << ", ...";
         ss << "]";
         return ss.str();
-    }
-
-    // Do nothing for StringColumn (or have dummies)
-    void Log10() override {}
-    float GetNumericElem(size_t i) const override { return 0; }
-    float Pearson(const Column& c) const override { return 0; }
-    float Mean() const override { return 0;   }
+  }
+  
+  // Do nothing for StringColumn (or have dummies)
+  void Log10() override {}
+  float GetNumericElem(size_t i) const override { return 0; }
+  float Pearson(const Column& c) const override { return 0; }
+  float Mean() const override { return 0;   }
     float Min() const override { return 0;   }
     float Max() const override { return 0;   }
     void SetPrecision(size_t n) override {}

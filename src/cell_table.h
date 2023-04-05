@@ -15,9 +15,14 @@ public:
   CellTable(int test);
   
   CellTable(const char* file, bool verbose, bool header_only);
+
+  CellTable(const char* file, CellRowFunc func, bool verbose, bool header_only);
   
   void AddColumn(const std::string& key, std::shared_ptr<Column> column); 
 
+  void AddGraphColumn(const Tag& tag,
+		      const std::shared_ptr<StringColumn> value);
+  
   void SetPrecision(size_t n);
   
   //CellTable(const char* file, const char* markers_file, bool verbose);
@@ -45,7 +50,10 @@ public:
   void Log10();
 
   void PrintPearson(bool csv, bool sort) const;
-  
+
+  // graph ops
+  void KNN_marker(int num_neighbors, bool verbose, int threads);
+
   // filtering
   void Subsample(int n, int s);
 
@@ -78,7 +86,7 @@ public:
   
   void header_read__(const std::string& header_line);
   
-  void add_row_to_table__(const CellRow& values);
+  CellRow add_row_to_table__(const CellRow& values);
 
   int read_one_line__(const std::string& line, CellRow& values) const;
 
@@ -89,6 +97,10 @@ public:
   void print_correlation_matrix(const std::vector<std::pair<std::string, const std::shared_ptr<Column>>>& data,
 				const std::vector<std::vector<float>>& correlation_matrix, bool sort) const;
 
+
+  void process_csv_file__(const char* file,
+			  const std::function<CellRow(const CellRow&)>& func,
+			  bool verbose, bool header_only);
   
 #endif    
 };

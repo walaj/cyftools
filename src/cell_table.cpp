@@ -1,4 +1,5 @@
 #include "cell_table.h"
+#include "cell_graph.h"
 
 #include <random>
 
@@ -28,81 +29,12 @@ void CellTable::Log10() {
   }
 }
 
-/*CellTable::CellTable(int test) {
-
-  io::CSVReader<29> in("full_noheader2.csv");
-  size_t count = 0;
-  float v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v27, v28, v29;
-  while(in.read_row(v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v27, v28, v29)) {
-    count++;
-    verbose_line_read__(count);
-  }
-  
-  }*/
+CellTable::CellTable(const char* file, CellRowFunc func, bool verbose, bool header_only) {
+  process_csv_file__(file, func, verbose, header_only);
+}
 
 CellTable::CellTable(const char* file, bool verbose, bool header_only) {
-
-  // make the csv reader
-  io::LineReader reader(file, stdin);
-  
-  // If fname is "-" read from standard input
-  if (strcmp(file, "-") == 0) {
-    //reader = std::make_shared<io::LineReader>(io::LineReader(file, stdin));
-  } else {
-    //reader = io::LineReader(file);
-  }
-
-  // for verbose
-  size_t count = 0;
-  
-  // Read and process the lines
-  std::string line;
-  bool header_read = false;
-  char* next_line_ptr;
-  while ((next_line_ptr = reader.next_line()) != nullptr) {
-    line = std::string(next_line_ptr);
-    if (line.size() == 0) {
-      break;
-    }
-    // If the line starts with '@', parse it as a Tag and add it to m_header
-    if (line[0] == '@') {
-      Tag tag(line);
-      m_header.addTag(tag);
-    } else if (!header_read) {
-
-      x = m_header.GetX();
-      y = m_header.GetY();
-
-      header_read__(line);
-      header_read = true;
-
-      check_header__();
-      
-    } else {
-
-      if (header_only)
-	break;
-      
-      // container to store just one line
-      CellRow values(m_header.col_order.size()); 
-      
-      // read one line
-      int num_elems = read_one_line__(line, values);
-      if (num_elems != m_header.col_order.size()) {
-	throw std::runtime_error("Error on line: " + line + "\n\tread " +
-				 std::to_string(num_elems) + " expected " +
-				 std::to_string(m_header.col_order.size()));
-      }
-
-      // will throw an error if detects type mismatch
-      add_row_to_table__(values);
-      
-      // verbose output
-      if (verbose)
-	verbose_line_read__(count);
-      count++;
-    }
-  }
+  process_csv_file__(file, std::bind(&CellTable::add_row_to_table__, this, std::placeholders::_1), verbose, header_only);
 }
 
 void CellTable::verbose_line_read__(int count) const {
@@ -207,26 +139,6 @@ bool CellTable::ContainsColumn(const std::string& name) const {
   return m_table.count(name) > 0;
 }
 
-void CellTable::header_read__(const std::string& header_line) {
-      
-  std::istringstream header_stream(header_line);
-  std::string header_item;
-      
-  // store the markers, meta etc in an ordered way
-  // this is needed to link the vec's to the right
-  // table element, since unordered_map doesn't store
-  // by order of insertion
-  while (std::getline(header_stream, header_item, ',')) {
-	
-    // remove any special characters 
-    header_item.erase(std::remove(header_item.begin(), header_item.end(), '\r'), header_item.end());
-	
-    // store the original order
-    m_header.col_order.push_back(header_item);
-  }
-}
-
-
 std::ostream& operator<<(std::ostream& os, const CellTable& table) {
   for (const auto& key : table.m_header.GetColOrder()) {
     auto col_ptr = table.m_table.at(key);
@@ -246,24 +158,26 @@ std::ostream& operator<<(std::ostream& os, const CellTable& table) {
   return os;
 }
 
+CellRow CellTable::add_row_to_table__(const CellRow& values) {
 
-void CellTable::add_row_to_table__(const CellRow& values) {
-      
+  int col_count = m_header.ColumnCount();
+  
   // make sure that the row is expected length
   // if m_header.col_order.size() is zero, you may not have read the header first
-  if (values.size() != m_header.col_order.size()) {
-    throw std::runtime_error("Row size and expected size (from m_header.col_order) must be the same.");
+  if (values.size() != col_count) {
+    throw std::runtime_error("Row size and expected size (from m_header.ColumnCount) must be the same.");
   }
-      
-  for (size_t i = 0; i < m_header.col_order.size(); i++) {
-    const std::string& col_name = m_header.col_order[i];
+
+  for (size_t i = 0; i < col_count; i++) {
+    const std::string& col_name = m_header.GetColumnTag(i).GetName(); 
     const std::variant<int, float, std::string>& value = values.at(i);
 	
     if (ContainsColumn(col_name)) {
-	  
+
       // NEW WAY 
       auto col_ptr = m_table[col_name];
       ColumnType col_type = col_ptr->GetType();
+
       switch (col_type) {
       case ColumnType::INT:
 	if (std::holds_alternative<int>(value)) {
@@ -308,7 +222,8 @@ void CellTable::add_row_to_table__(const CellRow& values) {
 	  
     }
   }
-      
+
+  return CellRow{}; // Return an empty CellRow
 }
 
 void CellTable::Subsample(int n, int s) {
@@ -382,28 +297,6 @@ size_t CellTable::CellCount() const {
   return n;
 }
 
-void CellTable::PrintHeader() const {
-
-  // Write the header (keys)
-  size_t count = 0;
-  for (auto& c: m_header.col_order) {
-    count++;
-    auto it = m_table.find(c);
-    
-    if (it == m_table.end()) {
-      throw std::runtime_error("Trying to print header name without corresponding table data");
-      continue;
-    }
-    
-    std::cout << it->first;
-    //if (std::next(it) != table.end()) {
-    if (count != m_header.col_order.size())
-      std::cout << ",";
-  }
-
-  return;
-  
-}
 
 void CellTable::Cut(const std::set<std::string>& tokens) {
   
@@ -430,13 +323,10 @@ void CellTable::PrintTable(bool header) const {
   if (header)
     m_header.Print();
   
-  PrintHeader();
-  std::cout << std::endl;
-  
   // Create a lookup table with pointers to the Column values
   std::vector<const std::shared_ptr<Column>> lookup_table;
-  for (const auto& c : m_header.col_order) {
-    auto it = m_table.find(c);
+  for (const auto& c : m_header.tags) {
+    auto it = m_table.find(c.GetName());
     if (it != m_table.end()) {
       lookup_table.push_back(it->second);
     }
@@ -613,6 +503,27 @@ void CellTable::PlotASCII(int width, int height) const {
   
 }
 
+void CellTable::AddGraphColumn(const Tag& tag,
+			       const std::shared_ptr<StringColumn> value) {
+
+  if (value->size() != CellCount()) {
+    throw std::runtime_error("Adding graph column of incorrect size");
+  }
+  
+  // check if already exists in the table
+  if (m_table.find(tag.GetName()) != m_table.end()) {
+    throw std::runtime_error("Adding graph column already in table");
+  }
+  
+  // insert as a meta key
+  m_header.addTag(tag); 
+
+  // add to the table
+  m_table[tag.GetName()] = value;
+  
+}
+			       
+
 void CellTable::AddMetaColumn(const std::string& key, const std::shared_ptr<Column> value) {
 
   // warn if creating a ragged table, but proceed anyway
@@ -626,11 +537,7 @@ void CellTable::AddMetaColumn(const std::string& key, const std::shared_ptr<Colu
   }
 
   // insert as a meta key
-  //meta.insert(key);
   m_header.addTag(Tag("CA",key));
-
-  // add to the print order at the back
-  m_header.col_order.push_back(key);
 
   // add the table
   m_table[key] = value;
@@ -672,29 +579,60 @@ void CellTable::SubsetROI(const std::vector<Polygon> &polygons) {
 }
 
 void CellTable::check_header__() const {
+
+  assert(m_header.validate());
   
-  std::string x = m_header.GetX();
-  if (std::find(m_header.col_order.begin(), m_header.col_order.end(), x) == m_header.col_order.end()) {
-    throw std::runtime_error("x in header @XD NM:" + x + " not found in header line");
-  }
+}
 
-  std::string y = m_header.GetY();
-  if (std::find(m_header.col_order.begin(), m_header.col_order.end(), y) == m_header.col_order.end()) {
-    throw std::runtime_error("y in header @YD NM:" + y + " not found in header line");
-  }
+void CellTable::KNN_marker(int num_neighbors, bool verbose, int threads) {
 
-  for (const auto& m : m_header.markers_) {
-    if (std::find(m_header.col_order.begin(), m_header.col_order.end(), m) == m_header.col_order.end()) {
-      throw std::runtime_error("Header def @MA NM:" + m + " not found in header line");
+  int ndim = m_header.markers_.size();
+  int nobs = CellCount();
+
+  if (verbose)
+    std::cerr << "...finding K nearest-neighbors on " << AddCommas(nobs) << " cells" << std::endl;  
+
+  // column major the marker data
+  std::vector<float> concatenated_data;
+  
+  for (const auto& key : m_header.markers_) {
+    auto it = m_table.find(key);
+    if (it != m_table.end()) {
+      auto column_ptr = it->second;
+      
+      // Check if the column is a NumericColumn
+      if (auto numeric_column_ptr = std::dynamic_pointer_cast<NumericColumn<float>>(column_ptr)) {
+	const auto& data = numeric_column_ptr->getData();
+	concatenated_data.insert(concatenated_data.end(), data.begin(), data.end());
+      }
     }
   }
 
-  for (const auto& m : m_header.meta_) {
-    if (std::find(m_header.col_order.begin(), m_header.col_order.end(), m) == m_header.col_order.end()) {
-      throw std::runtime_error("Header def @CA NM:" + m + " not found in header line");
-    }
-  }
+  if (verbose)
+    std::cerr << "...setting up KNN graph on " << AddCommas(concatenated_data.size()) << " points" << std::endl;
+  knncolle::AnnoyEuclidean<int, float> searcher(ndim, nobs, concatenated_data.data());
+
+  umappp::NeighborList<float> output(nobs);
+
+  if (verbose)
+    std::cerr << "...building KNN graph" << std::endl;
+
+  auto cell_graph = std::make_shared<CellGraph>();
   
+  #pragma omp parallel for num_threads(threads)
+  for (size_t i = 0; i < nobs; ++i) {
+    if (i % 5000 == 0 && verbose)
+      std::cerr << "...working on cell " <<
+	AddCommas(i) << " with thread " <<
+	omp_get_thread_num() << " K " << num_neighbors << std::endl;
+    cell_graph->AddNode(CellNode(searcher.find_nearest_neighbors(i, num_neighbors)));
+  }
+
+  //
+  Tag gtag("GA","knn");
+  gtag.addValue("NN", std::to_string(num_neighbors));
+  AddGraphColumn(gtag, cell_graph->toStringColumn());
+
 }
 
 void CellTable::print_correlation_matrix(const std::vector<std::pair<std::string, const std::shared_ptr<Column>>>& data,
@@ -723,4 +661,66 @@ void CellTable::print_correlation_matrix(const std::vector<std::pair<std::string
 
         std::cout << data[i].first << "," << data[j].first << "," << corr << std::endl;
     }
+}
+
+void CellTable::process_csv_file__(const char* file,
+				   const std::function<CellRow(const CellRow&)>& func,
+				   bool verbose, bool header_only) {
+
+  // make the csv reader
+  io::LineReader reader(file, stdin);
+  
+  // for verbose
+  size_t count = 0;
+  
+  // Read and process the lines
+  std::string line;
+  bool header_read = false;
+  char* next_line_ptr;
+  while ((next_line_ptr = reader.next_line()) != nullptr) {
+    line = std::string(next_line_ptr);
+    if (line.size() == 0) {
+      break;
+    }
+    // If the line starts with '@', parse it as a Tag and add it to m_header
+    if (line[0] == '@') {
+      Tag tag(line);
+      m_header.addTag(tag);
+    } else {
+
+      if (!header_read) {
+	x = m_header.GetX();
+	y = m_header.GetY();
+	header_read = true;
+	
+	check_header__();
+      }
+
+      if (header_only) {
+	break;
+      }
+
+      // container to store just one line
+      int col_count = m_header.ColumnCount();
+      CellRow values(col_count); 
+
+      // read one line
+      int num_elems = read_one_line__(line, values);
+      if (num_elems != col_count) {
+	throw std::runtime_error("Error on line: " + line + "\n\tread " +
+				 std::to_string(num_elems) + " expected " +
+				 std::to_string(col_count));
+      }
+      
+      func(values);
+      
+      // will throw an error if detects type mismatch
+      //add_row_to_table__(values);
+      
+      // verbose output
+      if (verbose)
+	verbose_line_read__(count);
+      count++;
+    }
+  }
 }

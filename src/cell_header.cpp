@@ -6,25 +6,19 @@
 Tag::Tag(const std::string& type, const std::string& nm) {
 
   record_type = type;
-  values["NM"] = nm;
+  name = nm;
   
 }
 
 void CellHeader::Cut(const std::set<std::string>& tokens) {
   
-  std::set<std::string> col_order_set(col_order.begin(), col_order.end());
-
   std::set<std::string> tags_set;
   
   for (const auto& t : tags)
     tags_set.insert(t.name);
   
-  // Remove elements from m_table and col_order if they are not in tokens
+  // Remove elements from tags if they are not in tokens
   for (const auto& token : tokens) {
-    if (col_order_set.count(token) == 0) {
-      std::cerr << "Warning: '" << token << "' not found in col_order" << std::endl;
-    }
-    
     if (tags_set.count(token) == 0) {
       std::cerr << "Warning: '" << token << "' not found in tags" << std::endl;
     }
@@ -38,10 +32,6 @@ void CellHeader::Cut(const std::set<std::string>& tokens) {
   // Resize tags to remove the elements whose names are not in tokens
   tags.resize(new_end - tags.begin());
 
-  // remove col_order elements
-  col_order.erase(std::remove_if(col_order.begin(), col_order.end(), [&tokens](const std::string& item) {
-    return std::find(tokens.begin(), tokens.end(), item) == tokens.end();
-  }), col_order.end());
 }
 
 void CellHeader::Remove(const std::string& token) {
@@ -56,21 +46,21 @@ void CellHeader::Remove(const std::string& token) {
     std::cerr << "Warning: '" << token << "' not found in the markers or meta of table" << std::endl;
   }
   
-  // Remove elements of col_order if they are in the tokens vector
-  auto new_end = std::remove_if(col_order.begin(), col_order.end(), [&token, &token_found](const std::string& item) {
-    if (item == token) {
+  // Remove elements of tags if they are in the tokens vector
+  auto new_end = std::remove_if(tags.begin(), tags.end(), [&token, &token_found](const Tag& item) {
+    if (item.name == token) {
       token_found = true;
       return true;
     }
     return false;
   });
 
-  // Emit a warning to std::cerr if the token is not found in col_order
+  // Emit a warning to std::cerr if the token is not found in tags
   if (!token_found) {
-    std::cerr << "Warning: '" << token << "' not found in col_order" << std::endl;
+    std::cerr << "Warning: '" << token << "' not found in tags" << std::endl;
   } else {
     // Resize col_order to remove the elements that were found in tokens
-    col_order.resize(new_end - col_order.begin());
+   tags.resize(new_end - tags.begin());
   }
 
   
@@ -141,6 +131,10 @@ bool Tag::isMetaTag() const {
   return record_type == "CA";
 }
 
+bool Tag::isGraphTag() const {
+  return record_type == "GA";
+}
+
 bool Tag::isXDim() const {
   return record_type == "XD";
 }
@@ -159,28 +153,37 @@ bool Tag::isIDTag() const {
 
 
 std::string Tag::GetName() const {
-  if (values.empty()) {
-    
-    throw std::runtime_error("Error: tag " + record_type + "is empty, needs NM tag");
-  }
-
-  const auto& iter = values.find("NM");
-  if (iter == values.end()) {
-    throw std::runtime_error("Error: tag " + record_type + "requires NM tag");
-  }
   
-  return iter->second;
+  if (!isVersionTag() && name.empty())
+    throw std::runtime_error("Error: tag " + record_type + " requires NM tag");
+  
+  return name;
 }
 
 void Tag::addValue(const std::string& field, const std::string& value) {
+  
+  if (field == "NM") {
+    name = value;
+    return;
+  }
+  
   values[field] = value;
 
-  if (field == "NM")
-    name = value;
+}
+
+bool Tag::hasName() const {
+  return !name.empty();
 }
 
 void CellHeader::addTag(const Tag& tag) {
-    tags.push_back(tag);
+
+  if (!tag.isVersionTag()) {
+    if (!tag.hasName()) {
+      throw std::runtime_error("Tag of record type " + tag.record_type + " needs an NM:<name> field");
+    }
+  }
+
+  tags.push_back(tag);
   
   if (tag.isMarkerTag()) {
     markers_.insert(tag.GetName());
@@ -196,15 +199,17 @@ void CellHeader::addTag(const Tag& tag) {
     id_ = tag.GetName();
   } else if (tag.isVersionTag()) {
     ;//
+  } else if (tag.isGraphTag()) {
+    graph_.insert(tag.GetName());
   } else {
     throw std::runtime_error("Tag: " + tag.record_type + " - must be one of: HD, MA, CA, XD, YD, ZD, ID");
   }
-  
 }
-
 
 std::ostream& operator<<(std::ostream& os, const Tag& tag) {
   os << "@" << tag.record_type;
+  if (!tag.name.empty())
+    os << "\tNM:" << tag.name;
   for (const auto& kv : tag.values) {
     os << "\t" << kv.first << ":" << kv.second;
   }
