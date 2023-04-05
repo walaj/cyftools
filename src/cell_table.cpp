@@ -324,7 +324,7 @@ void CellTable::PrintTable(bool header) const {
     m_header.Print();
   
   // Create a lookup table with pointers to the Column values
-  std::vector<const std::shared_ptr<Column>> lookup_table;
+  std::vector<std::shared_ptr<Column>> lookup_table;
   for (const auto& c : m_header.tags) {
     auto it = m_table.find(c.GetName());
     if (it != m_table.end()) {

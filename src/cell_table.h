@@ -1,7 +1,6 @@
 #ifndef CELL_TABLE_H
 #define CELL_TABLE_H
 
-#include "json_reader.h"
 #include "cell_column.h"
 #include "polygon.h"
 #include "cell_header.h"

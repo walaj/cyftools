@@ -10,19 +10,20 @@ EIGEN = -I$(HOME)/software/eigen-3.4.0
 KMEANS = -I$(HOME)/git/CppKmeans/include
 ANNOY = -I$(HOME)/git/annoy
 
-OMP = -I/opt/homebrew/opt/libomp/include
-OMPL = -L/opt/homebrew/opt/libomp/lib -lomp
+#OMP = -I/opt/homebrew/opt/libomp/include
+#OMPL = -L/opt/homebrew/opt/libomp/lib -lomp
 
 BASE=/Users/jeremiahwala/opt/miniconda3
 
-OPENMP = -Xpreprocessor -fopenmp
+#OPENMP = -Xpreprocessor -fopenmp
+OPENMP = -fopenmp
 CFLAGS = -g -std=c++17 $(OPENMP) -I. -I.. $(NETCDF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(HNSW) $(EIGEN) $(KMEANS) $(ANNOY) $(OMP)
 #CFLAGS = -g -std=c++17 -I. -I.. $(NETCDF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(HNSW) $(EIGEN) $(KMEANS) $(ANNOY)
 
 LDFLAGS = $(OMPL)
 
 # Specify the source files
-SRCS = cysift.cpp jsoncpp.cpp cell_table.cpp polygon.cpp cell_header.cpp cell_graph.cpp
+SRCS = cysift.cpp cell_table.cpp polygon.cpp cell_header.cpp cell_graph.cpp
 
 # Specify the object files
 OBJS = $(SRCS:.cpp=.o)

@@ -2,6 +2,7 @@
 #define CELL_COLUMN_H
 
 #include <vector>
+#include <variant>
 #include <string>
 #include <sstream>
 #include <algorithm>
