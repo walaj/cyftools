@@ -12,7 +12,9 @@ public:
   
   CellTable() {}
 
-  CellTable(const char* file, bool verbose);
+  CellTable(int test);
+  
+  CellTable(const char* file, bool verbose, bool header_only);
   
   void AddColumn(const std::string& key, std::shared_ptr<Column> column); 
 
@@ -54,6 +56,8 @@ public:
   void Remove(const std::string& token);
   
   void Cut(const std::set<std::string>& tokens);
+
+
   
  private:
   

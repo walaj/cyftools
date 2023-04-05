@@ -28,7 +28,19 @@ void CellTable::Log10() {
   }
 }
 
-CellTable::CellTable(const char* file, bool verbose) {
+/*CellTable::CellTable(int test) {
+
+  io::CSVReader<29> in("full_noheader2.csv");
+  size_t count = 0;
+  float v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v27, v28, v29;
+  while(in.read_row(v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v27, v28, v29)) {
+    count++;
+    verbose_line_read__(count);
+  }
+  
+  }*/
+
+CellTable::CellTable(const char* file, bool verbose, bool header_only) {
 
   // make the csv reader
   io::LineReader reader(file, stdin);
@@ -68,6 +80,9 @@ CellTable::CellTable(const char* file, bool verbose) {
       
     } else {
 
+      if (header_only)
+	break;
+      
       // container to store just one line
       CellRow values(m_header.col_order.size()); 
       
@@ -90,68 +105,6 @@ CellTable::CellTable(const char* file, bool verbose) {
   }
 }
 
-/*CellTable::CellTable(const char* file, const char* markers_file, bool verbose) {
-
-  // read markers first
-  read_markers_json__(markers_file);
-
-  // make the csv reader
-  io::LineReader reader(file, stdin);
-  
-  // If fname is "-" read from standard input
-  if (strcmp(file, "-") == 0) {
-    //reader = std::make_shared<io::LineReader>(io::LineReader(file, stdin));
-  } else {
-    //reader = io::LineReader(file);
-  }
-      
-  // reader the header
-  header_read__(reader.next_line());
-      
-  // container to store just one line
-  CellRow values(m_header.col_order.size()); // m_table.size());
-  
-  // for verbose
-  size_t count = 0;
-      
-  // read the data
-  while (read_csv_line__(reader, values)) {
-
-    // will throw an error if detects type mismatch
-    add_row_to_table__(values);
-
-    // verbose output
-    if (verbose) 
-      verbose_line_read__(count);
-    count++;
-	
-  }
-      
-}
-*/
-
-/*
-void CellTable::read_markers_json__(const char* markers_file) {
-      
-  // read the markers first
-  std::ifstream       mfile(markers_file);
-  std::string         line;
-      
-  // read in the markers
-  std::string mm = std::string(markers_file);
-  JsonReader json_reader(mm);
-  json_reader.ReadData();
-      
-  x = json_reader.GetX();
-  y = json_reader.GetY();
-  assert(!x.empty());
-  assert(!y.empty());  
-      
-  markers = json_reader.GetMarkers();
-  meta = json_reader.GetMetaCells();  
-      
-}
-*/
 void CellTable::verbose_line_read__(int count) const {
   
   // verbose output
@@ -704,9 +657,9 @@ void CellTable::SubsetROI(const std::vector<Polygon> &polygons) {
 
     // Loop through all polygons and check if the point is inside any of them
     for (const auto &polygon : polygons) {
-
       // if point is in this polygon, add the polygon id number to the roi
       if (polygon.PointIn(x_,y_)) {
+	std::cerr << " ADDING POINT " << x_ << "," << y_ << std::endl;
 	new_data->SetNumericElem(polygon.Id, i);
 	
 	//std::visit([i, id = polygon.Id](auto& vec) { vec[i] = id; }, table["sparoi"]);
