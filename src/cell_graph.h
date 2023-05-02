@@ -10,15 +10,15 @@
 #include "umappp/spectral_init.hpp"
 #include "knncolle/knncolle.hpp"
 
-#include "cell_column.h"
-
-using Neighbors = std::vector<umappp::Neighbor<float>>;
+//using Neighbors = std::vector<umappp::Neighbor<float>>;
+using Neighbors    = std::vector<umappp::Neighbor<double>>;
+using NeighborsInt = std::vector<std::pair<int, int>>;
 
 class CellNode {
  public:
   CellNode() = default;
   
-  explicit CellNode(const Neighbors& neighbors) : neighbors_(neighbors) {}
+  explicit CellNode(const Neighbors& neighbors);
   
   explicit CellNode(const std::string& input_str) { parse_neighbors(input_str); }
   
@@ -26,16 +26,20 @@ class CellNode {
   
   void set_neighbors(const Neighbors& neighbors) { neighbors_ = neighbors; }
 
-  std::string toString() const;
-    
+  std::string toString(bool integerize) const;
+
+  size_t size() const { return neighbors_.size(); }
+  
+  friend std::ostream& operator<<(std::ostream& os, const CellNode& cn);
   
  private:
   Neighbors neighbors_;
 
   void parse_neighbors(const std::string& input_str);
-  
+
 };
 
+/*
 class CellGraph {
   
  public:
@@ -54,11 +58,12 @@ class CellGraph {
   const_iterator begin() const { return nodes_.begin(); }
   const_iterator end() const { return nodes_.end(); }
 
-  std::shared_ptr<StringColumn> toStringColumn() const;
+  //std::shared_ptr<StringColumn> toStringColumn() const;
   
  private:
   std::vector<CellNode> nodes_;
   
 };
+*/
 
 #endif

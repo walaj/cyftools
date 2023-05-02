@@ -10,6 +10,8 @@
 #include <sstream>
 
 struct Tag {
+
+  static const std::unordered_set<std::string> ALLOWED_TAGS;
   
   std::string record_type; // e.g., "MA", "CD"
   std::unordered_map<std::string, std::string> values; // Stores the tag fields and their data
@@ -31,10 +33,9 @@ struct Tag {
   bool hasName() const;
 
   bool isColumnTag() const {
-    std::unordered_set<std::string> sset = {"MA","ID","GA","CA","XD","YD","ZD"};
-    return sset.count(record_type); 
+    return ALLOWED_TAGS.count(record_type); 
   }
-  
+
   // Overloaded << operator
   friend std::ostream& operator<<(std::ostream& os, const Tag& tag);
 
@@ -45,8 +46,8 @@ struct Tag {
   bool isXDim() const;
   bool isYDim() const;
   bool isZDim() const;
+  bool isFlagTag() const;
   bool isIDTag() const;    
-  bool isOrderTag() const;
   bool isVersionTag() const;
   
   std::string GetName() const;
@@ -85,8 +86,12 @@ public:
 
   friend std::ostream& operator<<(std::ostream& os, const CellHeader& h);
 
+  size_t whichMarkerColumn(const std::string& str) const;
+  
   bool hasMarker(const std::string& m) const;
   bool hasMeta(const std::string& m) const;  
+  bool hasFlag(const std::string& m) const;
+  bool hasGraph(const std::string& m) const;  
 
   std::string GetX() const { return x_; }
   std::string GetY() const { return y_; }
@@ -167,9 +172,8 @@ private:
   std::set<std::string> markers_;
   std::set<std::string> meta_;
   std::set<std::string> graph_;
+  std::set<std::string> flag_;
   
-  //std::vector<std::string> col_order;
-
 };
 
 #endif

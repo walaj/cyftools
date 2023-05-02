@@ -3,6 +3,9 @@
 #include <regex>
 #include <set>
 
+const std::unordered_set<std::string> Tag::ALLOWED_TAGS =
+  {"MA","ID","GA","CA","FA","XD","YD","ZD"};
+
 Tag::Tag(const std::string& type, const std::string& nm) {
 
   record_type = type;
@@ -66,8 +69,6 @@ void CellHeader::Remove(const std::string& token) {
   
 }
 
-
-
 void CellHeader::Print() const {
   for (const auto& tag : tags) 
     std::cout << tag << std::endl;
@@ -94,15 +95,17 @@ Tag::Tag(const std::string& line) {
   }
 }
 
-bool Tag::isOrderTag() const {
-  bool v = record_type == "OD";
+bool Tag::isFlagTag() const {
+  bool v = record_type == "FA";
 
   if (!v)
     return v;
-
+  
+  // enforce any requirements for further tags
+  //***
+  
   return v;
 }
-
 
 bool Tag::isVersionTag() const {
   bool v = record_type == "HD";
@@ -201,6 +204,8 @@ void CellHeader::addTag(const Tag& tag) {
     ;//
   } else if (tag.isGraphTag()) {
     graph_.insert(tag.GetName());
+  } else if (tag.isFlagTag()) {
+    flag_.insert(tag.GetName());
   } else {
     throw std::runtime_error("Tag: " + tag.record_type + " - must be one of: HD, MA, CA, XD, YD, ZD, ID");
   }
@@ -225,8 +230,32 @@ bool CellHeader::hasMeta(const std::string& m) const {
   return (meta_.count(m));
 }
 
+bool CellHeader::hasFlag(const std::string& m) const {
+  return (flag_.count(m));
+}
+
+bool CellHeader::hasGraph(const std::string& m) const {
+  return (graph_.count(m));
+}
+
 std::ostream& operator<<(std::ostream& os, const CellHeader& h) {
   for (const auto& k : h.tags)
     os << k << std::endl;
   return os;
+}
+
+size_t CellHeader::whichMarkerColumn(const std::string& str) const {
+
+  size_t count = 0;
+  for (const auto& t : tags) {
+    if (t.isColumnTag() && t.isMarkerTag()) {
+      if (t.GetName() == str)
+	return count;
+      count++;
+    }
+  }
+  
+  std::cerr << "Column: " << str << " never found in header" << std::endl;
+  return static_cast<size_t>(-1);
+  
 }

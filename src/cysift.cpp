@@ -36,11 +36,11 @@ namespace opt {
 #define TVERB(msg) \
   if (opt::verbose) {		   \
     std::cerr << msg << std::endl; \
-  }
+ }
 
 static CellTable table;
 
-static const char* shortopts = "jhHyvr:t:g:b:q:c:s:n:r:w:l:x:X:";
+static const char* shortopts = "jhHyvr:t:d:g:b:q:c:s:k:n:r:w:l:x:X:o:R:f:";
 static const struct option longopts[] = {
   { "verbose",                    no_argument, NULL, 'v' },
   { "threads",                    required_argument, NULL, 't' },
@@ -60,20 +60,25 @@ static const struct option longopts[] = {
 
 static const char *RUN_USAGE_MESSAGE =
 "Usage: cysift [module] <options> \n"
-"  view      - View the cell table\n"
-"  cut       - Select only given markers and metas\n"
-"  subsample - Subsample cells randomly\n"
-"  plot      - Generate an ASCII style plot\n"
-"  roi       - Trim cells to a region of interest within a given polygon\n"
-"  histogram - Create a histogram of the data\n"
-"  log10     - Apply a base-10 logarithm transformation to the data\n"
-"  correlate - Calculate the correlation between variables\n"
-"  info      - Display information about the dataset"
-"  knn       - Construct the marker space KNN graph\n"
+"  view       - View the cell table\n"
+"  cut        - Select only given markers and metas\n"
+"  subsample  - Subsample cells randomly\n"
+"  plot       - Generate an ASCII style plot\n"
+"  roi        - Trim cells to a region of interest within a given polygon\n"
+"  histogram  - Create a histogram of the data\n"
+"  log10      - Apply a base-10 logarithm transformation to the data\n"
+"  correlate  - Calculate the correlation between variables\n"
+"  info       - Display information about the dataset"
+"  knn        - Construct the marker space KNN graph\n"
+"  spatial    - Construct the spatial KNN graph\n"
+"  select     - Select by cell phenotype flags\n"
+"  pheno      - Phenotype cells to set the flag\n"
+"  radialdens - Calculate density of cells within a radius\n"
 "\n";
 
 static void read_table();
 
+static int radialdensfunc(int argc, char** argv);
 static int subsamplefunc(int argc, char** argv);
 static int viewfunc(int argc, char** argv);
 static int infofunc(int argc, char** argv);
@@ -87,6 +92,10 @@ static int subsamplefunc(int argc, char** argv);
 static int log10func(int argc, char** argv);
 static int cutfunc(int argc, char** argv);
 static int knnfunc(int argc, char** argv);
+static int radiusfunc(int argc, char** argv);
+static int selectfunc(int argc, char** argv);
+static int spatialfunc(int argc, char** argv); 
+static int phenofunc(int argc, char** argv);
 
 static void parseRunOptions(int argc, char** argv);
 
@@ -102,9 +111,29 @@ int main(int argc, char **argv) {
 
   int val = 0;
   
+/*
+  switch(hash(opt::module)) {
+  case hash("debug"):     val = debugfunc(argc, argv); break;
+  case hash("subsample"): val = subsamplefunc(argc, argv); break;
+  case hash("plot"):     return plotfunc(argc, argv); 
+  case hash("roi"):       val = roifunc(argc, argv); break;
+  case hash("crop"):      val = cropfunc(argc, argv); break;
+  case hash("correlate"): return correlatefunc(argc, argv);
+  case hash("histogram"); return histogramfunc(argc, argv);
+  case hash("log10"):     val = log10func(argc, argv); break;
+  case hash("cut"):       val = cutfunc(argc, argv); break;
+  case hash("info"):      return(infofunc(argc, argv));
+  case hash("view"):      val = viewfunc(argc, argv); break;
+  case hash("knn"):       val = knnfunc(argc, argv); break;
+  default: assert(false);
+  }
+*/
+  
   // get the module
   if (opt::module == "debug") {
     val = debugfunc(argc, argv);
+  } else if (opt::module == "radialdens") {
+    val = radialdensfunc(argc, argv);
   } else if (opt::module == "subsample") {
     val = subsamplefunc(argc, argv);
   } else if (opt::module == "plot") {
@@ -127,12 +156,22 @@ int main(int argc, char **argv) {
     val = viewfunc(argc, argv);
   } else if (opt::module == "knn") {
     val = knnfunc(argc, argv);
+  } else if (opt::module == "spatial") {
+    val = spatialfunc(argc, argv);    
+  } else if (opt::module == "select") {
+    val = selectfunc(argc, argv);
+  } else if (opt::module == "pheno") {
+    val = phenofunc(argc, argv);
   } else {
     assert(false);
   }
 
   // print it out
   if (val == 0) {
+
+    if (opt::verbose)
+      std::cerr << "...printing final table" << std::endl;
+    
     if (!opt::header_only)
       table.PrintTable(opt::header);
     else
@@ -145,22 +184,30 @@ int main(int argc, char **argv) {
 static void read_table() {
 
   if (!opt::infile.empty()) {
-    table = CellTable(opt::quantfile.c_str(), opt::verbose, opt::header_only);
+    table = CellTable(opt::quantfile.c_str(), opt::verbose, opt::header_only, true);
   }
   
 }
 
-static int knnfunc(int argc, char** argv) {
+static void read_table_no_convert() {
 
-  int n = 10;
+  if (!opt::infile.empty()) {
+    table = CellTable(opt::quantfile.c_str(), opt::verbose, opt::header_only, false);
+  }
+  
+}
+
+static int radiusfunc(int argc, char** argv) {
+
+  int radius = 20;
   bool die = false;
+  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
+    case 'r' : arg >> radius; break;
     case 'v' : opt::verbose = true; break;
     case 'h' : opt::header = true; break;
-    case 't' : arg >> opt::threads; break;
-    case 'n' : arg >> n; break;
     default: die = true;
     }
   }
@@ -175,13 +222,56 @@ static int knnfunc(int argc, char** argv) {
   }
   
   // display help if no input
-  if (opt::infile.empty()) {
+  if (opt::infile.empty() || die) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift radius [csvfile] -r <dist>\n"
+      "  Select cells with centroids within spatial distance of r\n"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -r [10]                   Radius to select out\n"
+      "    -v, --verbose             Increase output to stderr\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  read_table();
+
+  return 0;
+}
+
+static int knnfunc(int argc, char** argv) {
+
+  int n = 10;
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'h' : opt::header = true; break;
+    case 't' : arg >> opt::threads; break;
+    case 'k' : arg >> n; break;
+    default: die = true;
+    }
+  }
+
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+  
+  // display help if no input
+  if (opt::infile.empty() || die) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift knn [csvfile]\n"
       "  Construct the KNN graph (in marker space)\n"
       "    csvfile: filepath or a '-' to stream to stdin\n"
-      "    -n [10]                   Number of neighbors\n"
+      "    -k [10]                   Number of neighbors\n"
       "    -v, --verbose             Increase output to stderr\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -194,6 +284,8 @@ static int knnfunc(int argc, char** argv) {
 
   return 0;
 }
+
+
 
 static int infofunc(int argc, char** argv) {
 
@@ -217,7 +309,7 @@ static int infofunc(int argc, char** argv) {
   
   
   // display help if no input
-  if (opt::infile.empty()) {
+  if (opt::infile.empty() || die) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift info [csvfile]\n"
@@ -286,6 +378,9 @@ static int cutfunc(int argc, char** argv) {
     tokens.insert(token);
   }
 
+  // read the table
+  read_table();
+
   // if not a strict cut, keep dims and id
   if (!strict_cut) {
     tokens.insert(table.GetHeader().GetX());
@@ -295,9 +390,6 @@ static int cutfunc(int argc, char** argv) {
   }
   tokens.erase(std::string());
 
-  // read the table
-  read_table();
-  
   // cut from the table and header
   table.Cut(tokens);
 
@@ -364,7 +456,9 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "histogram" || opt::module == "log10" ||
 	 opt::module == "crop"  || opt::module == "knn" || 
 	 opt::module == "correlate" || opt::module == "info" ||
-	 opt::module == "cut" || opt::module == "view")) {
+	 opt::module == "cut" || opt::module == "view" ||
+	 opt::module == "spatial" || opt::module == "radialdens" || 
+	 opt::module == "select" || opt::module == "pheno")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
     die = true;
   }
@@ -437,7 +531,7 @@ static int roifunc(int argc, char** argv) {
 
 
   // display help if no input
-  if (opt::infile.empty() || die || opt::roifile.empty()) {
+  if (opt::infile.empty() || opt::roifile.empty() || die) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift roi [csvfile] <options>\n"
@@ -459,6 +553,9 @@ static int roifunc(int argc, char** argv) {
       std::cerr << c << std::endl;
 
   read_table();
+
+  if (opt::verbose)
+    std::cerr << table;
   
   // subset the vertices
   table.SubsetROI(rois);
@@ -470,13 +567,14 @@ static int roifunc(int argc, char** argv) {
 static int viewfunc(int argc, char** argv) {
 
   int precision = 2;
-  
+
   bool die = false;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'n' : arg >> precision; break;
+    case 't' : arg >> opt::threads; break;      
     case 'h' : opt::header = true; break;
     case 'H' : opt::header_only = true;
     default: die = true;
@@ -493,13 +591,14 @@ static int viewfunc(int argc, char** argv) {
   }
   
   // display help if no input
-  if (opt::infile.empty()) {
+  if (opt::infile.empty() || die) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift view [csvfile] <options>\n"
       "  View the contents of a cell table\n" 
       "  csvfile: filepath or a '-' to stream to stdin\n"
-      "  -n  [2]                   Number of decimals to keep\n"     
+      "  -n  [2]                   Number of decimals to keep\n"
+      "  -t  [1]                   Number of threads\n"
       "  -H                        View only the header\n"      
       "  -h                        Output with the header\n"
       "  -v, --verbose             Increase output to stderr"
@@ -590,7 +689,7 @@ static int plotfunc(int argc, char** argv) {
 
   
   // display help if no input
-  if (opt::infile.empty()) {
+  if (opt::infile.empty() || die) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift plot [csvfile] <options>\n"
@@ -732,7 +831,7 @@ static int cropfunc(int argc, char** argv) {
 
   
   // display help if no input
-  if (opt::infile.empty() || cropstring.empty()) {
+  if (opt::infile.empty() || cropstring.empty() || die) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift crop [csvfile] <options>\n"
@@ -831,4 +930,215 @@ static int debugfunc(int argc, char** argv) {
   
   return 0;
   
+}
+
+static int spatialfunc(int argc, char** argv) {
+
+  int n = 10;
+  int d = -1;
+  
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'h' : opt::header = true; break;
+    case 't' : arg >> opt::threads; break;
+    case 'k' : arg >> n; break;
+    case 'd' : arg >> d; break;            
+    default: die = true;
+    }
+  }
+  
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+  
+  // display help if no input
+  if (opt::infile.empty() || die) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift spatial [csvfile]\n"
+      "  Construct the Euclidean KNN spatial graph\n"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -k [10]               Number of neighbors\n"
+      "    -d [-1]               Max distance to include as neighbor (-1 = none)\n"
+      "    -v, --verbose         Increase output to stderr\n"      
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  read_table();
+
+  table.KNN_spatial(n, d, opt::verbose, opt::threads);
+
+  return 0;
+}
+
+static int selectfunc(int argc, char** argv) {
+
+  uint64_t on = 0;
+  uint64_t off = 0;
+  
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'h' : opt::header = true; break;
+    case 'o' : arg >> on; break;
+    case 'f' : arg >> off; break;
+    default: die = true;
+    }
+  }
+
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+  
+  // display help if no input
+  if (opt::infile.empty() || die) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift select [csvfile]\n"
+      "  Select cells by phenotype flag\n"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -o                    On flags\n"
+      "    -f                    Off flags\n"
+      "    -h                    Output with the header\n"      
+      "    -v, --verbose         Increase output to stderr\n"      
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // read it in 
+  if (!opt::infile.empty()) {
+    table = CellTable(); //opt::quantfile.c_str(), opt::verbose, opt::header_only, false);
+  }
+
+  // stream the selection function
+  CellTable* table_ptr = &table;
+  table.Streamer(opt::header, [table_ptr, on, off](const std::string& in, std::string& out) {
+    return table_ptr->StreamSelect(in, out, on, off);
+  });
+  
+  return 0;
+}
+
+static int phenofunc(int argc, char** argv) {
+
+  std::string file;
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'h' : opt::header = true; break;
+    case 't' : arg >> file; break;
+    default: die = true;
+    }
+  }
+
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+  
+  // display help if no input
+  if (opt::infile.empty() || die) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift pheno [csvfile]\n"
+      "  Phenotype cells (set the flags) with threshold file\n"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -t                    Phenotype file\n"
+      "    -h                    Output with the header\n"      
+      "    -v, --verbose         Increase output to stderr\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  read_table();
+
+  std::unordered_map<std::string, std::pair<float,float>> tt = table.phenoread(file);
+
+  if (opt::verbose)
+    for (const auto& c : tt)
+      std::cerr << c.first << " -- " << c.second.first << "," << c.second.second << std::endl;
+
+  table.phenotype(tt);
+  
+  return 0;
+}
+
+static int radialdensfunc(int argc, char** argv) {
+
+  uint64_t inner = 0;
+  uint64_t outer = 20;
+  uint64_t on = 0;
+  uint64_t off = 0;
+  
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'h' : opt::header = true; break;
+    case 't' : arg >> opt::threads; break;
+    case 'r' : arg >> inner; break;
+    case 'R' : arg >> outer; break;
+    case 'o' : arg >> on; break;
+    case 'f' : arg >> off; break;                  
+    default: die = true;
+    }
+  }
+  
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+  
+  // display help if no input
+  if (opt::infile.empty() || die) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift radialdens [csvfile]\n"
+      "  Calculate the density of cells away from individual cells\n"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -r [20]                Outer radius\n"
+      "    -R [0]                Inner radius\n"
+      "    -o                    On flags\n"
+      "    -f                    Off flags\n"
+      "    -v, --verbose         Increase output to stderr\n"      
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  read_table();
+
+  table.RadialDensity(inner, outer, on, off, "testr", opt::verbose);
+
+  return 0;
 }

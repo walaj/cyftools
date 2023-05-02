@@ -25,6 +25,8 @@ template <typename T> inline std::string AddCommas(T data) {
   return s;
 }
 
+int get_nth_element_as_integer(const std::string_view& str, size_t n);
+
 /*std::set<int> sampleWithoutReplacement(int n, int N, int seed) {
 
   assert(n <= N);

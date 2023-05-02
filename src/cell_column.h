@@ -1,30 +1,27 @@
-#ifndef CELL_COLUMN_H
-#define CELL_COLUMN_H
+#pragma once
 
-#include <vector>
 #include <variant>
-#include <string>
-#include <sstream>
-#include <algorithm>
-#include <typeinfo>
-#include <type_traits>
 
-#include "cy_utils.h"
-#include "csv.h"
+#include "cell_utils.h"
+#include "cell_flag.h"
+#include "cell_graph.h"
 
 using namespace std;
 
 /// @brief Alias for a row of cells, which can contain integers, floats, or strings.
-using CellRow = vector<variant<int, float, string>>;
+using CellDatum = std::variant<uint64_t, float, std::string>;
+using CellRow = vector<variant<uint64_t, float, string>>;
 
 // Function pointer type definition
 using CellRowFunc = CellRow(*)(const CellRow&);
 
 /// @brief Enum class representing the different types a Column can have.
 enum class ColumnType {
-    INT,
-    FLOAT,
-    STRING
+  INT,
+  FLOAT,
+  STRING,
+  FLAG,
+  GRAPH
 };
 
 /**
@@ -50,8 +47,12 @@ public:
 
     virtual void Log10() = 0;
 
+    virtual void resize(size_t n) = 0;
+
     virtual float GetNumericElem(size_t i) const = 0;
 
+    virtual std::string GetStringElem(size_t i) const = 0;
+    
     virtual void SubsetColumn(const std::vector<size_t>& indices) = 0;
 
     virtual void PrintElem(size_t i) const = 0;
@@ -76,7 +77,7 @@ class NumericColumn : public Column {
   
   NumericColumn() {
     
-    if (std::is_same_v<T, int>) {
+    if (std::is_same_v<T, uint64_t>) {
       m_type = ColumnType::INT;
     } else if (std::is_same_v<T, float>) {
       m_type = ColumnType::FLOAT;
@@ -85,10 +86,10 @@ class NumericColumn : public Column {
     }
     
   }
-  
+
   NumericColumn(const T& initial_elem) {
     
-    if (std::is_same_v<T, int>) {
+    if (std::is_same_v<T, uint64_t>) {
       m_type = ColumnType::INT;
     } else if (std::is_same_v<T, float>) {
       m_type = ColumnType::FLOAT;
@@ -107,11 +108,21 @@ class NumericColumn : public Column {
     m_vec.clear();
     m_vec.reserve(n);
   }
+
+  void resize(size_t n) override {
+    m_vec.resize(n);
+  }
   
   float GetNumericElem(size_t i) const override {
     if (i >= m_vec.size())
       throw std::out_of_range("Index out of range");
     return m_vec.at(i);
+  }
+
+  std::string GetStringElem(size_t i) const override {
+    if (i >= m_vec.size())
+      throw std::out_of_range("Index out of range");
+    return std::to_string(m_vec.at(i));
   }
 
   void SetNumericElem(T val, size_t i) {
@@ -152,6 +163,9 @@ class NumericColumn : public Column {
   }
 
   void SetValueAt(size_t index, const T& value) {
+    if (index > this->size()) {
+      throw std::runtime_error("i is out of bonds on SetElem in Column");
+    }
     m_vec[index] = value;
   }
 
@@ -282,6 +296,13 @@ public:
     m_vec.push_back(initial_elem);
   }
   
+  std::string GetStringElem(size_t i) const override {
+    if (i >= m_vec.size())
+      throw std::out_of_range("Index out of range");
+    return m_vec.at(i);
+  }
+
+
   std::shared_ptr<Column> clone() const override {
     return std::make_shared<StringColumn>(*this);
   }
@@ -289,9 +310,15 @@ public:
   ColumnType GetType() const override {
     return ColumnType::STRING; 
   }
+
+  void SetValueAt(size_t index, const std::string& value) {
+    if (index > this->size()) {
+      throw std::runtime_error("i is out of bonds on SetElem in Column");
+    }
+    m_vec[index] = value;
+  }
   
-  
-  void PushElem(const std::string& elem) {
+ void PushElem(const std::string& elem) {
     m_vec.emplace_back(elem);
   }
   
@@ -316,45 +343,301 @@ public:
   float GetNumericElem(size_t i) const override { return 0; }
   float Pearson(const Column& c) const override { return 0; }
   float Mean() const override { return 0;   }
-    float Min() const override { return 0;   }
-    float Max() const override { return 0;   }
-    void SetPrecision(size_t n) override {}
-    
-    std::shared_ptr<Column> CopyToFloat() const override {
-      std::shared_ptr<NumericColumn<float>> fcol =
-	std::make_shared<NumericColumn<float>>(1);
-      return fcol;
-    }
-
-    void SubsetColumn(const std::vector<size_t>& indices) override {
-      std::vector<std::string> new_vec;
-      new_vec.reserve(indices.size());
-      for (auto i : indices) {
-	if (i >= 0 && i < m_vec.size()) {
-	  new_vec.push_back(m_vec[i]);
-	} else {
-	  throw std::out_of_range("SubsetColumn: index out of range");
-	}
-      }
-      m_vec = std::move(new_vec);
-    }
-
-    void PrintElem(size_t i) const override {
-
-      if (i < m_vec.size()) {
-	std::cout << m_vec.at(i);
+  float Min() const override { return 0;   }
+  float Max() const override { return 0;   }
+  void SetPrecision(size_t n) override {}
+  
+  std::shared_ptr<Column> CopyToFloat() const override {
+    std::shared_ptr<NumericColumn<float>> fcol =
+      std::make_shared<NumericColumn<float>>(1);
+    return fcol;
+  }
+  
+  void SubsetColumn(const std::vector<size_t>& indices) override {
+    std::vector<std::string> new_vec;
+    new_vec.reserve(indices.size());
+    for (auto i : indices) {
+      if (i >= 0 && i < m_vec.size()) {
+	new_vec.push_back(m_vec[i]);
       } else {
-	throw std::runtime_error("Out of bounds in PrintElem");
+	throw std::out_of_range("SubsetColumn: index out of range");
       }
     }
+    m_vec = std::move(new_vec);
+  }
+  
+  void PrintElem(size_t i) const override {
     
-    void reserve(size_t n) override {
-      m_vec.clear();
-      m_vec.reserve(n);
+    if (i < m_vec.size()) {
+      std::cout << m_vec.at(i);
+    } else {
+      throw std::runtime_error("Out of bounds in PrintElem");
     }
-    
+  }
+  
+  void reserve(size_t n) override {
+    m_vec.clear();
+    m_vec.reserve(n);
+  }
+
+  void resize(size_t n) override {
+    m_vec.resize(n);
+  }
+
+  
  private:
-    std::vector<std::string> m_vec;
+  std::vector<std::string> m_vec;
 };
 
-#endif
+
+class GraphColumn : public Column {
+  
+ public:
+ 
+  GraphColumn() = default;
+
+  GraphColumn(const CellNode& initial_elem) {
+    m_vec.push_back(initial_elem);
+  }
+
+  GraphColumn(const std::shared_ptr<StringColumn> st) {
+    this->reserve(st->size());
+    for (size_t i = 0; i < st->size(); i++) {
+      this->PushElem(CellNode(st->GetStringElem(i)));
+    }
+  }
+
+  std::string GetStringElem(size_t i) const override {
+    if (i >= m_vec.size())
+      throw std::out_of_range("Index out of range");
+    return m_vec.at(i).toString(m_integerize);
+  }
+  
+  std::shared_ptr<Column> clone() const override {
+    return std::make_shared<GraphColumn>(*this);
+  }
+  
+  ColumnType GetType() const override {
+    return ColumnType::GRAPH; 
+  }
+  
+  void PushElem(const CellNode& elem) {
+    m_vec.emplace_back(elem);
+  }
+
+  void SetValueAt(size_t index, const CellNode& value) {
+    if (index > this->size()) {
+      throw std::runtime_error("i is out of bounds on SetElem in GraphColumn");
+    }
+    m_vec[index] = value;
+  }
+
+  
+  size_t size() const override {
+    return m_vec.size();
+  }
+
+  const CellNode& GetNode(size_t index) const {
+    if (index > this->size()) {
+      throw std::runtime_error("i is out of bounds on GetNode in GraphColumn");
+    }
+    return m_vec[index];
+  }
+  
+  std::string toString() const override {
+        std::stringstream ss;
+        ss << "GraphColumn<CellNode>: [";
+        for (size_t i = 0; i < std::min(size(), (size_t)3); i++) {
+	  if (i > 0) ss << ", ";
+	  ss << m_vec[i];
+        }
+        if (size() > 3) ss << ", ...";
+        ss << "]";
+        return ss.str();
+  }
+
+  // do nothing for GraphColumn (or have dummies)
+  void Log10() override {}
+  float GetNumericElem(size_t i) const override { return 0; }
+  float Pearson(const Column& c) const override { return 0; }
+  float Mean() const override { return 0;   }
+  float Min() const override { return 0;   }
+  float Max() const override { return 0;   }
+  void SetPrecision(size_t n) override {}
+  std::shared_ptr<Column> CopyToFloat() const override {
+    std::shared_ptr<NumericColumn<float>> fcol =
+      std::make_shared<NumericColumn<float>>(1);
+    return fcol;
+  }
+  
+  void SubsetColumn(const std::vector<size_t>& indices) override {
+    std::vector<CellNode> new_vec;
+    new_vec.reserve(indices.size());
+    for (auto i : indices) {
+      if (i >= 0 && i < m_vec.size()) {
+	new_vec.push_back(m_vec[i]);
+      } else {
+	throw std::out_of_range("SubsetColumn: index out of range");
+      }
+    }
+    m_vec = std::move(new_vec);
+  }
+  
+  void PrintElem(size_t i) const override {
+    
+    if (i < m_vec.size()) {
+      std::cout << GetStringElem(i); //m_vec.at(i);
+    } else {
+      throw std::runtime_error("Out of bounds in PrintElem");
+    }
+  }
+
+  void SetIntegerize(bool ii) {
+    m_integerize = ii;
+  }
+  
+  void reserve(size_t n) override {
+    m_vec.clear();
+    m_vec.reserve(n);
+  }
+
+  void resize(size_t n) override {
+    m_vec.resize(n);
+  }
+
+  
+ private:
+
+  std::vector<CellNode> m_vec;
+
+  bool m_integerize = false;
+  
+};
+
+class FlagColumn : public Column {
+
+ public:
+ 
+  FlagColumn() = default;
+
+  FlagColumn(const std::shared_ptr<StringColumn> st) {
+    this->reserve(st->size());
+    for (size_t i = 0; i < st->size(); i++) {
+      this->PushElem(CellFlag(st->GetStringElem(i)));
+    }
+  }
+
+  FlagColumn(const std::shared_ptr<NumericColumn<uint64_t>> st) {
+    this->reserve(st->size());
+    for (size_t i = 0; i < st->size(); i++) {
+      this->PushElem(CellFlag(st->GetNumericElem(i)));
+    }
+  }
+
+  bool TestFlag(uint64_t on, uint64_t off, size_t i) const {
+    if (i >= m_vec.size())
+      throw std::out_of_range("Index out of range");
+    return m_vec.at(i).test(on, off);
+  }
+
+  void SetFlagOn(size_t n, size_t i) {
+    if (i >= m_vec.size())
+      throw std::out_of_range("Index out of range");
+    m_vec[i].setFlagOn(n);
+  }
+  void SetFlagOff(size_t n, size_t i) {
+    if (i >= m_vec.size())
+      throw std::out_of_range("Index out of range");
+    m_vec[i].setFlagOff(n);    
+  }
+  
+  
+  FlagColumn(const CellFlag& initial_elem) {
+    m_vec.push_back(initial_elem);
+  }
+
+  std::string GetStringElem(size_t i) const override {
+    if (i >= m_vec.size())
+      throw std::out_of_range("Index out of range");
+    return m_vec.at(i).toString();
+  }
+  
+  std::shared_ptr<Column> clone() const override {
+    return std::make_shared<FlagColumn>(*this);
+  }
+  
+  ColumnType GetType() const override {
+    return ColumnType::FLAG; 
+  }
+  
+  void PushElem(const CellFlag& elem) {
+    m_vec.emplace_back(elem);
+  }
+  
+  size_t size() const override {
+    return m_vec.size();
+  }
+  
+  std::string toString() const override {
+        std::stringstream ss;
+        ss << "FlagColumn<CellFlag>: [";
+        for (size_t i = 0; i < std::min(size(), (size_t)3); i++) {
+	  if (i > 0) ss << ", ";
+	  ss << m_vec[i];
+        }
+        if (size() > 3) ss << ", ...";
+        ss << "]";
+        return ss.str();
+  }
+
+  // do nothing for FlagColumn (or have dummies)
+  void Log10() override {}
+  float GetNumericElem(size_t i) const override { return 0; }
+  float Pearson(const Column& c) const override { return 0; }
+  float Mean() const override { return 0;   }
+  float Min() const override { return 0;   }
+  float Max() const override { return 0;   }
+  void SetPrecision(size_t n) override {}
+  std::shared_ptr<Column> CopyToFloat() const override {
+    std::shared_ptr<NumericColumn<float>> fcol =
+      std::make_shared<NumericColumn<float>>(1);
+    return fcol;
+  }
+  
+  void SubsetColumn(const std::vector<size_t>& indices) override {
+    std::vector<CellFlag> new_vec;
+    new_vec.reserve(indices.size());
+    for (auto i : indices) {
+      if (i >= 0 && i < m_vec.size()) {
+	new_vec.push_back(m_vec[i]);
+      } else {
+	throw std::out_of_range("SubsetColumn: index out of range");
+      }
+    }
+    m_vec = std::move(new_vec);
+  }
+  
+  void PrintElem(size_t i) const override {
+    
+    if (i < m_vec.size()) {
+      std::cout << m_vec.at(i);
+    } else {
+      throw std::runtime_error("Out of bounds in PrintElem");
+    }
+  }
+  
+  void reserve(size_t n) override {
+    m_vec.clear();
+    m_vec.reserve(n);
+  }
+
+  void resize(size_t n) override {
+    m_vec.resize(n);
+  }
+
+  
+ private:
+
+  std::vector<CellFlag> m_vec;
+  
+};
