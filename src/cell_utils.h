@@ -10,6 +10,19 @@
 #include <iostream>
 #include <random>
 #include <set>
+#include <variant>
+#include <unordered_set>
+
+#include "cell_header.h"
+
+/// @brief Alias for a single datum from a cell, which can be int, float or string
+using CellDatum = std::variant<uint64_t, float, std::string>;
+
+/// @brief Alias for a row of cells, which can contain integers, floats, or strings.
+using CellRow = std::vector<std::variant<uint64_t, float, std::string>>;
+
+/// @brief Alias for a function pointer that handles a CellRow
+using CellRowFunc = CellRow(*)(const CellRow&);
 
 /** Format an integer to include commas
  * @param data Number to format
@@ -25,7 +38,26 @@ template <typename T> inline std::string AddCommas(T data) {
   return s;
 }
 
+void process_token_to_variant(const std::string_view& token,
+			      bool is_string_tag,
+			      CellDatum& value);
+
+void get_two_elements_as_floats(const std::string_view& str, size_t n, size_t m,
+				float &x, float &y);
+
+std::string round_string(const std::string& str, int precision);
+
+std::string tokens_to_comma_string(const std::vector<std::string>& input);
+
+std::vector<std::string> tokenize_comma_delimited(const std::string& str);
+
 int get_nth_element_as_integer(const std::string_view& str, size_t n);
+
+std::string exclude_elements(const std::string_view& str, const std::unordered_set<size_t>& exclude_set);
+
+int read_one_line_to_cellrow(const std::string& line,
+			     CellRow& values,
+			     const CellHeader& m_header);
 
 /*std::set<int> sampleWithoutReplacement(int n, int N, int seed) {
 

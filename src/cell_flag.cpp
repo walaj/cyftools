@@ -7,6 +7,36 @@ std::ostream& operator<<(std::ostream& os, const CellFlag& cellFlag) {
   return os;
 }
 
+bool CellFlag::testAndOr(uint64_t logor, uint64_t logand) const {
+
+  std::bitset<BITMAP_SIZE> orBitset(logor);
+  std::bitset<BITMAP_SIZE> andBitset(logand);
+
+  bool orCondition = (bitmap & orBitset).any(); // True if any OR flags are turned on
+  bool andCondition = (bitmap & andBitset) == andBitset; // True if all AND flags are turned on
+
+  if (orCondition && andCondition) {
+    return true;
+  } else if (orCondition && !andBitset.any()) {
+    return true;
+  } else {
+    return false;
+  }
+
+  /*  
+  
+  for (size_t i = 0; i < bitmap.size(); ++i) {
+    if (onBitset[i] && !bitmap[i]) {
+      return false;
+    }
+    if (offBitset[i] && bitmap[i]) {
+      return false;
+    }
+  }
+    
+  */
+}
+
 std::string CellFlag::toBitString() const {
   
   std::string bitmap_str = bitmap.to_string();

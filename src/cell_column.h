@@ -8,13 +8,6 @@
 
 using namespace std;
 
-/// @brief Alias for a row of cells, which can contain integers, floats, or strings.
-using CellDatum = std::variant<uint64_t, float, std::string>;
-using CellRow = vector<variant<uint64_t, float, string>>;
-
-// Function pointer type definition
-using CellRowFunc = CellRow(*)(const CellRow&);
-
 /// @brief Enum class representing the different types a Column can have.
 enum class ColumnType {
   INT,
@@ -23,6 +16,35 @@ enum class ColumnType {
   FLAG,
   GRAPH
 };
+
+std::string columnTypeToString(ColumnType type) {
+  switch (type) {
+    case ColumnType::INT:
+      return "INT";
+    case ColumnType::FLOAT:
+      return "FLOAT";
+    case ColumnType::STRING:
+      return "STRING";
+    case ColumnType::FLAG:
+      return "FLAG";
+    case ColumnType::GRAPH:
+      return "GRAPH";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+std::string variantToString(const std::variant<uint64_t, float, std::string>& value) {
+  return std::visit([](const auto& v) -> std::string {
+    using T = std::decay_t<decltype(v)>;
+    if constexpr (std::is_same_v<T, std::string>) {
+      return v;
+    } else {
+      return std::to_string(v);
+    }
+  }, value);
+}
+
 
 /**
  * @class Column
@@ -641,3 +663,14 @@ class FlagColumn : public Column {
   std::vector<CellFlag> m_vec;
   
 };
+
+// aliases
+using IntCol = NumericColumn<uint64_t>;
+using FloatCol = NumericColumn<float>;
+
+using GraphColPtr = std::shared_ptr<GraphColumn>;
+using IntColPtr   = std::shared_ptr<IntCol>;
+using FloatColPtr = std::shared_ptr<FloatCol>;
+using StringColPtr= std::shared_ptr<StringColumn>;
+using FlagColPtr  = std::shared_ptr<FlagColumn>;
+using ColPtr      = std::shared_ptr<Column>;

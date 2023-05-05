@@ -26,7 +26,7 @@ CFLAGS = -O2 -g -std=c++17 $(OPENMP) -I. -I.. $(NETCDF) $(KNN) $(UMAP) $(ARAND) 
 LDFLAGS = $(OMPL)
 
 # Specify the source files
-SRCS = cysift.cpp cell_table.cpp polygon.cpp cell_header.cpp cell_graph.cpp cell_flag.cpp cell_utils.cpp
+SRCS = cysift.cpp cell_table.cpp polygon.cpp cell_header.cpp cell_graph.cpp cell_flag.cpp cell_utils.cpp cell_processor.cpp
 
 # Specify the object files
 OBJS = $(SRCS:.cpp=.o)

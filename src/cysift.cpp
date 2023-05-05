@@ -1,5 +1,6 @@
 #include "cell_column.h"
 #include "cell_table.h"
+#include "cell_processor.h"
 
 #include <unistd.h> // or #include <getopt.h> on Windows systems
 #include <getopt.h>
@@ -40,7 +41,9 @@ namespace opt {
 
 static CellTable table;
 
-static const char* shortopts = "jhHyvr:t:d:g:b:q:c:s:k:n:r:w:l:x:X:o:R:f:";
+static void build_table(bool convert);
+
+static const char* shortopts = "jhHNyvr:t:d:g:b:q:c:s:k:n:r:w:l:x:X:o:R:f:";
 static const struct option longopts[] = {
   { "verbose",                    no_argument, NULL, 'v' },
   { "threads",                    required_argument, NULL, 't' },
@@ -75,8 +78,6 @@ static const char *RUN_USAGE_MESSAGE =
 "  pheno      - Phenotype cells to set the flag\n"
 "  radialdens - Calculate density of cells within a radius\n"
 "\n";
-
-static void read_table();
 
 static int radialdensfunc(int argc, char** argv);
 static int subsamplefunc(int argc, char** argv);
@@ -128,7 +129,7 @@ int main(int argc, char **argv) {
   default: assert(false);
   }
 */
-  
+
   // get the module
   if (opt::module == "debug") {
     val = debugfunc(argc, argv);
@@ -147,13 +148,13 @@ int main(int argc, char **argv) {
   } else if (opt::module == "histogram") {
     return(histogramfunc(argc, argv));
   } else if (opt::module == "log10") {
-    val = log10func(argc, argv);
+    return(log10func(argc, argv));
   } else if (opt::module == "cut") {
     val = cutfunc(argc, argv);
   } else if (opt::module == "info") {
     return(infofunc(argc, argv));
   } else if (opt::module == "view") {
-    val = viewfunc(argc, argv);
+    return(viewfunc(argc, argv));
   } else if (opt::module == "knn") {
     val = knnfunc(argc, argv);
   } else if (opt::module == "spatial") {
@@ -166,38 +167,31 @@ int main(int argc, char **argv) {
     assert(false);
   }
 
-  // print it out
-  if (val == 0) {
+  return 0;
+}
 
-    if (opt::verbose)
-      std::cerr << "...printing final table" << std::endl;
+// build the table into memory
+static void build_table(bool convert) {
+
+  // set table params
+  if (opt::verbose)
+    table.SetVerbose();
+  
+  if (opt::threads > 1)
+    table.SetThreads(opt::threads);
     
-    if (!opt::header_only)
-      table.PrintTable(opt::header);
-    else
-      table.GetHeader().Print();
+  // read the table into memory
+  table.BuildTableFromStdin();
+
+  if (convert) {
+    if (opt::verbose)
+      std::cerr << "...read table: converting graph and flag columns" << std::endl;
+    table.ConvertColumns();
   }
-  
-  return 1;
 }
 
-static void read_table() {
 
-  if (!opt::infile.empty()) {
-    table = CellTable(opt::quantfile.c_str(), opt::verbose, opt::header_only, true);
-  }
-  
-}
-
-static void read_table_no_convert() {
-
-  if (!opt::infile.empty()) {
-    table = CellTable(opt::quantfile.c_str(), opt::verbose, opt::header_only, false);
-  }
-  
-}
-
-static int radiusfunc(int argc, char** argv) {
+/* static int radiusfunc(int argc, char** argv) {
 
   int radius = 20;
   bool die = false;
@@ -239,6 +233,7 @@ static int radiusfunc(int argc, char** argv) {
 
   return 0;
 }
+*/
 
 static int knnfunc(int argc, char** argv) {
 
@@ -272,20 +267,26 @@ static int knnfunc(int argc, char** argv) {
       "  Construct the KNN graph (in marker space)\n"
       "    csvfile: filepath or a '-' to stream to stdin\n"
       "    -k [10]                   Number of neighbors\n"
+      "    -t [1]                   Number of threads\n"      
       "    -v, --verbose             Increase output to stderr\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
-  read_table();
-  
-  table.KNN_marker(n, opt::verbose, opt::threads);
+  // build the table
+  // but don't have to convert columns
+  // since we don't use pre-existing Graph or Flags for this
+  build_table(false);
 
+  // build the KNN graph in marker-space
+  table.KNN_marker(n);
+
+  // print it
+  table.PrintTable(opt::header);
+  
   return 0;
 }
-
-
 
 static int infofunc(int argc, char** argv) {
 
@@ -320,9 +321,11 @@ static int infofunc(int argc, char** argv) {
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
-
-  read_table();
   
+  // build it into memory and then provide information
+  build_table(false);
+
+  // provide information to stdout
   std::cout << table;
   
   return 0;
@@ -371,27 +374,23 @@ static int cutfunc(int argc, char** argv) {
   }
   
   // parse the markers
-  std::set<std::string> tokens;
+  std::unordered_set<std::string> tokens;
   std::stringstream ss(cut);
   std::string token;
   while (std::getline(ss, token, ',')) {
     tokens.insert(token);
   }
 
-  // read the table
-  read_table();
+  // set table params
+  if (opt::verbose)
+    table.SetVerbose();
+  
+  // setup the cut processor
+  CutProcessor cutp;
+  cutp.SetParams(tokens, opt::header, strict_cut);
 
-  // if not a strict cut, keep dims and id
-  if (!strict_cut) {
-    tokens.insert(table.GetHeader().GetX());
-    tokens.insert(table.GetHeader().GetY());
-    tokens.insert(table.GetHeader().GetZ());
-    tokens.insert(table.GetHeader().GetID());
-  }
-  tokens.erase(std::string());
-
-  // cut from the table and header
-  table.Cut(tokens);
+  // process
+  table.StreamTableFromStdin(cutp);
 
   return 0;
 }
@@ -432,9 +431,14 @@ static int log10func(int argc, char** argv)  {
     return 1;
   }
 
-  read_table();
-  
-  table.Log10();
+  // set table params
+  if (opt::verbose)
+    table.SetVerbose();
+
+  LogProcessor log;
+  log.SetParams(opt::header);
+
+  table.StreamTableFromStdin(log);
 
   return 0;
 }
@@ -535,9 +539,10 @@ static int roifunc(int argc, char** argv) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift roi [csvfile] <options>\n"
-      "  Subset the cells to only those contained in the rois\n"
+      "  Subset or label the cells to only those contained in the rois\n"
       "  csvfile: filepath or a '-' to stream to stdin\n"
       "  -r                        ROI file\n"
+      "  -l                        Output all cells and add \"roi\" column with ROI label\n"      
       "  -h                        Output with the header\n"
       "  -v, --verbose             Increase output to stderr"
       "\n";
@@ -552,13 +557,10 @@ static int roifunc(int argc, char** argv) {
     for (const auto& c : rois)
       std::cerr << c << std::endl;
 
-  read_table();
+  ROIProcessor roip;
+  roip.SetParams(opt::header, false, rois);// false is placeholder for label function, that i need to implement
 
-  if (opt::verbose)
-    std::cerr << table;
-  
-  // subset the vertices
-  table.SubsetROI(rois);
+  table.StreamTableFromStdin(roip);
 
   return 0;
   
@@ -566,7 +568,7 @@ static int roifunc(int argc, char** argv) {
 
 static int viewfunc(int argc, char** argv) {
 
-  int precision = 2;
+  int precision = -1;
 
   bool die = false;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -576,7 +578,7 @@ static int viewfunc(int argc, char** argv) {
     case 'n' : arg >> precision; break;
     case 't' : arg >> opt::threads; break;      
     case 'h' : opt::header = true; break;
-    case 'H' : opt::header_only = true;
+    case 'H' : opt::header_only = true; break;
     default: die = true;
     }
   }
@@ -597,8 +599,7 @@ static int viewfunc(int argc, char** argv) {
       "Usage: cysift view [csvfile] <options>\n"
       "  View the contents of a cell table\n" 
       "  csvfile: filepath or a '-' to stream to stdin\n"
-      "  -n  [2]                   Number of decimals to keep\n"
-      "  -t  [1]                   Number of threads\n"
+      "  -n  [-1]                  Number of decimals to keep (-1 is no change)\n"
       "  -H                        View only the header\n"      
       "  -h                        Output with the header\n"
       "  -v, --verbose             Increase output to stderr"
@@ -607,9 +608,14 @@ static int viewfunc(int argc, char** argv) {
     return 1;
   }
 
-  read_table();
+  // set table params
+  if (opt::verbose)
+    table.SetVerbose();
   
-  table.SetPrecision(precision);
+  ViewProcessor viewp;
+  viewp.SetParams(opt::header, opt::header_only, precision);
+  
+  table.StreamTableFromStdin(viewp);
   
   return 0;  
 }
@@ -703,7 +709,7 @@ static int plotfunc(int argc, char** argv) {
     return 1;
   }
 
-  read_table();
+  build_table(false);
   
   // make an ASCII plot of this
   table.PlotASCII(width, length);
@@ -752,7 +758,7 @@ static int subsamplefunc(int argc, char** argv) {
     return 1;
   }
 
-  read_table();
+  build_table(false);
   
   // subsample
   table.Subsample(n, opt::seed);
@@ -798,7 +804,7 @@ static int correlatefunc(int argc, char** argv) {
     return 1;
   }
 
-  read_table();
+  build_table(false);
   
   //
   table.PrintPearson(opt::csv, opt::sort);
@@ -872,62 +878,11 @@ static int cropfunc(int argc, char** argv) {
     throw std::runtime_error("Error: Fewer than 4 numbers provided");
   }
 
-  read_table();
+  build_table(false);
   
   //
   table.Crop(xlo, xhi, ylo, yhi);
 
-  return 0;
-  
-}
-
-static int debugfunc(int argc, char** argv) {
-  
-  table.PrintTable(opt::header);
-  
-  return 1;
-    
-  std::cerr << "...subset roi" << std::endl;
-  std::vector<std::pair<float,float>> roi(
-{{21910.26,41337.85},
-{20878.64,41712.79},
-{20631.33,41524.77},
-{20500.91,41412.35},
-{20245.42,41305.65},
-{20084.74,41347.66},
-{19981.91,41051.02},
-{19792.77,40859.37},
-{19675.93,40768.16},
-{19532.80,40742.42},
-{19394.83,40805.17},
-{19483.95,40630.09},
-{19309.55,40565.94},
-{19619.63,39964.34},
-{19688.64,38782.54},
-{19835.26,38234.93},
-{20322.71,37796.40},
-{19803.00,37498.01},
-{19718.38,36439.55},
-{20790.33,37171.06},
-{20306.44,36209.11},
-{29731.14,39150.87},
-{29008.49,40268.42},
-{28977.95,42623.04},
-{28238.65,41010.24},
-{27152.96,41107.28},
-{27827.88,43090.00},
-{26482.79,43447.49},
-{26122.26,41982.23},
-{25130.31,42846.87},
-{23918.49,42554.43}});
-
-  //table.SubsetROI(roi);
-  //std::cerr << "subsetted ROI has size " << table.num_cells() << std::endl;
-
-  // make an ASCII plot of this
-  std::cerr << "...plotting" << std::endl;
-  table.PlotASCII(50, 25);
-  
   return 0;
   
 }
@@ -974,17 +929,20 @@ static int spatialfunc(int argc, char** argv) {
     return 1;
   }
 
-  read_table();
+  build_table(false);
 
-  table.KNN_spatial(n, d, opt::verbose, opt::threads);
+  table.KNN_spatial(n, d);
+
+  table.PrintTable(opt::header);
 
   return 0;
 }
 
 static int selectfunc(int argc, char** argv) {
 
-  uint64_t on = 0;
-  uint64_t off = 0;
+  uint64_t logor = 0;
+  uint64_t logand = 0;
+  bool lognot = false;
   
   bool die = false;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -992,8 +950,9 @@ static int selectfunc(int argc, char** argv) {
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'h' : opt::header = true; break;
-    case 'o' : arg >> on; break;
-    case 'f' : arg >> off; break;
+    case 'o' : arg >> logor; break;
+    case 'a' : arg >> logand; break;
+    case 'N' : lognot = true; break;      
     default: die = true;
     }
   }
@@ -1014,8 +973,9 @@ static int selectfunc(int argc, char** argv) {
       "Usage: cysift select [csvfile]\n"
       "  Select cells by phenotype flag\n"
       "    csvfile: filepath or a '-' to stream to stdin\n"
-      "    -o                    On flags\n"
-      "    -f                    Off flags\n"
+      "    -o                    Logical OR flags\n"
+      "    -a                    Logical AND flags\n"
+      "    -N                    Not flag\n"
       "    -h                    Output with the header\n"      
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
@@ -1028,11 +988,12 @@ static int selectfunc(int argc, char** argv) {
     table = CellTable(); //opt::quantfile.c_str(), opt::verbose, opt::header_only, false);
   }
 
-  // stream the selection function
-  CellTable* table_ptr = &table;
-  table.Streamer(opt::header, [table_ptr, on, off](const std::string& in, std::string& out) {
-    return table_ptr->StreamSelect(in, out, on, off);
-  });
+  // setup the selector processor
+  SelectProcessor select;
+  select.SetParams(logor, logand, lognot, opt::header);
+
+  // process
+  table.StreamTableFromStdin(select);
   
   return 0;
 }
@@ -1075,15 +1036,18 @@ static int phenofunc(int argc, char** argv) {
     return 1;
   }
 
-  read_table();
+  build_table(false);
 
-  std::unordered_map<std::string, std::pair<float,float>> tt = table.phenoread(file);
+  std::unordered_map<std::string, std::pair<float,float>> tt =
+    table.phenoread(file);
 
   if (opt::verbose)
     for (const auto& c : tt)
       std::cerr << c.first << " -- " << c.second.first << "," << c.second.second << std::endl;
 
   table.phenotype(tt);
+
+  table.PrintTable(opt::header);
   
   return 0;
 }
@@ -1136,9 +1100,13 @@ static int radialdensfunc(int argc, char** argv) {
     return 1;
   }
 
-  read_table();
+  build_table(true);
 
-  table.RadialDensity(inner, outer, on, off, "testr", opt::verbose);
+  table.RadialDensity(inner, outer, on, off, "testr");
 
   return 0;
+}
+
+int debugfunc(int argc, char** argv) {
+  return 1;
 }

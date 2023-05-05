@@ -3,7 +3,7 @@
 #include <regex>
 #include <set>
 
-const std::unordered_set<std::string> Tag::ALLOWED_TAGS =
+const std::unordered_set<std::string> Tag::ALLOWED_DATA_TAGS =
   {"MA","ID","GA","CA","FA","XD","YD","ZD"};
 
 Tag::Tag(const std::string& type, const std::string& nm) {
@@ -13,32 +13,32 @@ Tag::Tag(const std::string& type, const std::string& nm) {
   
 }
 
-void CellHeader::Cut(const std::set<std::string>& tokens) {
-  
-  std::set<std::string> tags_set;
-  
+void CellHeader::Cut(const std::unordered_set<std::string>& include) {
+
+  // build <set> of all tags
+  std::unordered_set<std::string> tags_set;
   for (const auto& t : tags)
     tags_set.insert(t.name);
   
-  // Remove elements from tags if they are not in tokens
-  for (const auto& token : tokens) {
+  // warn if elements from include list are in header
+  for (const auto& token : include) {
     if (tags_set.count(token) == 0) {
-      std::cerr << "Warning: '" << token << "' not found in tags" << std::endl;
+      std::cerr << "Warning: '" << token << "' not found in header" << std::endl;
     }
   }
 
-  // Remove elements of tags if their name is not in the tokens vector
-  auto new_end = std::remove_if(tags.begin(), tags.end(), [&tokens](const Tag& tag) {
-    return std::find(tokens.begin(), tokens.end(), tag.name) == tokens.end();
-  });
-  
-  // Resize tags to remove the elements whose names are not in tokens
-  tags.resize(new_end - tags.begin());
-
+  // Remove elements of tags if their name is not in the vector
+  tags.erase(std::remove_if(tags.begin(), tags.end(),
+                            [&include](const Tag& tag) {
+			      if (tag.isVersionTag()) // don't remove version tags
+				return false;
+                              return include.find(tag.GetName()) == include.end();
+                            }),
+             tags.end());
 }
 
 void CellHeader::Remove(const std::string& token) {
-
+  
   bool token_found = false;
       
   if (markers_.count(token) > 0) {
@@ -134,8 +134,18 @@ bool Tag::isMetaTag() const {
   return record_type == "CA";
 }
 
+bool Tag::isStringTag() const {
+  // right now only accepted string tag is graph
+  // but this can be modified in future
+  return isGraphTag();
+}
+
 bool Tag::isGraphTag() const {
   return record_type == "GA";
+}
+
+bool Tag::isDimTag() const {
+  return isXDim() || isYDim() || isZDim();
 }
 
 bool Tag::isXDim() const {
@@ -185,7 +195,7 @@ void CellHeader::addTag(const Tag& tag) {
       throw std::runtime_error("Tag of record type " + tag.record_type + " needs an NM:<name> field");
     }
   }
-
+  
   tags.push_back(tag);
   
   if (tag.isMarkerTag()) {
@@ -242,6 +252,22 @@ std::ostream& operator<<(std::ostream& os, const CellHeader& h) {
   for (const auto& k : h.tags)
     os << k << std::endl;
   return os;
+}
+
+size_t CellHeader::whichColumn(const std::string& str) const {
+
+  size_t count = 0;
+  for (const auto& t : tags) {
+    if (t.isColumnTag()) {
+      if (t.GetName() == str)
+	return count;
+      count++;
+    }
+  }
+  
+  std::cerr << "Column: " << str << " never found in header" << std::endl;
+  return static_cast<size_t>(-1);
+
 }
 
 size_t CellHeader::whichMarkerColumn(const std::string& str) const {

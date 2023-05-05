@@ -11,7 +11,7 @@
 
 struct Tag {
 
-  static const std::unordered_set<std::string> ALLOWED_TAGS;
+  static const std::unordered_set<std::string> ALLOWED_DATA_TAGS;
   
   std::string record_type; // e.g., "MA", "CD"
   std::unordered_map<std::string, std::string> values; // Stores the tag fields and their data
@@ -33,7 +33,7 @@ struct Tag {
   bool hasName() const;
 
   bool isColumnTag() const {
-    return ALLOWED_TAGS.count(record_type); 
+    return ALLOWED_DATA_TAGS.count(record_type); 
   }
 
   // Overloaded << operator
@@ -42,10 +42,12 @@ struct Tag {
   bool isMarkerTag() const;
   bool isMetaTag() const;
   bool isGraphTag() const;  
+  bool isStringTag() const;
   
   bool isXDim() const;
   bool isYDim() const;
   bool isZDim() const;
+  bool isDimTag() const;
   bool isFlagTag() const;
   bool isIDTag() const;    
   bool isVersionTag() const;
@@ -70,6 +72,8 @@ public:
   // Constructor
   CellHeader() = default;
   
+  const std::vector<Tag>& GetTags() const { return tags; }
+  
   // Function to add a Tag to the header
   void addTag(const Tag& tag);
 
@@ -78,7 +82,7 @@ public:
     return tags;
   }
 
-  void Cut(const std::set<std::string>& tokens);
+  void Cut(const std::unordered_set<std::string>& include);
   
   void Remove(const std::string& token);
   
@@ -87,6 +91,8 @@ public:
   friend std::ostream& operator<<(std::ostream& os, const CellHeader& h);
 
   size_t whichMarkerColumn(const std::string& str) const;
+
+  size_t whichColumn(const std::string& str) const;
   
   bool hasMarker(const std::string& m) const;
   bool hasMeta(const std::string& m) const;  

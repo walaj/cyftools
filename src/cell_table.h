@@ -1,12 +1,11 @@
-#ifndef CELL_TABLE_H
-#define CELL_TABLE_H
-
+#pragma once
 #include <functional>
 
 #include "csv.h"
 #include "cell_column.h"
 #include "polygon.h"
 #include "cell_header.h"
+#include "cell_processor.h"
 
 // Define the function wrapper type
 typedef std::function<bool(const std::string& in, std::string& out)> LineStreamerWrapper;
@@ -17,34 +16,36 @@ public:
   
   CellTable() {}
 
-  CellTable(const char* file, bool verbose, bool header_only, bool convert);
+  CellTable(CellRowFunc func);
 
-  CellTable(const char* file, CellRowFunc func, bool verbose, bool header_only);
+  void BuildTableFromStdin();
 
-  CellTable(const char* file, bool verbose, bool header_only, uint64_t on, uint64_t off);
-
-  // Stream select
-  void StreamSelect(uint64_t on, uint64_t off);
-
-  bool StreamSelect(const std::string& line_in, std::string& line_out,
-		    uint64_t on, uint64_t off);
+  void StreamTableFromStdin(CellProcessor& proc);
   
-  void Streamer(bool print_header, const LineStreamerWrapper& func);  
-  
-  void AddColumn(const std::string& key, std::shared_ptr<Column> column); 
+  // add columns
+  void AddColumn(const std::string& key, ColPtr column); 
 
   void AddGraphColumn(const Tag& tag,
-		      const std::shared_ptr<GraphColumn> value);
+		     GraphColPtr value);
 
   void AddFlagColumn(const Tag& tag,
-		     const std::shared_ptr<FlagColumn> value,
+		     FlagColPtr value,
 		     bool overwrite);
-  
+
+  void AddMetaColumn(const std::string& key, ColPtr value);
+
+  // set params
   void SetPrecision(size_t n);
   
   void SetVerbose() { m_verbose = true; }
 
-  std::shared_ptr<NumericColumn<uint64_t>> GetIDColumn() const;
+  void SetThreads(size_t threads) { m_threads = threads; }
+
+  void SetPrintHeader() { m_print_header = true; }
+
+  void SetHeaderOnly() { m_header_only = true; }
+  
+  IntColPtr GetIDColumn() const;
   
   friend std::ostream& operator<<(std::ostream& os, const CellTable& table);
   
@@ -53,12 +54,9 @@ public:
   size_t CellCount() const;
 
   int RadialDensity(uint64_t inner, uint64_t outer, uint64_t on, uint64_t off,
-		    const std::string& label, bool verbose);
+		    const std::string& label);
   
   const CellHeader& GetHeader() const;
-  
-  // insertion
-  void AddMetaColumn(const std::string& key, const std::shared_ptr<Column> value);
   
   // display
   void PlotASCII(int width, int height) const;
@@ -68,15 +66,17 @@ public:
 
   void PrintTable(bool header) const;
 
+  void ConvertColumns();
+  
   // numeric operations
   void Log10();
 
   void PrintPearson(bool csv, bool sort) const;
 
   // graph ops
-  void KNN_marker(int num_neighbors, bool verbose, int threads);
+  void KNN_marker(int num_neighbors);
 
-  void KNN_spatial(int num_neighbors, int dist, bool verbose, int threads);  
+  void KNN_spatial(int num_neighbors, int dist);  
 
   // filtering
   void Subsample(int n, int s);
@@ -96,29 +96,28 @@ public:
   void phenotype(const std::unordered_map<std::string, std::pair<float,float>>& thresh);
   
  private:
-
-  bool m_verbose = false;
   
-  unordered_map<string, shared_ptr<Column>> m_table;
+  unordered_map<string, ColPtr> m_table;
   
   string x;
   string y;
 
   CellHeader m_header;
+
+  // params
+  bool m_verbose = false;
+  bool m_header_only = false;
+  bool m_print_header = false;
+  size_t m_threads = 1;
   
   // internal member functions
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
-  //void read_markers_json__(const char* markers_file);
-  
-  void verbose_line_read__(int count) const;
   
   bool read_csv_line__(io::LineReader& reader, CellRow& values) const;
   
   void header_read__(const std::string& header_line);
   
   CellRow add_row_to_table__(const CellRow& values);
-
-  //CellRow add_row_to_table_by_index__(const CellRow& values, size_t ind, size_t dim);
 
   CellRow select_row_from_table__(const CellRow& values, uint64_t on,
 					     uint64_t off);
@@ -127,21 +126,14 @@ public:
 
   void check_header__() const;
 
-  //void print_correlation_matrix(const std::vector<std::pair<int, std::string>>& data, const std::vector<std::vector<double>>& correlation_matrix, bool sort) const;
-
-  void print_correlation_matrix(const std::vector<std::pair<std::string, const std::shared_ptr<Column>>>& data,
+  void print_correlation_matrix(const std::vector<std::pair<std::string, const ColPtr>>& data,
 				const std::vector<std::vector<float>>& correlation_matrix, bool sort) const;
 
+  
+  void process_csv_file__(const std::function<CellRow(const CellRow&)>& func);
 
-  void process_csv_file__(const char* file,
-			  const std::function<CellRow(const CellRow&)>& func,
-			  bool verbose, bool header_only);
-
-  void convert_columns__();
 
   void column_to_row_major(std::vector<double>& data, int nobs, int ndim) const;
   
 #endif    
 };
-
-#endif
