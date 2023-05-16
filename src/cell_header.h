@@ -12,6 +12,7 @@
 struct Tag {
 
   static const std::unordered_set<std::string> ALLOWED_DATA_TAGS;
+  static const std::unordered_set<std::string> ALLOWED_INFO_TAGS;  
   
   std::string record_type; // e.g., "MA", "CD"
   std::unordered_map<std::string, std::string> values; // Stores the tag fields and their data
@@ -36,6 +37,11 @@ struct Tag {
     return ALLOWED_DATA_TAGS.count(record_type); 
   }
 
+  bool isInfoTag() const {
+    return ALLOWED_INFO_TAGS.count(record_type); 
+  }
+  
+  
   // Overloaded << operator
   friend std::ostream& operator<<(std::ostream& os, const Tag& tag);
 
@@ -71,8 +77,11 @@ class CellHeader {
 public:
   // Constructor
   CellHeader() = default;
-  
-  const std::vector<Tag>& GetTags() const { return tags; }
+
+  const std::vector<Tag>& GetColTags() const { return tags; }
+
+  // right now just checks that names of tags are same (and same order)
+  bool identicalColumns(const CellHeader& header) const;
   
   // Function to add a Tag to the header
   void addTag(const Tag& tag);
@@ -83,6 +92,8 @@ public:
   }
 
   void Cut(const std::unordered_set<std::string>& include);
+
+  bool hasTag(const std::string& tagname) const;
   
   void Remove(const std::string& token);
   
@@ -146,8 +157,10 @@ public:
     return true;
   }
 
+  size_t size() const { return tags.size(); }
+  
   std::vector<std::string> GetColOrder() const {
-
+    
     std::vector<std::string> col_order;
     for (const auto& t : tags)
       if (t.isColumnTag())
@@ -170,6 +183,8 @@ private:
   
   std::vector<Tag> tags; // Vector to store the Tag objects
 
+  std::vector<Tag> info_tags; // vector to store non-column data
+  
   std::string version_;
   std::string id_;
   std::string x_;

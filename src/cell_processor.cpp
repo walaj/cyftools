@@ -6,7 +6,7 @@ int SelectProcessor::ProcessHeader(CellHeader& header) {
 
   // find which one the cellflag is
   size_t ii = 0;
-  for (const auto& t : header.GetTags()) {
+  for (const auto& t : header.GetColTags()) {
     if (t.isFlagTag()) {
       m_flag_index = ii;
     }
@@ -52,13 +52,9 @@ int CutProcessor::ProcessHeader(CellHeader& header) {
   m_include.erase(std::string());
 
   // find indicies of columns to remove
-  const std::vector<Tag>& tags = header.GetTags();
+  const std::vector<Tag>& tags = header.GetColTags();
   size_t i = 0;
   for (const auto& t : tags) {
-
-    // skip version tag
-    if (t.isVersionTag())
-      continue;
     
     // if not a strict cut, add dims and cellid
     if (!m_strict_cut &&
@@ -111,11 +107,8 @@ int LogProcessor::ProcessHeader(CellHeader& header) {
 
   // setup which are marker indicies
   size_t i = 0;
-  for (const auto& t : header.GetTags()) {
+  for (const auto& t : header.GetColTags()) {
 
-    if (t.isVersionTag())
-      continue;
-    
     if (t.isMarkerTag())
       m_to_log.insert(i);
     i++;
@@ -278,6 +271,121 @@ int ViewProcessor::ProcessLine(const std::string& line) {
 
   // concatenate output tokens
   std::cout << tokens_to_comma_string(output) << std::endl;
+  
+  return 0;
+}
+
+int CatProcessor::ProcessLine(const std::string& line) {
+
+  //std::cerr << " processingl ine " << line << std::endl;
+  //std::cerr << " graph indicies " << m_graph_indicies.size() << std::endl;
+  
+  // get the cell id
+  size_t o_cell_id = get_nth_element_as_integer(line, m_cellid_index);
+
+  // update the new cell id and max
+  size_t n_cell_id = m_offset + o_cell_id;
+  if (n_cell_id > m_max_cellid)
+    m_max_cellid = n_cell_id;
+
+  
+  //  std::cerr << "old cell id: " << o_cell_id << " new " << n_cell_id <<
+  // " offset " << m_offset << " max " << this->GetMaxCellID() << std::endl;
+
+  // get the tokens
+  std::vector<std::string> tokens = tokenize_comma_delimited(line);
+
+  // update the graph ids
+  for (const auto& i : m_graph_indicies) {
+    const std::string& graph_line = tokens.at(i);
+
+    // parse the node and rest the cell-ids with the offset
+    CellNode node(graph_line);
+    //node.OffsetNodes(m_offset);
+
+    //tokens[i] = node.toString(false); // false is for "integerize"
+  }
+
+  /*
+  // update the cell id
+  tokens[m_cellid_index] = std::to_string(n_cell_id);
+
+  // add the sample number
+  tokens.emplace_back(std::to_string(m_sample));
+  
+  // output
+  std::cout << tokens_to_comma_string(tokens) << std::endl;
+
+  */
+  return 0;
+}
+
+int CatProcessor::ProcessHeader(CellHeader& header) {
+
+  // if we already have the master header, just compare for error checking
+  if (m_master_set) {
+
+    // loop both master header and new header
+    // but allow for master to have extra sample column
+    std::vector<std::string> header_cols = header.GetColOrder();
+    std::vector<std::string> master_cols = m_master_header.GetColOrder();
+    
+    // remove "sample" from master_cols
+    master_cols.erase(std::remove_if(master_cols.begin(), master_cols.end(),
+				     [](const std::string& s) { return s == "sample"; }), master_cols.end());
+    
+    if (!std::equal(header_cols.begin(), header_cols.end(), master_cols.begin(), master_cols.end())) {
+      throw std::runtime_error("Error: All headers have to have the same number of columns in same order");
+    }
+
+    return 0;
+  }
+  
+  // find which one the cell id is
+  size_t ii = 0;
+  for (const auto& t : header.GetColTags()) {
+
+    // get the ID tag
+    if (t.isIDTag()) {
+
+      // check that there is only one ID tag
+      if (m_cellid_index != static_cast<size_t>(-1))
+	throw std::runtime_error("Error: Cell ID already found - does your header have two?");
+      m_cellid_index = ii;
+    }
+
+    // set graph tags
+    if (t.isGraphTag())
+      m_graph_indicies.push_back(ii);
+    
+    ii++;
+  }
+  
+  // throw error if not found
+  if (m_cellid_index == static_cast<size_t>(-1)) {
+    throw std::runtime_error("Error: no cell id found. ID tag in header required");
+  }
+
+  // save a copy of the first header to be the master header
+  if (!m_master_header.size()) {
+    m_master_header = header;
+    m_master_set = true;
+  }
+
+  // add the sample tag if not already there
+  if (!m_master_header.hasTag("sample")) {
+    Tag sample_tag("CA","sample");
+    m_master_header.addTag(sample_tag);
+
+  }
+
+  // add the command tag
+  Tag cmd_tag("CN", "cysift cat");
+  m_master_header.addTag(cmd_tag);
+  
+  // print the header
+  if (m_print_header && m_master_set)
+    m_master_header.Print();
   
   return 0;
 }

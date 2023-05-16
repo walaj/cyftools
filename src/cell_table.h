@@ -18,9 +18,9 @@ public:
 
   CellTable(CellRowFunc func);
 
-  void BuildTableFromStdin();
+  void BuildTable(const std::string& file);
 
-  void StreamTableFromStdin(CellProcessor& proc);
+  void StreamTable(CellProcessor& proc, const std::string& file);
   
   // add columns
   void AddColumn(const std::string& key, ColPtr column); 
@@ -53,7 +53,7 @@ public:
 
   size_t CellCount() const;
 
-  int RadialDensity(uint64_t inner, uint64_t outer, uint64_t on, uint64_t off,
+  int RadialDensity(uint64_t inner, uint64_t outer, uint64_t logor, uint64_t logand,
 		    const std::string& label);
   
   const CellHeader& GetHeader() const;
@@ -130,10 +130,62 @@ public:
 				const std::vector<std::vector<float>>& correlation_matrix, bool sort) const;
 
   
-  void process_csv_file__(const std::function<CellRow(const CellRow&)>& func);
+  void process_csv_file__(const std::string& file, const std::function<CellRow(const CellRow&)>& func);
 
 
   void column_to_row_major(std::vector<double>& data, int nobs, int ndim) const;
   
 #endif    
+};
+
+struct RadialSelector {
+
+  explicit RadialSelector(const std::string& line) {
+
+    std::vector<std::string> tokens = split(line, ',');
+    
+    if (tokens.size() != 5) {
+      throw std::runtime_error("There must be exactly 5 tokens.");
+    }
+
+    int_data.resize(4);
+    for (int i = 0; i < 4; i++) {
+      try {
+	int_data[i] = std::stoi(tokens[i]);
+      } catch (const std::invalid_argument &e) {
+	throw std::runtime_error("The first 4 tokens must be integers.");
+      }
+    }
+
+    label = tokens[4];
+    
+  }
+
+  // split tokens
+  std::vector<std::string> split(const std::string &input, char delimiter) {
+    std::vector<std::string> tokens;
+    std::istringstream stream(input);
+    std::string token;
+    
+    while (std::getline(stream, token, delimiter)) {
+      tokens.push_back(token);
+    }
+    
+    return tokens;
+  }
+
+  friend std::ostream& operator<<(std::ostream& os, const RadialSelector& rs) {
+    for (size_t i = 0; i < rs.int_data.size(); ++i) {
+      os << rs.int_data[i];
+      if (i < rs.int_data.size() - 1) {
+	os << ",";
+      }
+    }
+    os << "," << rs.label;
+    return os;
+  }
+  
+  std::vector<uint64_t> int_data;
+  std::string label;
+  
 };

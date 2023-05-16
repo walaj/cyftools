@@ -33,8 +33,8 @@ void CellTable::Log10() {
   }
 }
 
-void CellTable::BuildTableFromStdin() {
-  process_csv_file__([this](const CellRow& values) {
+void CellTable::BuildTable(const std::string& file) {
+  process_csv_file__(file, [this](const CellRow& values) {
     return this->add_row_to_table__(values);
   });
 }
@@ -44,24 +44,26 @@ bool CellTable::ContainsColumn(const std::string& name) const {
 }
 
 std::ostream& operator<<(std::ostream& os, const CellTable& table) {
-  for (const auto& key : table.m_header.GetColOrder()) {
-    auto col_ptr = table.m_table.at(key);
+  
+  for (const auto& key : table.m_header.GetColTags()) {
+    const std::string tagn = key.GetName();
+    auto col_ptr = table.m_table.at(tagn);
     std::string ctype;
-    if (table.m_header.hasMarker(key))
+    if (table.m_header.hasMarker(tagn))
       ctype = "Marker";
-    else if (table.m_header.hasMeta(key))
+    else if (table.m_header.hasMeta(tagn))
       ctype = "Meta";
-    else if (table.m_header.hasFlag(key))
+    else if (table.m_header.hasFlag(tagn))
       ctype = "Flag";
-    else if (table.m_header.hasGraph(key))
+    else if (table.m_header.hasGraph(tagn))
       ctype = "Graph";
-    else if (key == table.x || key == table.y)
+    else if (tagn == table.x || tagn == table.y)
       ctype = "Dim";
-    else if (key == table.m_header.GetID())
+    else if (tagn == table.m_header.GetID())
       ctype = "ID";
     else
       ctype = "\nUNKNOWN COLUMN TYPE";
-    os << key << " -- " << ctype << " -- " << col_ptr->toString() << std::endl;
+    os << tagn << " -- " << ctype << " -- " << col_ptr->toString() << std::endl;
   }
   return os;
 }
@@ -75,11 +77,12 @@ CellRow CellTable::add_row_to_table__(const CellRow& values) {
   if (values.size() != col_count) {
     throw std::runtime_error("Row size and expected size (from m_header.ColumnCount) must be the same.");
   }
-
+  
   for (size_t i = 0; i < col_count; i++) {
+    
     const std::string& col_name = m_header.GetColumnTag(i).GetName(); 
     const std::variant<uint64_t, float, string>& value = values.at(i);
-
+    
     // column already added
     if (ContainsColumn(col_name)) {
 
@@ -101,6 +104,7 @@ CellRow CellTable::add_row_to_table__(const CellRow& values) {
 	  static_cast<FloatCol*>(col_ptr.get())->PushElem(static_cast<float>(std::get<uint64_t>(value)));
 	}
 	break;
+	
       case ColumnType::STRING:
 	if (std::holds_alternative<std::string>(value))
 	  static_cast<StringColumn*>(col_ptr.get())->PushElem(std::get<std::string>(value));
@@ -112,20 +116,22 @@ CellRow CellTable::add_row_to_table__(const CellRow& values) {
     } else {
 
       // lookup what type of tag this is
-      const Tag& tag = m_header.tags.at(i);
+      const Tag& tag = m_header.GetColTags().at(i);
       
       // create new column with appropriate type
-      if (std::holds_alternative<uint64_t>(value) && !tag.isMarkerTag()) {
+      if (std::holds_alternative<uint64_t>(value)) {
+	//      if (std::holds_alternative<uint64_t>(value) && !tag.isMarkerTag()) {	
 	IntColPtr new_ptr = std::make_shared<IntCol>();
 	new_ptr->PushElem(std::get<uint64_t>(value));
 	m_table[col_name] = new_ptr; 
-      } else if (std::holds_alternative<float>(value) || tag.isMarkerTag()) {
+	//      } else if (std::holds_alternative<float>(value) || tag.isMarkerTag()) {
+      } else if (std::holds_alternative<float>(value)) {	
 
 	// enforce that all marker columns are float
-	if (std::holds_alternative<uint64_t>(value))
-	  m_table[col_name] = std::make_shared<FloatCol>(static_cast<float>(std::get<uint64_t>(value)));	  
-	else
-	  m_table[col_name] = std::make_shared<FloatCol>(std::get<float>(value));
+	//if (std::holds_alternative<uint64_t>(value))
+	//  m_table[col_name] = std::make_shared<FloatCol>(static_cast<float>(std::get<uint64_t>(value)));
+	//else
+	m_table[col_name] = std::make_shared<FloatCol>(std::get<float>(value));
 	
       } else if (std::holds_alternative<std::string>(value)) {
 	m_table[col_name] = std::make_shared<StringColumn>(std::get<std::string>(value));
@@ -212,12 +218,15 @@ size_t CellTable::CellCount() const {
 
 void CellTable::PrintTable(bool header) const {
 
+  if (m_verbose)
+    std::cerr << "...outputting table" << std::endl;
+  
   if (header)
     m_header.Print();
   
   // Create a lookup table with pointers to the Column values
   std::vector<ColPtr> lookup_table;
-  for (const auto& c : m_header.tags) {
+  for (const auto& c : m_header.GetColTags()) {
     auto it = m_table.find(c.GetName());
     if (it != m_table.end()) {
       lookup_table.push_back(it->second);
@@ -696,11 +705,20 @@ void CellTable::print_correlation_matrix(const std::vector<std::pair<std::string
     }
 }
 
-void CellTable::process_csv_file__(const std::function<CellRow(const CellRow&)>& func) {
+void CellTable::process_csv_file__(const std::string& file, const std::function<CellRow(const CellRow&)>& func) {
 
-  // make the csv reader
-  io::LineReader reader("", stdin);
-  
+  // csv reader
+  std::unique_ptr<io::LineReader> reader;
+
+  // Initialize the reader depending on the input string
+  if (file == "-") {
+    // Read from stdin
+    reader = std::make_unique<io::LineReader>("", stdin);
+  } else {
+    // Read from file
+    reader = std::make_unique<io::LineReader>(file);
+  }
+
   // for m_verbose
   size_t count = 0;
   
@@ -708,7 +726,7 @@ void CellTable::process_csv_file__(const std::function<CellRow(const CellRow&)>&
   std::string line;
   bool header_read = false;
   char* next_line_ptr;
-  while ((next_line_ptr = reader.next_line()) != nullptr) {
+  while ((next_line_ptr = reader->next_line()) != nullptr) {
     line = std::string(next_line_ptr);
     if (line.size() == 0) {
       break;
@@ -814,7 +832,7 @@ void CellTable::ConvertColumns() {
       sc = std::dynamic_pointer_cast<StringColumn>(column);
       if (!sc)
 	throw std::runtime_error("Column is not a StringColumn as expected");
-      m_table[f] = std::make_shared<GraphColumn>(sc);;
+      m_table[f] = std::make_shared<GraphColumn>(sc, m_threads);
       break;
     } default:
       throw std::runtime_error("Trying to convert non-string column to graph");
@@ -953,7 +971,7 @@ void CellTable::column_to_row_major(std::vector<double>& data, int nobs, int ndi
 
 IntColPtr CellTable::GetIDColumn() const {
 
-  for (const auto& t: m_header.tags) {
+  for (const auto& t: m_header.GetColTags()) {
     if (t.isIDTag()) {
       return std::dynamic_pointer_cast<IntCol>(m_table.at(t.GetName()));
     }
@@ -963,10 +981,19 @@ IntColPtr CellTable::GetIDColumn() const {
   return IntColPtr();
 }
 
-void CellTable::StreamTableFromStdin(CellProcessor& proc) { //const LineStreamerWrapper& func) {
+void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
 
-  // make the csv reader
-  io::LineReader reader("", stdin);
+  // csv reader
+  std::unique_ptr<io::LineReader> reader;
+
+  // Initialize the reader depending on the input string
+  if (file == "-") {
+    // Read from stdin
+    reader = std::make_unique<io::LineReader>("", stdin);
+  } else {
+    // Read from file
+    reader = std::make_unique<io::LineReader>(file);
+  }
   
   // Read and process the lines
   std::string line;
@@ -977,7 +1004,7 @@ void CellTable::StreamTableFromStdin(CellProcessor& proc) { //const LineStreamer
   // for verbose
   size_t count = 0;
   
-  while ((next_line_ptr = reader.next_line()) != nullptr) {
+  while ((next_line_ptr = reader->next_line()) != nullptr) {
 
     // get the line. Skip if empty
     line = std::string(next_line_ptr);
@@ -987,11 +1014,11 @@ void CellTable::StreamTableFromStdin(CellProcessor& proc) { //const LineStreamer
     
     // If the line starts with '@', parse it as a Tag and add it to m_header
     if (line[0] == '@') {
-
+      
       // make sure there are no header lines in the middle of file
       if (header_read)
 	throw std::runtime_error("Misformed file: header lines should all be at top of file");
-
+      
       // add the tag to the header
       Tag tag(line);
       m_header.addTag(tag);
@@ -1012,7 +1039,7 @@ void CellTable::StreamTableFromStdin(CellProcessor& proc) { //const LineStreamer
       proc.ProcessLine(line);
 
       // m_verbose output
-      if (m_verbose && count % 500000 == 0) {
+      if (m_verbose && count % 50000 == 0) {
 	std::cerr << "...read line " << AddCommas(count) << std::endl;
       }
       count++;
@@ -1022,10 +1049,9 @@ void CellTable::StreamTableFromStdin(CellProcessor& proc) { //const LineStreamer
   }
 }
 
-int CellTable::RadialDensity(uint64_t inner, uint64_t outer, uint64_t on, uint64_t off,
+int CellTable::RadialDensity(uint64_t inner, uint64_t outer, uint64_t logor, uint64_t logand,
 			       const std::string& label) {
-
-  if (m_table.find("cellflag") == m_table.end() && (on || off)) {
+  if (m_table.find("cellflag") == m_table.end() && (logor || logand)) {
     std::cerr << "Warning: need to phenotype cells first" << std::endl;
     return -1;
   }
@@ -1050,8 +1076,11 @@ int CellTable::RadialDensity(uint64_t inner, uint64_t outer, uint64_t on, uint64
   assert(gc->size() == fc->size());
   
   // store the densities
-  shared_ptr<FloatCol> dc = std::make_shared<FloatCol>();
+  //shared_ptr<FloatCol> dc = std::make_shared<FloatCol>();
+  shared_ptr<FloatCol> dc = std::make_shared<FloatCol>();  
   dc->resize(gc->size());
+
+  dc->SetPrecision(2);
 
   // get the cell id colums
   auto id_ptr = GetIDColumn();
@@ -1082,10 +1111,13 @@ int CellTable::RadialDensity(uint64_t inner, uint64_t outer, uint64_t on, uint64
 
       assert(inverse_lookup.count(n.first));
       int cellindex = inverse_lookup[n.first];
+
+      //debug
+      //assert(!fc->TestFlagAndOr(logor, logand, cellindex));
       
       // test if the connected cell meets the flag criteria
       // n.first is cell_id of connected cell to this cell
-      if ((!on && !off) || fc->TestFlag(on, off, cellindex)) {
+      if ((!logor && !logand) || fc->TestFlagAndOr(logor, logand, cellindex)) {
 
 	// if it meets flag criteria, test if if it's in the radius bounds
 	if (n.second >= inner && n.second <= outer) {
@@ -1096,8 +1128,11 @@ int CellTable::RadialDensity(uint64_t inner, uint64_t outer, uint64_t on, uint64
     }
 
     // calculate the density
+    float area = static_cast<float>(outer) * static_cast<float>(outer) * 3.1415926535;
+    area = area - static_cast<float>(inner) * static_cast<float>(inner) * 3.1415926535;
+    
     if (neigh.size()) {
-      dc->SetNumericElem(cell_count / neigh.size(), i);
+      dc->SetNumericElem(cell_count * 1000000 / area, i); // density per 1000 square pixels
     } else {
       dc->SetNumericElem(0, i); 
     }
@@ -1122,3 +1157,5 @@ int CellTable::RadialDensity(uint64_t inner, uint64_t outer, uint64_t on, uint64
 
   return 0;
 }
+
+

@@ -11,7 +11,9 @@ namespace opt {
   static std::string quantfile;
   static std::string outfile;
   static std::string module;
-
+  
+  static std::vector<std::string> infile_vec;
+  
   static bool header = false;
   static bool header_only = false;
   
@@ -43,7 +45,7 @@ static CellTable table;
 
 static void build_table(bool convert);
 
-static const char* shortopts = "jhHNyvr:t:d:g:b:q:c:s:k:n:r:w:l:x:X:o:R:f:";
+static const char* shortopts = "jhHNyvr:t:a:d:g:b:q:c:s:k:n:r:w:l:x:X:o:R:f:";
 static const struct option longopts[] = {
   { "verbose",                    no_argument, NULL, 'v' },
   { "threads",                    required_argument, NULL, 't' },
@@ -65,6 +67,7 @@ static const char *RUN_USAGE_MESSAGE =
 "Usage: cysift [module] <options> \n"
 "  view       - View the cell table\n"
 "  cut        - Select only given markers and metas\n"
+"  cat        - Concatenate multiple samples\n"  
 "  subsample  - Subsample cells randomly\n"
 "  plot       - Generate an ASCII style plot\n"
 "  roi        - Trim cells to a region of interest within a given polygon\n"
@@ -79,6 +82,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  radialdens - Calculate density of cells within a radius\n"
 "\n";
 
+static int catfunc(int argc, char** argv);
 static int radialdensfunc(int argc, char** argv);
 static int subsamplefunc(int argc, char** argv);
 static int viewfunc(int argc, char** argv);
@@ -155,6 +159,8 @@ int main(int argc, char **argv) {
     return(infofunc(argc, argv));
   } else if (opt::module == "view") {
     return(viewfunc(argc, argv));
+  } else if (opt::module == "cat") {
+    return (catfunc(argc, argv));
   } else if (opt::module == "knn") {
     val = knnfunc(argc, argv);
   } else if (opt::module == "spatial") {
@@ -181,7 +187,7 @@ static void build_table(bool convert) {
     table.SetThreads(opt::threads);
     
   // read the table into memory
-  table.BuildTableFromStdin();
+  table.BuildTable(opt::infile);
 
   if (convert) {
     if (opt::verbose)
@@ -288,6 +294,95 @@ static int knnfunc(int argc, char** argv) {
   return 0;
 }
 
+static int catfunc(int argc, char** argv) {
+
+  std::string samples;
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 's' : arg >> samples; break;
+    case 'h' : opt::header = true; break;      
+    default: die = true;
+    }
+  }
+
+  optind++;
+  
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    opt::infile_vec.push_back(argv[optind]);
+    optind++;
+  }
+
+  //
+  if (opt::verbose)
+    for (const auto& v : opt::infile_vec)
+      std::cerr << "...set to read " << v << std::endl;
+  
+  // display help if no input
+  if (opt::infile_vec.empty() || die) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift cat [csvfile]\n"
+      "  Concatenate together multiple cell tables\n"
+      "    csvfile: filepaths of cell tables\n"
+      "    -v, --verbose             Increase output to stderr\n"
+      "    -s                        Sample numbers, to be in same number as inputs and comma-sep\n"      
+      "    -h                        Output with the header\n"            
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // parse the sample numbers
+  std::vector<int> sample_nums;
+  std::unordered_set<std::string> tokens;
+  std::stringstream ss(samples);
+  std::string token;
+  while (std::getline(ss, token, ',')) {
+    sample_nums.push_back(std::stoi(token));
+  }
+
+  if (sample_nums.size() != opt::infile_vec.size() && sample_nums.size()) {
+    throw std::runtime_error("Sample number csv line should have same number of tokens as number of input files");
+  }
+  
+  size_t offset = 0;
+
+  CatProcessor catp;
+  catp.SetParams(opt::header, opt::header_only, offset, 0);
+  
+  for (size_t sample_num = 0; sample_num < opt::infile_vec.size(); sample_num++) {
+
+    // can make a new table for each iteration, since we are dumping right to stdout
+    CellTable this_table;
+    
+    // set table params
+    if (opt::verbose)
+      this_table.SetVerbose();
+
+    if (opt::verbose)
+      std::cerr << "...reading and concatenating " << opt::infile_vec.at(sample_num) << std::endl;
+    
+    // update the offset and sample num
+    catp.SetOffset(offset);
+
+    if (sample_nums.size())
+      catp.SetSample(sample_nums.at(sample_num));
+    else
+      catp.SetSample(sample_num);
+
+    // stream in the lines
+    this_table.StreamTable(catp, opt::infile_vec.at(sample_num));
+    
+    offset = catp.GetMaxCellID() + 1; // + 1 to avoid dupes if new cellid starts at 0
+  }
+
+  return 0;
+}
+
 static int infofunc(int argc, char** argv) {
 
   bool die = false;
@@ -358,7 +453,7 @@ static int cutfunc(int argc, char** argv) {
     } 
     optind++;
   }
-  
+
   // display help if no input
   if (opt::infile.empty() || die || cut.empty()) {
     
@@ -390,7 +485,7 @@ static int cutfunc(int argc, char** argv) {
   cutp.SetParams(tokens, opt::header, strict_cut);
 
   // process
-  table.StreamTableFromStdin(cutp);
+  table.StreamTable(cutp, opt::infile);
 
   return 0;
 }
@@ -438,7 +533,7 @@ static int log10func(int argc, char** argv)  {
   LogProcessor log;
   log.SetParams(opt::header);
 
-  table.StreamTableFromStdin(log);
+  table.StreamTable(log, opt::infile);
 
   return 0;
 }
@@ -458,7 +553,8 @@ static void parseRunOptions(int argc, char** argv) {
   if (! (opt::module == "debug" || opt::module == "subsample" ||
 	 opt::module == "plot"  || opt::module == "roi" ||
 	 opt::module == "histogram" || opt::module == "log10" ||
-	 opt::module == "crop"  || opt::module == "knn" || 
+	 opt::module == "crop"  || opt::module == "knn" ||
+	 opt::module == "cat" || 
 	 opt::module == "correlate" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
 	 opt::module == "spatial" || opt::module == "radialdens" || 
@@ -560,7 +656,7 @@ static int roifunc(int argc, char** argv) {
   ROIProcessor roip;
   roip.SetParams(opt::header, false, rois);// false is placeholder for label function, that i need to implement
 
-  table.StreamTableFromStdin(roip);
+  table.StreamTable(roip, opt::infile);
 
   return 0;
   
@@ -615,7 +711,7 @@ static int viewfunc(int argc, char** argv) {
   ViewProcessor viewp;
   viewp.SetParams(opt::header, opt::header_only, precision);
   
-  table.StreamTableFromStdin(viewp);
+  table.StreamTable(viewp, opt::infile);
   
   return 0;  
 }
@@ -762,6 +858,8 @@ static int subsamplefunc(int argc, char** argv) {
   
   // subsample
   table.Subsample(n, opt::seed);
+
+  table.PrintTable(opt::header);
   
   return 0;
   
@@ -993,7 +1091,7 @@ static int selectfunc(int argc, char** argv) {
   select.SetParams(logor, logand, lognot, opt::header);
 
   // process
-  table.StreamTableFromStdin(select);
+  table.StreamTable(select, opt::infile);
   
   return 0;
 }
@@ -1040,7 +1138,7 @@ static int phenofunc(int argc, char** argv) {
 
   std::unordered_map<std::string, std::pair<float,float>> tt =
     table.phenoread(file);
-
+  
   if (opt::verbose)
     for (const auto& c : tt)
       std::cerr << c.first << " -- " << c.second.first << "," << c.second.second << std::endl;
@@ -1056,8 +1154,11 @@ static int radialdensfunc(int argc, char** argv) {
 
   uint64_t inner = 0;
   uint64_t outer = 20;
-  uint64_t on = 0;
-  uint64_t off = 0;
+  uint64_t logor = 0;
+  uint64_t logand = 0;
+  std::string label;
+
+  std::string file;
   
   bool die = false;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1066,14 +1167,16 @@ static int radialdensfunc(int argc, char** argv) {
     case 'v' : opt::verbose = true; break;
     case 'h' : opt::header = true; break;
     case 't' : arg >> opt::threads; break;
-    case 'r' : arg >> inner; break;
-    case 'R' : arg >> outer; break;
-    case 'o' : arg >> on; break;
-    case 'f' : arg >> off; break;                  
+    case 'R' : arg >> inner; break;
+    case 'r' : arg >> outer; break;
+    case 'o' : arg >> logor; break;
+    case 'a' : arg >> logand; break;
+    case 'l' : arg >> label; break;
+    case 'f' : arg >> file; break;
     default: die = true;
     }
   }
-  
+
   optind++;
   // Process any remaining no-flag options
   while (optind < argc) {
@@ -1082,6 +1185,9 @@ static int radialdensfunc(int argc, char** argv) {
     } 
     optind++;
   }
+
+  if (label.empty() && file.empty())
+    die = true;
   
   // display help if no input
   if (opt::infile.empty() || die) {
@@ -1090,23 +1196,64 @@ static int radialdensfunc(int argc, char** argv) {
       "Usage: cysift radialdens [csvfile]\n"
       "  Calculate the density of cells away from individual cells\n"
       "    csvfile: filepath or a '-' to stream to stdin\n"
-      "    -r [20]                Outer radius\n"
+      "    -r [20]               Outer radius\n"
       "    -R [0]                Inner radius\n"
-      "    -o                    On flags\n"
-      "    -f                    Off flags\n"
+      "    -o                    Logical OR flags\n"
+      "    -a                    Logical AND flags\n"
+      "    -l                    Label the column\n"
+      "    -f                    File for multiple labels [r,R,o,a,l]\n"
+      "    -h                    Output with the header\n"      
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
+  if (inner >= outer) {
+    std::cerr << "Inner radius should be smaller than outer, or else no cells are included" << std::endl;
+    return 1;
+  }
+
+  std::vector<RadialSelector> rsv;
+  if (!file.empty()) {
+    std::ifstream input_file(file);
+   
+    if (!input_file.is_open()) {
+      throw std::runtime_error("Failed to open file: " + file);
+    }
+    
+    std::string line;
+    while (std::getline(input_file, line)) {
+      rsv.push_back(RadialSelector(line));
+    }
+    
+    if (opt::verbose) {
+      for (const auto& rr : rsv)
+	std::cerr << rr << std::endl;
+    }
+  }
+  
   build_table(true);
 
-  table.RadialDensity(inner, outer, on, off, "testr");
+  if (rsv.size()) {
+    for (const auto& rr : rsv) {
+      if (opt::verbose)
+	std::cerr << "...working on radial density group: " << rr << std::endl;
+      
+      table.RadialDensity(rr.int_data[0], rr.int_data[1],
+			  rr.int_data[2], rr.int_data[3],
+			  rr.label);
+    }
+  } else {
+    table.RadialDensity(inner, outer, logor, logand, label);
+  }
+  
+  table.PrintTable(opt::header);
 
   return 0;
 }
 
 int debugfunc(int argc, char** argv) {
   return 1;
+
 }

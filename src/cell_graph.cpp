@@ -19,6 +19,7 @@ void CellNode::parse_neighbors(const std::string& input_str) {
 
     std::from_chars(pair_view.data(), pair_view.data() + caret_pos, index);
     weight = std::strtof(pair_view.data() + caret_pos + 1, nullptr);
+    //weight = 1; //debug
 
     neighbors.emplace_back(index, weight);
 
@@ -126,6 +127,13 @@ std::string CellNode::toString(bool integerize) const {
       }
     }
   return oss.str();
+  
+}
+
+void CellNode::OffsetNodes(size_t offset) {
+
+  for (auto& n : neighbors_)
+    n.first += offset;
   
 }
 

@@ -5,6 +5,24 @@
 #include <limits>
 #include <cmath>
 
+std::string columnTypeToString(ColumnType type) {
+  switch (type) {
+    case ColumnType::INT:
+      return "INT";
+    case ColumnType::FLOAT:
+      return "FLOAT";
+    case ColumnType::STRING:
+      return "STRING";
+    case ColumnType::FLAG:
+      return "FLAG";
+    case ColumnType::GRAPH:
+      return "GRAPH";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+
 std::string tokens_to_comma_string(const std::vector<std::string>& input) {
     std::string result;
 
@@ -131,11 +149,11 @@ void get_two_elements_as_floats(const std::string_view& str, size_t n, size_t m,
 
 
 void process_token_to_variant(const std::string_view& token,
-			      bool is_string_tag,
+			      const Tag& tag,
 			      CellDatum& value) {
-  
-  if (!is_string_tag) {
-    if (token.find('.') != std::string_view::npos) {
+
+  if (!tag.isStringTag()) {
+    if (tag.isMarkerTag() || tag.isMetaTag() || token.find('.') != std::string_view::npos) {
       // Float
       value = std::stof(std::string(token));
     } else {
@@ -157,9 +175,10 @@ int read_one_line_to_cellrow(const std::string& line,
     size_t end_pos = 0;
 
     while ((end_pos = line.find(',', start_pos)) != std::string::npos) {
+      
         std::string_view token(line.data() + start_pos, end_pos - start_pos);
         const Tag tag = m_header.GetColumnTag(n);
-        process_token_to_variant(token, tag.isStringTag(), values[n]);
+        process_token_to_variant(token, tag, values[n]);
 
         start_pos = end_pos + 1;
         ++n;
@@ -168,7 +187,7 @@ int read_one_line_to_cellrow(const std::string& line,
     // Process the last token
     std::string_view token(line.data() + start_pos, line.size() - start_pos);
     const Tag tag = m_header.GetColumnTag(n);
-    process_token_to_variant(token, tag.isStringTag(), values[n]);
+    process_token_to_variant(token, tag, values[n]);
 
     return n + 1;
 }
@@ -194,3 +213,15 @@ std::string round_string(const std::string& str, int precision) {
     // It's a non-numeric string
     return str;
 }
+
+std::string variantToString(const std::variant<uint64_t, float, std::string>& value) {
+  return std::visit([](const auto& v) -> std::string {
+    using T = std::decay_t<decltype(v)>;
+    if constexpr (std::is_same_v<T, std::string>) {
+      return v;
+    } else {
+      return std::to_string(v);
+    }
+  }, value);
+}
+

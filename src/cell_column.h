@@ -17,35 +17,6 @@ enum class ColumnType {
   GRAPH
 };
 
-std::string columnTypeToString(ColumnType type) {
-  switch (type) {
-    case ColumnType::INT:
-      return "INT";
-    case ColumnType::FLOAT:
-      return "FLOAT";
-    case ColumnType::STRING:
-      return "STRING";
-    case ColumnType::FLAG:
-      return "FLAG";
-    case ColumnType::GRAPH:
-      return "GRAPH";
-    default:
-      return "UNKNOWN";
-  }
-}
-
-std::string variantToString(const std::variant<uint64_t, float, std::string>& value) {
-  return std::visit([](const auto& v) -> std::string {
-    using T = std::decay_t<decltype(v)>;
-    if constexpr (std::is_same_v<T, std::string>) {
-      return v;
-    } else {
-      return std::to_string(v);
-    }
-  }, value);
-}
-
-
 /**
  * @class Column
  * @brief Base class for a column in a cell table, which can store elements of 
@@ -423,12 +394,21 @@ class GraphColumn : public Column {
   }
 
   GraphColumn(const std::shared_ptr<StringColumn> st) {
-    this->reserve(st->size());
+    this->resize(st->size());
     for (size_t i = 0; i < st->size(); i++) {
-      this->PushElem(CellNode(st->GetStringElem(i)));
+      this->SetValueAt(i, CellNode(st->GetStringElem(i)));
     }
   }
 
+  GraphColumn(const std::shared_ptr<StringColumn> st, size_t nthreads) {
+    this->resize(st->size());
+#pragma omp parallel for num_threads(nthreads)
+    for (size_t i = 0; i < st->size(); i++) {
+      this->SetValueAt(i, CellNode(st->GetStringElem(i)));
+    }
+  }
+
+  
   std::string GetStringElem(size_t i) const override {
     if (i >= m_vec.size())
       throw std::out_of_range("Index out of range");
@@ -560,6 +540,12 @@ class FlagColumn : public Column {
     if (i >= m_vec.size())
       throw std::out_of_range("Index out of range");
     return m_vec.at(i).test(on, off);
+  }
+
+  bool TestFlagAndOr(uint64_t logor, uint64_t logand, size_t i) const {
+    if (i >= m_vec.size())
+      throw std::out_of_range("Index out of range");
+    return m_vec.at(i).testAndOr(logor, logand);
   }
 
   void SetFlagOn(size_t n, size_t i) {

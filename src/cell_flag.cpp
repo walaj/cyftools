@@ -15,6 +15,9 @@ bool CellFlag::testAndOr(uint64_t logor, uint64_t logand) const {
   bool orCondition = (bitmap & orBitset).any(); // True if any OR flags are turned on
   bool andCondition = (bitmap & andBitset) == andBitset; // True if all AND flags are turned on
 
+  if (logor == 0) // don't gate on OR if not specified
+    orCondition = true;
+
   if (orCondition && andCondition) {
     return true;
   } else if (orCondition && !andBitset.any()) {

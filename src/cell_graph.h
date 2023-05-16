@@ -21,6 +21,8 @@ class CellNode {
   explicit CellNode(const Neighbors& neighbors);
   
   explicit CellNode(const std::string& input_str) { parse_neighbors(input_str); }
+
+  void OffsetNodes(size_t offset);
   
   const Neighbors& get_neighbors() const { return neighbors_; }
   

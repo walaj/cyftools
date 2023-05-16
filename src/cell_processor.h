@@ -148,3 +148,49 @@ class ViewProcessor : public CellProcessor {
   int m_round;
   
 };
+
+class CatProcessor : public CellProcessor { 
+
+ public:
+  
+  void SetParams(bool print_header,
+		 bool header_only,
+		 int offset,
+		 int sample) {
+    
+    m_print_header = print_header;
+    m_header_only = header_only;
+    
+    m_offset = offset;
+    m_sample = sample;
+    
+  }
+
+  void SetOffset(size_t offset) { m_offset = offset; }
+
+  void SetSample(size_t sample) { m_sample = sample; }
+  
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(const std::string& line) override;
+
+  size_t GetMaxCellID() const { return m_max_cellid; }
+  
+private:
+  
+  bool m_header_only;
+  bool m_print_header;
+  size_t m_cellid_index = static_cast<size_t>(-1);
+  
+  size_t m_offset;
+  size_t m_sample;
+  
+  // the header to compare with (and print if needed)
+  CellHeader m_master_header;
+  bool m_master_set = false;
+
+  size_t m_max_cellid = 0;
+
+  std::vector<size_t> m_graph_indicies;
+  
+};

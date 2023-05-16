@@ -6,8 +6,17 @@
 const std::unordered_set<std::string> Tag::ALLOWED_DATA_TAGS =
   {"MA","ID","GA","CA","FA","XD","YD","ZD"};
 
+const std::unordered_set<std::string> Tag::ALLOWED_INFO_TAGS =
+  {"HD","CN","FN"};
+
+
 Tag::Tag(const std::string& type, const std::string& nm) {
 
+  // tag has to be allowed
+  if (!ALLOWED_DATA_TAGS.count(type) && !ALLOWED_INFO_TAGS.count(type)) {
+    throw std::runtime_error("Tag with type " + type + " is not allowed");
+  }
+  
   record_type = type;
   name = nm;
   
@@ -30,8 +39,6 @@ void CellHeader::Cut(const std::unordered_set<std::string>& include) {
   // Remove elements of tags if their name is not in the vector
   tags.erase(std::remove_if(tags.begin(), tags.end(),
                             [&include](const Tag& tag) {
-			      if (tag.isVersionTag()) // don't remove version tags
-				return false;
                               return include.find(tag.GetName()) == include.end();
                             }),
              tags.end());
@@ -70,6 +77,8 @@ void CellHeader::Remove(const std::string& token) {
 }
 
 void CellHeader::Print() const {
+  for (const auto& tag : info_tags)
+    std::cout << tag << std::endl;
   for (const auto& tag : tags) 
     std::cout << tag << std::endl;
 }
@@ -108,6 +117,7 @@ bool Tag::isFlagTag() const {
 }
 
 bool Tag::isVersionTag() const {
+  
   bool v = record_type == "HD";
 
   if (!v)
@@ -167,7 +177,7 @@ bool Tag::isIDTag() const {
 
 std::string Tag::GetName() const {
   
-  if (!isVersionTag() && name.empty())
+  if (!isInfoTag() && name.empty())
     throw std::runtime_error("Error: tag " + record_type + " requires NM tag");
   
   return name;
@@ -188,15 +198,52 @@ bool Tag::hasName() const {
   return !name.empty();
 }
 
+bool CellHeader::hasTag(const std::string& tagname) const {
+
+  for (const auto& t : tags)
+    if (tagname == t.GetName())
+      return true;
+
+  return false;
+}
+
+bool CellHeader::identicalColumns(const CellHeader& header) const {
+
+  size_t i = 0;
+
+  if (this->tags.size() != header.tags.size())
+    return false;
+
+  for (size_t i = 0; i < this->tags.size(); i++) {
+    if (this->tags.at(i).GetName() != header.tags.at(i).GetName())
+      return false;
+  }
+
+  return true;
+  
+  
+  
+}
+
 void CellHeader::addTag(const Tag& tag) {
 
-  if (!tag.isVersionTag()) {
+  /// check that tags has a name if its a column tag
+  if (!tag.isInfoTag()) {
     if (!tag.hasName()) {
       throw std::runtime_error("Tag of record type " + tag.record_type + " needs an NM:<name> field");
     }
   }
-  
-  tags.push_back(tag);
+
+  // throw error if already exists
+  if (hasTag(tag.GetName())) {
+    throw std::runtime_error("Trying to add tag " + tag.GetName() + " that already exists in header");
+  }
+
+  // add the tag
+  if (tag.isInfoTag())
+    info_tags.push_back(tag);
+  else if (tag.isColumnTag())
+    tags.push_back(tag);
   
   if (tag.isMarkerTag()) {
     markers_.insert(tag.GetName());
@@ -210,7 +257,7 @@ void CellHeader::addTag(const Tag& tag) {
     z_ = tag.GetName();
   } else if (tag.isIDTag()) {
     id_ = tag.GetName();
-  } else if (tag.isVersionTag()) {
+  } else if (tag.isInfoTag()) {
     ;//
   } else if (tag.isGraphTag()) {
     graph_.insert(tag.GetName());

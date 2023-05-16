@@ -14,6 +14,7 @@
 #include <unordered_set>
 
 #include "cell_header.h"
+#include "cell_column.h"
 
 /// @brief Alias for a single datum from a cell, which can be int, float or string
 using CellDatum = std::variant<uint64_t, float, std::string>;
@@ -39,7 +40,7 @@ template <typename T> inline std::string AddCommas(T data) {
 }
 
 void process_token_to_variant(const std::string_view& token,
-			      bool is_string_tag,
+			      const Tag& tag,
 			      CellDatum& value);
 
 void get_two_elements_as_floats(const std::string_view& str, size_t n, size_t m,
@@ -89,3 +90,8 @@ int read_one_line_to_cellrow(const std::string& line,
     return sampledIndices;
 }
 */
+
+enum class ColumnType;
+std::string columnTypeToString(ColumnType type);
+
+std::string variantToString(const std::variant<uint64_t, float, std::string>& value);
