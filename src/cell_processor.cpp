@@ -7,7 +7,7 @@
 int SelectProcessor::ProcessHeader(CellHeader& header) {
 
   // find which one the cellflag is
-  size_t ii = 0;
+  /*size_t ii = 0;
   for (const auto& t : header.GetColTags()) {
     if (t.isFlagTag()) {
       m_flag_index = ii;
@@ -18,26 +18,30 @@ int SelectProcessor::ProcessHeader(CellHeader& header) {
   // must have a flag
   if (m_flag_index == static_cast<size_t>(-1)) {
     throw std::runtime_error("Header does not contain and flag tags");
-  }
+    }*/
   
   // print the completed header
-  if (m_print_header)
-    header.Print();
+  //if (m_print_header)
+  //  header.Print();
 
   return 0;
 }
 
-int SelectProcessor::ProcessLine(const std::string& line) {
+int SelectProcessor::ProcessLine(const Cell& cell) {
+  //int SelectProcessor::ProcessLine(const std::string& line) {
 
   // get the flag value from the line
-  uint64_t flag_val = get_nth_element_as_integer(line, m_flag_index);
-  CellFlag flag(flag_val);
+  //uint64_t flag_val =  // = get_nth_element_as_integer(line, m_flag_index);
+  CellFlag flag(cell.m_flag);
 
   // test it and print line if so
   //if (flag.test(m_on, m_off))
   bool flags_met = flag.testAndOr(m_or, m_and);
+  
   if (flags_met != m_not)
-    std::cout << line << std::endl;
+    ;
+    //std::cout << line << std::endl;
+    // ADD -- how to write this
 
   return 0;
 }
@@ -45,18 +49,16 @@ int SelectProcessor::ProcessLine(const std::string& line) {
 int CutProcessor::ProcessHeader(CellHeader& header) {
 
   // if not a strict cut, keep dims and id
-  if (!m_strict_cut) {
-    m_include.insert(header.GetX());
-    m_include.insert(header.GetY());
-    m_include.insert(header.GetZ());
-    m_include.insert(header.GetID());
+  /*  if (!m_strict_cut) {
+    m_include.insert("x"); //header.GetX());
+    m_include.insert("y"); //header.GetY());
+    m_include.insert("id"); //header.GetID());
   }
   m_include.erase(std::string());
-
+  
   // find indicies of columns to remove
-  const std::vector<Tag>& tags = header.GetColTags();
   size_t i = 0;
-  for (const auto& t : tags) {
+  for (const auto& t : header.GetDataTags()) {
     
     // if not a strict cut, add dims and cellid
     if (!m_strict_cut &&
@@ -79,12 +81,15 @@ int CutProcessor::ProcessHeader(CellHeader& header) {
   if (m_header_print) {
     header.Print();
   }
-
+  */
+  
   return 0;
 }
 
-int CutProcessor::ProcessLine(const std::string& line) {
+int CutProcessor::ProcessLine(const Cell& cell) {
+  //int CutProcessor::ProcessLine(const std::string& line) {
 
+  /*
   // tokenize the input line
   std::vector<std::string> tokens = tokenize_comma_delimited(line);
 
@@ -101,7 +106,8 @@ int CutProcessor::ProcessLine(const std::string& line) {
   
   // concatenate output tokens
   std::cout << tokens_to_comma_string(output) << std::endl;
-
+  */
+  
   return 0;
 }
 
@@ -109,22 +115,22 @@ int LogProcessor::ProcessHeader(CellHeader& header) {
 
   // setup which are marker indicies
   size_t i = 0;
-  for (const auto& t : header.GetColTags()) {
-
-    if (t.isMarkerTag())
-      m_to_log.insert(i);
+  for (const auto& t : header.GetMarkerTags()) {
+    m_to_log.insert(i);
     i++;
   }
   
   // print the header
-  if (m_print_header)
-    header.Print();
+  //if (m_print_header)
+  //  header.Print();
 
   return 0;
 }
 
-int LogProcessor::ProcessLine(const std::string& line) {
+//int LogProcessor::ProcessLine(const std::string& line) {
+int LogProcessor::ProcessLine(const Cell& cell) {
 
+  /*
   m_line_number++;
   
   // tokenize the line
@@ -169,14 +175,15 @@ int LogProcessor::ProcessLine(const std::string& line) {
   }
 
   std::cout << tokens_to_comma_string(output) << std::endl;
-
+  */
+  
   return 0;
   
 }
 
-
 int ROIProcessor::ProcessHeader(CellHeader& header) {
 
+  /*
   // how many columns per line
   m_col_count = header.ColumnCount();
 
@@ -195,11 +202,14 @@ int ROIProcessor::ProcessHeader(CellHeader& header) {
   if (m_print_header)
     header.Print();
 
+  */
   return 0;
 }
 
-int ROIProcessor::ProcessLine(const std::string& line) {
+int ROIProcessor::ProcessLine(const Cell& cell) {
+  //int ROIProcessor::ProcessLine(const std::string& line) {
 
+  /*
   // convert the line to CellRow
   CellRow values(m_col_count); 
   int num_elems = read_one_line_to_cellrow(line, values, m_header);
@@ -235,6 +245,7 @@ int ROIProcessor::ProcessLine(const std::string& line) {
   if (print_line)
     std::cout << line << std::endl;
 
+  */
   return 0;
   
 }
@@ -249,8 +260,10 @@ int ViewProcessor::ProcessHeader(CellHeader& header) {
   
 }
 
-int ViewProcessor::ProcessLine(const std::string& line) {
+int ViewProcessor::ProcessLine(const Cell& line) {
+  //int ViewProcessor::ProcessLine(const std::string& line) {
 
+  /*
   // should never get here if header-only
   assert(!m_header_only);
 
@@ -273,15 +286,17 @@ int ViewProcessor::ProcessLine(const std::string& line) {
 
   // concatenate output tokens
   std::cout << tokens_to_comma_string(output) << std::endl;
+  */
   
   return 0;
 }
 
-int CatProcessor::ProcessLine(const std::string& line) {
+int CatProcessor::ProcessLine(const Cell& line) {
+  //int CatProcessor::ProcessLine(const std::string& line) {
 
   //std::cerr << " processingl ine " << line << std::endl;
   //std::cerr << " graph indicies " << m_graph_indicies.size() << std::endl;
-  
+  /*  
   // get the cell id
   size_t o_cell_id = get_nth_element_as_integer(line, m_cellid_index);
 
@@ -307,7 +322,8 @@ int CatProcessor::ProcessLine(const std::string& line) {
 
     tokens[i] = node.toString(false); // false is for "integerize"
   }
-
+  */
+  
   /*
   // update the cell id
   tokens[m_cellid_index] = std::to_string(n_cell_id);
@@ -324,6 +340,7 @@ int CatProcessor::ProcessLine(const std::string& line) {
 
 int CatProcessor::ProcessHeader(CellHeader& header) {
 
+  /*
   // if we already have the master header, just compare for error checking
   if (m_master_set) {
 
@@ -388,15 +405,16 @@ int CatProcessor::ProcessHeader(CellHeader& header) {
   // print the header
   if (m_print_header && m_master_set)
     m_master_header.Print();
+  */
   
   return 0;
 }
 
 int CerealProcessor::ProcessHeader(CellHeader& header) {
   m_header = header;
-
+  
   std::string filename = "cereal32.bin";
-
+  
   m_os = std::make_unique<std::ofstream>(filename, std::ios::binary);
   m_archive = std::make_unique<cereal::BinaryOutputArchive>(*m_os);
   
@@ -412,3 +430,4 @@ int CerealProcessor::ProcessLine(const std::string& line) {
   return 0;
   
 }
+

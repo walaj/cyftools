@@ -4,11 +4,15 @@
 #include "csv.h"
 #include "cell_column.h"
 #include "polygon.h"
-#include "cell_header.h"
+#include "cell_header2.h"
 #include "cell_processor.h"
 
 // Define the function wrapper type
 typedef std::function<bool(const std::string& in, std::string& out)> LineStreamerWrapper;
+
+// define phenotype map
+typedef std::pair<float,float> Pheno;
+typedef std::unordered_map<std::string, Pheno> PhenoMap;
 
 class CellTable {
   
@@ -20,19 +24,10 @@ public:
 
   void BuildTable(const std::string& file);
 
-  void StreamTable(CellProcessor& proc, const std::string& file);
+  void StreamTableCSV(LineProcessor& proc, const std::string& file);
   
   // add columns
-  void AddColumn(const std::string& key, ColPtr column); 
-
-  void AddGraphColumn(const Tag& tag,
-		     GraphColPtr value);
-
-  void AddFlagColumn(const Tag& tag,
-		     FlagColPtr value,
-		     bool overwrite);
-
-  void AddMetaColumn(const std::string& key, ColPtr value);
+  void AddColumn(const Tag& tag, ColPtr value);
 
   // set params
   void SetPrecision(size_t n);
@@ -91,9 +86,11 @@ public:
 
   void select(uint64_t on, uint64_t off);
 
-  std::unordered_map<std::string, std::pair<float,float>> phenoread(const std::string& filename) const;
+  PhenoMap phenoread(const std::string& filename) const;
   
   void phenotype(const std::unordered_map<std::string, std::pair<float,float>>& thresh);
+
+  void StreamTable(CellProcessor& proc, const std::string& file);
   
  private:
   
@@ -118,6 +115,8 @@ public:
   void header_read__(const std::string& header_line);
   
   CellRow add_row_to_table__(const CellRow& values);
+
+  Cell add_cell_to_table(const Cell& cell);
 
   CellRow select_row_from_table__(const CellRow& values, uint64_t on,
 					     uint64_t off);

@@ -2,7 +2,8 @@
 
 // DataProcessor.h
 #include <string>
-#include "cell_header.h"
+#include "cell_header2.h"
+#include "cell_row.h"
 #include "polygon.h"
 
 #include <cereal/types/vector.hpp>
@@ -13,8 +14,20 @@ class CellProcessor {
   virtual ~CellProcessor() = default;
   
   virtual int ProcessHeader(CellHeader& header) = 0;
-  virtual int ProcessLine(const std::string& line) = 0;
+  //virtual int ProcessLine(const std::string& line) = 0;
+  virtual int ProcessLine(const Cell& cell) = 0;  
 };
+
+class LineProcessor {
+ public:
+  virtual ~LineProcessor() = default;
+  
+  virtual int ProcessHeader(CellHeader& header) = 0;
+  
+  virtual int ProcessLine(const std::string& line) = 0;
+  //virtual int ProcessLine(const Cell& cell) = 0;  
+};
+
 
 // Cut processor
 class CutProcessor : public CellProcessor {
@@ -30,7 +43,8 @@ class CutProcessor : public CellProcessor {
   
   int ProcessHeader(CellHeader& header) override;
   
-  int ProcessLine(const std::string& line) override;
+  //int ProcessLine(const std::string& line) override;
+  int ProcessLine(const Cell& cell) override;
   
  private:
   
@@ -57,7 +71,8 @@ class SelectProcessor : public CellProcessor {
   
   int ProcessHeader(CellHeader& header) override;
   
-  int ProcessLine(const std::string& line) override;
+  int ProcessLine(const Cell& cell) override;
+  //  int ProcessLine(const std::string& line) override;
   
  private:
 
@@ -81,8 +96,9 @@ class LogProcessor : public CellProcessor {
   }
   
   int ProcessHeader(CellHeader& header) override;
-  
-  int ProcessLine(const std::string& line) override;
+
+  int ProcessLine(const Cell& cell) override;
+  //int ProcessLine(const std::string& line) override;
   
  private:
 
@@ -107,8 +123,9 @@ class ROIProcessor : public CellProcessor {
   }
   
   int ProcessHeader(CellHeader& header) override;
-  
-  int ProcessLine(const std::string& line) override;
+
+  int ProcessLine(const Cell& cell) override;
+  //int ProcessLine(const std::string& line) override;
 
  private:
 
@@ -141,8 +158,9 @@ class ViewProcessor : public CellProcessor {
   }
   
   int ProcessHeader(CellHeader& header) override;
-  
-  int ProcessLine(const std::string& line) override;
+
+  int ProcessLine(const Cell& cell) override;
+  //int ProcessLine(const std::string& line) override;
   
  private:
 
@@ -174,8 +192,9 @@ class CatProcessor : public CellProcessor {
   void SetSample(size_t sample) { m_sample = sample; }
   
   int ProcessHeader(CellHeader& header) override;
-  
-  int ProcessLine(const std::string& line) override;
+
+  int ProcessLine(const Cell& cell) override;
+  //int ProcessLine(const std::string& line) override;
 
   size_t GetMaxCellID() const { return m_max_cellid; }
   
@@ -198,15 +217,16 @@ private:
   
 };
 
-class CerealProcessor : public CellProcessor { 
+class CerealProcessor : public LineProcessor { 
 
  public:
   
   void SetParams(); 
   
   int ProcessHeader(CellHeader& header) override;
-  
+
   int ProcessLine(const std::string& line) override;
+  //int ProcessLine(const std::string& line) override;
 
 private:
 
@@ -222,4 +242,3 @@ private:
   std::unique_ptr<cereal::BinaryOutputArchive> m_archive;
   
 };
-

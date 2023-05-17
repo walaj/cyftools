@@ -16,15 +16,13 @@ struct Tag {
 
   static const uint8_t MA_TAG = 0; // marker tag
   static const uint8_t GA_TAG = 1; // graph tag
+  static const uint8_t CA_TAG = 2; // meta tag
+  static const uint8_t PG_TAG = 3; // program tag  
   
-  static const std::unordered_set<std::string> ALLOWED_DATA_TAGS;
-  static const std::unordered_set<std::string> ALLOWED_INFO_TAGS;  
-
   uint8_t tag_type;
-  std::string record_type; // e.g., "MA", "CD"
-  std::unordered_map<std::string, std::string> values; // Stores the tag fields and their data
-  std::string name;
-
+  std::string id;
+  std::string data;
+  
   // Default constructor
   Tag() = default;
   
@@ -38,16 +36,9 @@ struct Tag {
   // Function to add a tag field and its data to the structure
   void addValue(const std::string& field, const std::string& value);
 
-  bool hasName() const;
-
-  bool isColumnTag() const {
-    return ALLOWED_DATA_TAGS.count(record_type); 
-  }
-
   bool isInfoTag() const {
     return ALLOWED_INFO_TAGS.count(record_type); 
   }
-  
   
   // Overloaded << operator
   friend std::ostream& operator<<(std::ostream& os, const Tag& tag);
@@ -82,6 +73,7 @@ private:
 class CellHeader {
 
 public:
+  
   // Constructor
   CellHeader() = default;
 
@@ -187,27 +179,19 @@ public:
   template <class Archive>
   void serialize(Archive & ar)
   {
-    ar();
+    ar(data_tags, info_tags, version);
   }
 
   
 private:
 
   friend class CellTable;
-  
-  std::vector<Tag> tags; // Vector to store the Tag objects
+
+  std::vector<Tag> data_tags;
 
   std::vector<Tag> info_tags; // vector to store non-column data
   
-  std::string version_;
-  std::string id_;
-  std::string x_;
-  std::string y_;
-  std::string z_;  
-  std::set<std::string> markers_;
-  std::set<std::string> meta_;
-  std::set<std::string> graph_;
-  std::set<std::string> flag_;
+  std::string version;
   
 };
 

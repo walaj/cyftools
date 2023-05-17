@@ -192,12 +192,12 @@ static void build_table(bool convert) {
     table.SetThreads(opt::threads);
     
   // read the table into memory
-  table.BuildTable(opt::infile);
+  //table.BuildTable(opt::infile);
 
   if (convert) {
     if (opt::verbose)
       std::cerr << "...read table: converting graph and flag columns" << std::endl;
-    table.ConvertColumns();
+    // table.ConvertColumns();
   }
 }
 
@@ -1300,7 +1300,7 @@ static int cerealfunc(int argc, char** argv) {
 
   CerealProcessor cerp;
 
-  table.StreamTable(cerp, opt::infile);
+  table.StreamTableCSV(cerp, opt::infile);
 
   return 0;
   

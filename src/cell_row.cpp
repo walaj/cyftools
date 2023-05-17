@@ -4,6 +4,7 @@
 
 Cell::Cell(const std::string& row, const CellHeader& header) {
 
+  /*
   //
   const std::vector<std::string> tokens = tokenize_comma_delimited(row);
 
@@ -29,5 +30,5 @@ Cell::Cell(const std::string& row, const CellHeader& header) {
     }
     i++;
   }
-  
+  */
 }

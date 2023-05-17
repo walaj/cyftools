@@ -5,72 +5,76 @@
 #include "cell_table.h"
 #include "cell_graph.h"
 
+#include <cereal/types/vector.hpp>
+#include <cereal/archives/portable_binary.hpp>
+
 static size_t debugr = 0;
 
 const CellHeader& CellTable::GetHeader() const {
   return m_header;
 }
 
-void CellTable::AddColumn(const std::string& key, ColPtr column) {
-  m_table[key] = column;
-}
-
-void CellTable::SetPrecision(size_t n) {
-  for (auto& k : m_table) {
-    k.second->SetPrecision(n);
-  }
-}
-
-void CellTable::Log10() {
-  
-  for (auto& k : m_table) {
-    if (m_header.hasMarker(k.first)) {
-      if (k.second->GetType() == ColumnType::INT) {
-	k.second = k.second->CopyToFloat();
-      }
-      k.second->Log10();
-    }
-  }
-}
-
-void CellTable::BuildTable(const std::string& file) {
+/*void CellTable::BuildTable(const std::string& file) {
   process_csv_file__(file, [this](const CellRow& values) {
     return this->add_row_to_table__(values);
   });
 }
-
+*/
 bool CellTable::ContainsColumn(const std::string& name) const {
   return m_table.count(name) > 0;
 }
 
 std::ostream& operator<<(std::ostream& os, const CellTable& table) {
+
+  os << "CellID -- " << table.m_table.at("id")->toString() << std::endl;
+  os << "Flag -- "   << table.m_table.at("flag")->toString() << std::endl;
+  os << "X -- "      << table.m_table.at("x")->toString() << std::endl;
+  os << "Y -- "      << table.m_table.at("y")->toString() << std::endl;      
   
-  for (const auto& key : table.m_header.GetColTags()) {
-    const std::string tagn = key.GetName();
-    auto col_ptr = table.m_table.at(tagn);
+  for (const auto& t : table.m_header.GetDataTags()) {
+    
+    auto col_ptr = table.m_table.at(t.id);
     std::string ctype;
-    if (table.m_header.hasMarker(tagn))
-      ctype = "Marker";
-    else if (table.m_header.hasMeta(tagn))
-      ctype = "Meta";
-    else if (table.m_header.hasFlag(tagn))
-      ctype = "Flag";
-    else if (table.m_header.hasGraph(tagn))
-      ctype = "Graph";
-    else if (tagn == table.x || tagn == table.y)
-      ctype = "Dim";
-    else if (tagn == table.m_header.GetID())
-      ctype = "ID";
-    else
-      ctype = "\nUNKNOWN COLUMN TYPE";
-    os << tagn << " -- " << ctype << " -- " << col_ptr->toString() << std::endl;
+
+    switch (t.type) {
+      case Tag::MA_TAG: ctype = "Marker"; break;
+      case Tag::GA_TAG: ctype = "Graph"; break;
+      case Tag::CA_TAG: ctype = "Meta"; break;
+      default: ctype = "UNKNOWN"; break;
+    }
+    
+    os << t.id << " -- " << ctype << " -- " << col_ptr->toString() << std::endl;
   }
   return os;
 }
 
+Cell CellTable::add_cell_to_table(const Cell& cell) {
+
+  // add fixed data
+  static_cast<IntCol*>(m_table["id"].get())->PushElem(cell.m_id);
+  static_cast<IntCol*>(m_table["flag"].get())->PushElem(cell.m_flag);
+  static_cast<FloatCol*>(m_table["x"].get())->PushElem(cell.m_x);
+  static_cast<FloatCol*>(m_table["y"].get())->PushElem(cell.m_y);
+
+  // add the info data
+  size_t i = 0;
+  for (const auto& t : m_header.GetDataTags()) {
+    static_cast<FloatCol*>(m_table[t.id].get())->PushElem(cell.m_cols.at(i));
+    i++;
+  }
+
+  // add the graph data
+  if (cell.m_spatial_ids.size()) {
+    CellNode node(cell.m_spatial_ids, cell.m_spatial_dist);
+  }
+
+  return Cell {};
+}
+
+/*
 CellRow CellTable::add_row_to_table__(const CellRow& values) {
 
-  int col_count = m_header.ColumnCount();
+  int col_count = m_header.GetDataTags().size(); //ColumnCount();
   
   // make sure that the row is expected length
   // if m_header.col_order.size() is zero, you may not have read the header first
@@ -144,6 +148,7 @@ CellRow CellTable::add_row_to_table__(const CellRow& values) {
   return CellRow{}; // Return an empty CellRow
   
 }
+*/
 
 void CellTable::Subsample(int n, int s) {
   
@@ -178,21 +183,9 @@ void CellTable::Subsample(int n, int s) {
   // Subsample the table using the selected row indices
   for (auto &kv : m_table) {
     kv.second->SubsetColumn(row_indices);
-    // new_column[i] = kv.second[row_indices[i]];
-      
-      // std::visit(
-      // 		 [&row_indices, n](auto &vec) {
-      // 		   using ValueType = typename std::decay_t<decltype(vec)>::value_type;
-      // 		   std::vector<ValueType> new_column(n);
-      // 		   for (size_t i = 0; i < n; ++i) {
-      // 		     new_column[i] = vec[row_indices[i]];
-      // 		   }
-      // 		   vec = std::move(new_column);
-      // 		 },
-      // 		 kv.second);
-    }
-
-    return;
+  }
+  
+  return;
 }
 
 size_t CellTable::CellCount() const {
@@ -226,8 +219,8 @@ void CellTable::PrintTable(bool header) const {
   
   // Create a lookup table with pointers to the Column values
   std::vector<ColPtr> lookup_table;
-  for (const auto& c : m_header.GetColTags()) {
-    auto it = m_table.find(c.GetName());
+  for (const auto& c : m_header.GetDataTags()) {
+    auto it = m_table.find(c.id);
     if (it != m_table.end()) {
       lookup_table.push_back(it->second);
     }
@@ -248,13 +241,11 @@ void CellTable::PrintTable(bool header) const {
   }
 }
 
-
-
 void CellTable::Crop(float xlo, float xhi, float ylo, float yhi) {
   
   // Find the x and y columns in the table
-  auto x_it = m_table.find(x);
-  auto y_it = m_table.find(y);
+  auto x_it = m_table.find("x");
+  auto y_it = m_table.find("y");
 
   // total number of rows of table
   size_t nc = CellCount();
@@ -285,11 +276,13 @@ void CellTable::PrintPearson(bool csv, bool sort) const {
 
   // collect the marker data in one structure
   std::vector<std::pair<std::string, const ColPtr>> data;
-  for (const auto &t : m_table) {
-    if (m_header.hasMarker(t.first)) {
-      data.push_back({t.first, t.second});
+  for (const auto& t : m_header.GetDataTags()) {
+    if (t.type == Tag::MA_TAG) {
+      auto ptr = m_table.find(t.id);
+      assert(ptr != m_table.end());
+      data.push_back({ptr->first, ptr->second});
     }
-  }
+  }    
   
   // get the correlation matrix
   size_t n = data.size();
@@ -304,12 +297,10 @@ void CellTable::PrintPearson(bool csv, bool sort) const {
   if (csv) {
     print_correlation_matrix(data, correlation_matrix, sort);
     /*
-
-    
-    for (int i = 0; i < n; i++) {
+      for (int i = 0; i < n; i++) {
       for (int j = i + 1; j < n; j++) {
-	std::cout << data[i].first << "," << data[j].first << 
-	  "," << correlation_matrix[i][j] << std::endl;
+      std::cout << data[i].first << "," << data[j].first << 
+      "," << correlation_matrix[i][j] << std::endl;
       }
       }*/
     return;
@@ -317,9 +308,12 @@ void CellTable::PrintPearson(bool csv, bool sort) const {
   
   // find the best spacing
   size_t spacing = 8;
-  for (const auto& c : m_header.markers_)
-    if (c.length() > spacing)
-      spacing = c.length() + 2;
+  for (const auto& t : m_header.GetDataTags()) {
+    if (t.type == Tag::MA_TAG) {
+      if (t.id.length() > spacing)
+	spacing = t.id.length() + 2;
+    }
+  }
   
   // Print x-axis markers
   std::cout << std::setw(spacing) << " ";
@@ -344,7 +338,7 @@ void CellTable::PrintPearson(bool csv, bool sort) const {
     std::cout << std::endl;
   }
   
-}
+  }
 
 
 void CellTable::PlotASCII(int width, int height) const { 
@@ -355,17 +349,20 @@ void CellTable::PlotASCII(int width, int height) const {
   }
 
   // find the max size of the original cell table
-  float x_min = m_table.at(x)->Min();
-  float x_max = m_table.at(x)->Max();
-  float y_min = m_table.at(y)->Min();
-  float y_max = m_table.at(y)->Max();
+  auto x_ptr = m_table.at("x");
+  auto y_ptr = m_table.at("y");
+  
+  float x_min = x_ptr->Min();
+  float x_max = x_ptr->Max();
+  float y_min = y_ptr->Min();
+  float y_max = y_ptr->Max();
   
   // scale it to fit on the plot
   size_t nc = CellCount();
   std::vector<std::pair<int, int>> scaled_coords;
   for (size_t i = 0; i < nc; i++) {
-    float x_ = m_table.at(x)->GetNumericElem(i);
-    float y_ = m_table.at(y)->GetNumericElem(i);    
+    float x_ = x_ptr->GetNumericElem(i);
+    float y_ = y_ptr->GetNumericElem(i);    
     
     int x = static_cast<int>((x_ - x_min) / (x_max - x_min) * (width  - 2)) + 1;
     int y = static_cast<int>((y_ - y_min) / (y_max - y_min) * (height - 2)) + 1;
@@ -404,28 +401,27 @@ void CellTable::PlotASCII(int width, int height) const {
   
 }
 
-void CellTable::AddGraphColumn(const Tag& tag,
-			       GraphColPtr value) {
-
+void CellTable::AddColumn(const Tag& tag,
+			  ColPtr value) {
+  
   if (value->size() != CellCount()) {
-    throw std::runtime_error("Adding graph column of incorrect size");
+    throw std::runtime_error("Adding column of incorrect size");
   }
   
   // check if already exists in the table
-  if (m_table.find(tag.GetName()) != m_table.end()) {
-    throw std::runtime_error("Adding graph column already in table");
+  if (m_table.find(tag.id) != m_table.end()) {
+    throw std::runtime_error("Adding column already in table");
   }
   
   // insert as a meta key
-  m_header.addTag(tag); 
+  m_header.addTag(tag);
 
   // add to the table
-  m_table[tag.GetName()] = value;
+  m_table[tag.id] = value;
   
 }
-			       
 
-void CellTable::AddMetaColumn(const std::string& key,
+/*void CellTable::AddMetaColumn(const std::string& key,
 			      ColPtr value) {
 
   // warn if creating a ragged table, but proceed anyway
@@ -446,89 +442,73 @@ void CellTable::AddMetaColumn(const std::string& key,
   
   return;
   
-}
+  }*/
 
 void CellTable::SubsetROI(const std::vector<Polygon> &polygons) {
 
   size_t nc = CellCount();
   
   // Initialize the "sparoi" column
-  IntColPtr new_data = std::make_shared<IntCol>();
+  FloatColPtr new_data = std::make_shared<FloatCol>();
   new_data->reserve(nc);
-  
-  //Column new_data = std::vector<int>(nc, 0);
-  //AddMetaColumn("sparoi", new_data); 
   
   // Loop the table and check if the cell is in the ROI
   for (size_t i = 0; i < nc; i++) {
-    float x_ = m_table.at(x)->GetNumericElem(i);
-    float y_ = m_table.at(y)->GetNumericElem(i);    
+    float x_ = m_table.at("x")->GetNumericElem(i);
+    float y_ = m_table.at("y")->GetNumericElem(i);    
 
     // Loop through all polygons and check if the point is inside any of them
     for (const auto &polygon : polygons) {
       // if point is in this polygon, add the polygon id number to the roi
       if (polygon.PointIn(x_,y_)) {
-	std::cerr << " ADDING POINT " << x_ << "," << y_ << std::endl;
-	new_data->SetNumericElem(polygon.Id, i);
-	
-	//std::visit([i, id = polygon.Id](auto& vec) { vec[i] = id; }, table["sparoi"]);
-	
+	new_data->SetNumericElem(static_cast<float>(polygon.Id), i);
         // uncomment below if want to prevent over-writing existing
         // break;
       }
     }
   }
 }
+ 
+ void CellTable::check_header__() const {
+   assert(m_header.validate());
+ }
+ 
+ void CellTable::KNN_spatial(int num_neighbors, int dist) {
+   
+   // number of cells
+   int nobs = CellCount();
+   
+   if (m_verbose)
+     std::cerr << "...finding K nearest-neighbors (spatial) on " << AddCommas(nobs) << " cells" << std::endl;  
+   
+   // column major the coordinate data
+   std::vector<double> concatenated_data;
+   
+   const int ndim = 2;
 
-void CellTable::check_header__() const {
-
-  assert(m_header.validate());
-  
-}
-
-void CellTable::KNN_spatial(int num_neighbors, int dist) {
-
-  // number of cells
-  int nobs = CellCount();
-
-  if (m_verbose)
-    std::cerr << "...finding K nearest-neighbors (spatial) on " << AddCommas(nobs) << " cells" << std::endl;  
-
-  // column major the coordinate data
-  std::vector<double> concatenated_data;
-
-  int ndim = 0;
-  if (m_table.find(m_header.x_) != m_table.end()) {
-    const auto& data = std::dynamic_pointer_cast<FloatCol>(m_table.at(m_header.x_))->getData();
-    if (m_verbose) 
-      std::cerr << "...adding " << AddCommas(data.size()) << " points on x" << std::endl;
-    concatenated_data.insert(concatenated_data.end(), data.begin(), data.end());
-    ndim++;
-  }
-  if (m_table.find(m_header.y_) != m_table.end()) {
-    const auto& data = std::dynamic_pointer_cast<FloatCol>(m_table.at(m_header.y_))->getData();
-    if (m_verbose) 
-      std::cerr << "...adding " << AddCommas(data.size()) << " points on y" << std::endl;
-    concatenated_data.insert(concatenated_data.end(), data.begin(), data.end());
-    ndim++;    
-  }
-  if (m_table.find(m_header.z_) != m_table.end()) {
-    const auto& data = std::dynamic_pointer_cast<FloatCol>(m_table.at(m_header.z_))->getData();
-    if (m_verbose) 
-      std::cerr << "...adding " << AddCommas(data.size()) << " points on z" << std::endl;
-    concatenated_data.insert(concatenated_data.end(), data.begin(), data.end());
-    ndim++;    
-  }
-
-  // convert to row major?
-  column_to_row_major(concatenated_data, nobs, ndim);
-
-  // get the cell id colums
-  auto id_ptr = GetIDColumn();
-  
-  if (m_verbose)
-    std::cerr << "...setting up KNN graph (spatial) on " << AddCommas(nobs) << " points" << std::endl;
-
+   auto x_ptr = m_table.at("x");
+   auto y_ptr = m_table.at("y");
+   
+   const auto& x_data = std::dynamic_pointer_cast<FloatCol>(x_ptr)->getData(); // just a ptr, not a copy
+   if (m_verbose) 
+     std::cerr << "...adding " << AddCommas(x_data.size()) << " points on x" << std::endl;
+   concatenated_data.insert(concatenated_data.end(), x_data.begin(), x_data.end());
+   
+   const auto& y_data = std::dynamic_pointer_cast<FloatCol>(y_ptr)->getData();
+   if (m_verbose) 
+     std::cerr << "...adding " << AddCommas(y_data.size()) << " points on y" << std::endl;
+   concatenated_data.insert(concatenated_data.end(), y_data.begin(), y_data.end());
+   
+   // convert to row major?
+   column_to_row_major(concatenated_data, nobs, ndim);
+   
+   // get the cell id colums
+   //auto id_ptr = GetIDColumn();
+   auto id_ptr = m_table.at("id");
+   
+   if (m_verbose)
+     std::cerr << "...setting up KNN graph (spatial) on " << AddCommas(nobs) << " points" << std::endl;
+   
   umappp::NeighborList<float> output(nobs);
 
   if (m_verbose)
@@ -542,7 +522,7 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
   // distance cutoff, implying that there are likely additional cells within
   // the desired radius that are cutoff
   size_t lost_cell = 0;
-
+  
   // initialize the tree. Can choose from different algorithms, per knncolle library
   knncolle::VpTreeEuclidean<int, double> searcher(ndim, nobs, concatenated_data.data());
   //knncolle::AnnoyEuclidean<int, double> searcher(ndim, nobs, concatenated_data.data());  
@@ -556,7 +536,7 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
 	std::endl;
     
     Neighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
-
+    
     // set the node pointer to CellID rather than 0-based
     for (auto& cc : neigh) {
       cc.first = id_ptr->GetNumericElem(cc.first);
@@ -572,11 +552,11 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
       }
       
       if (osize == neigh_trim.size()) {
-	      #pragma omp critical
+    #pragma omp critical
 	{
-	lost_cell++;
-	if (lost_cell % 500 == 0)
-	  std::cerr << "osize " << osize << " Lost cell " << AddCommas(lost_cell) << " of " << AddCommas(nobs) << std::endl;
+	  lost_cell++;
+	  if (lost_cell % 500 == 0)
+	    std::cerr << "osize " << osize << " Lost cell " << AddCommas(lost_cell) << " of " << AddCommas(nobs) << std::endl;
 	}
       }
 
@@ -585,7 +565,7 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
 	graph->SetValueAt(i, CellNode(neigh_trim));
       }
       
-    // no distance limitation
+      // no distance limitation
     } else {
 #pragma omp critical
       {
@@ -601,40 +581,56 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
   graph->SetIntegerize(true);
   
   //
-  Tag gtag("GA","spat");
-  gtag.addValue("NN", std::to_string(num_neighbors));
-  AddGraphColumn(gtag, graph);
+  //Tag gtag("GA","spat");
+  Tag gtag(Tag::GA_TAG, "spat", "NN:" + std::to_string(num_neighbors));
+  //gtag.addValue("NN", std::to_string(num_neighbors));
+  AddColumn(gtag, graph);
 }
 
 void CellTable::KNN_marker(int num_neighbors) {
 
-  int ndim = m_header.markers_.size();
-  int nobs = CellCount();
+  // get the number of markers
+  int ndim = 0;
+  for (const auto& t : m_header.GetDataTags())
+    if (t.type == Tag::MA_TAG)
+      ndim++;
 
+  // number of cells
+  int nobs = CellCount();
+  
   if (m_verbose)
     std::cerr << "...finding K nearest-neighbors on " << AddCommas(nobs) << " cells" << std::endl;  
-
+  
   // column major the marker data
   std::vector<double> concatenated_data;
-  
-  for (const auto& key : m_header.markers_) {
-    auto it = m_table.find(key);
+
+  // concatenate the data
+  for (const auto& t : m_header.GetDataTags()) {
+
+    // skip if not a marker tag
+    if (t.type != Tag::MA_TAG)
+      continue;
+    
+    auto it = m_table.find(t.id);
     if (it != m_table.end()) {
       auto column_ptr = it->second;
+      auto numeric_column_ptr = std::dynamic_pointer_cast<FloatCol>(column_ptr);
+      assert(numeric_column_ptr);
       
       // Check if the column is a NumericColumn
-      if (auto numeric_column_ptr = std::dynamic_pointer_cast<FloatCol>(column_ptr)) {
-	const auto& data = numeric_column_ptr->getData();
-	concatenated_data.insert(concatenated_data.end(), data.begin(), data.end());
-      }
+      //if (auto numeric_column_ptr = std::dynamic_pointer_cast<FloatCol>(column_ptr)) {
+      const auto& data = numeric_column_ptr->getData();
+      concatenated_data.insert(concatenated_data.end(), data.begin(), data.end());
+      //     }
     }
   }
-
+  
   // convert to row major?
   column_to_row_major(concatenated_data, nobs, ndim);
 
   // get the cell id colums
-  auto id_ptr = GetIDColumn();
+  auto id_ptr = m_table.at("id");  
+  //auto id_ptr = GetIDColumn();
   
   if (m_verbose)
     std::cerr << "...setting up KNN graph on " << AddCommas(concatenated_data.size()) << " points" << std::endl;
@@ -672,9 +668,8 @@ void CellTable::KNN_marker(int num_neighbors) {
   }
 
   //
-  Tag gtag("GA","knn");
-  gtag.addValue("NN", std::to_string(num_neighbors));
-  AddGraphColumn(gtag, graph);
+  Tag gtag(Tag::GA_TAG, "knn", "NN:" + std::to_string(num_neighbors));  
+  AddColumn(gtag, graph);
 
 }
 
@@ -705,7 +700,7 @@ void CellTable::print_correlation_matrix(const std::vector<std::pair<std::string
     }
 }
 
-void CellTable::process_csv_file__(const std::string& file, const std::function<CellRow(const CellRow&)>& func) {
+/*void CellTable::process_csv_file__(const std::string& file, const std::function<CellRow(const CellRow&)>& func) {
 
   // csv reader
   std::unique_ptr<io::LineReader> reader;
@@ -739,10 +734,7 @@ void CellTable::process_csv_file__(const std::string& file, const std::function<
     } else {
 
       if (!header_read) {
-	x = m_header.GetX();
-	y = m_header.GetY();
 	header_read = true;
-	
 	check_header__();
       }
 
@@ -775,7 +767,76 @@ void CellTable::process_csv_file__(const std::string& file, const std::function<
   }
 }
 
-void CellTable::ConvertColumns() {
+void CellTable::process_csv_file__(const std::string& file, const std::function<Cell(const Cell&)>& func) {
+
+  // csv reader
+  std::unique_ptr<io::LineReader> reader;
+
+  // Initialize the reader depending on the input string
+  if (file == "-") {
+    // Read from stdin
+    reader = std::make_unique<io::LineReader>("", stdin);
+  } else {
+    // Read from file
+    reader = std::make_unique<io::LineReader>(file);
+  }
+
+  // for m_verbose
+  size_t count = 0;
+  
+  // Read and process the lines
+  std::string line;
+  bool header_read = false;
+  char* next_line_ptr;
+  while ((next_line_ptr = reader->next_line()) != nullptr) {
+    line = std::string(next_line_ptr);
+    if (line.size() == 0) {
+      break;
+    }
+    
+    // If the line starts with '@', parse it as a Tag and add it to m_header
+    if (line[0] == '@') {
+      Tag tag(line);
+      m_header.addTag(tag);
+    } else {
+
+      if (!header_read) {
+	header_read = true;
+	check_header__();
+      }
+
+      // if header only, we're done
+      if (m_header_only) {
+	break;
+      }
+      
+      // container to store just one line
+      int col_count = m_header.ColumnCount();
+      CellRow values(col_count);
+
+      // read one line
+      int num_elems = read_one_line_to_cellrow(line, values, m_header);
+      //int num_elems = read_one_line_to_cell(line, cell, m_header);      
+      if (num_elems != col_count) {
+	throw std::runtime_error("Error on line: " + line + "\n\tread " +
+				 std::to_string(num_elems) + " expected " +
+				 std::to_string(col_count));
+      }
+
+      func(values);
+      
+      // m_verbose output
+      if (m_verbose && count % 500000 == 0) {
+	std::cerr << "...read line " << AddCommas(count) << std::endl;
+      }
+      count++;
+      
+    }
+  }
+}
+*/
+
+/*void CellTable::ConvertColumns() {
 
   // convert flag columns
   for (const auto& f : m_header.flag_) {
@@ -840,20 +901,22 @@ void CellTable::ConvertColumns() {
 
   }
 }
+*/
 
 void CellTable::select(uint64_t on, uint64_t off) {
 
-  FlagColPtr fc = std::dynamic_pointer_cast<FlagColumn>(m_table["cellflag"]);
-
+  FlagColPtr fc = std::dynamic_pointer_cast<FlagColumn>(m_table["flag"]);
+  assert(fc);
+  
   assert(fc->size());
   std::vector<size_t> s;
-
+  
   for (size_t i = 0; i < fc->size(); i++) {
-
+    
     if (fc->TestFlag(on, off, i))
       s.push_back(i);
   }
-
+  
   for (auto& m : m_table) {
     m.second->SubsetColumn(s);
   }
@@ -862,7 +925,7 @@ void CellTable::select(uint64_t on, uint64_t off) {
 }
 
 void CellTable::phenotype(const std::unordered_map<std::string, std::pair<float,float>>& thresh) {
-
+  
   FlagColPtr fc = std::make_shared<FlagColumn>();
   fc->resize(CellCount());
   
@@ -879,7 +942,7 @@ void CellTable::phenotype(const std::unordered_map<std::string, std::pair<float,
 
     FloatColPtr nc = std::dynamic_pointer_cast<FloatCol>(m_table.at(b.first));
 
-    int index = m_header.whichMarkerColumn(b.first);
+    int index = m_header.WhichColumn(b.first, Tag::MA_TAG);
         
     for (size_t i = 0; i < nc->size(); i++) {
       if (nc->GetNumericElem(i) >= b.second.first &&
@@ -888,21 +951,25 @@ void CellTable::phenotype(const std::unordered_map<std::string, std::pair<float,
       }
     }
   }
-
-  Tag ftag("FA","cellflag");
-  AddFlagColumn(ftag, fc, true);
+  
+  //Tag ftag("FA","cellflag");
+  //AddFlagColumn(ftag, fc, true);
+  m_table["flag"] = fc;
 }
 
-std::unordered_map<std::string, std::pair<float,float>> CellTable::phenoread(const std::string& filename) const {
+PhenoMap CellTable::phenoread(const std::string& filename) const {
   
-  std::unordered_map<std::string, std::pair<float, float>> data;
+  PhenoMap data;
+
+  // open the phenotype file
+  // of format: marker(string), low_bound(float), upper_bound(float)
   std::ifstream file(filename);
-  
   if (!file.is_open()) {
     std::cerr << "Error opening file: " << filename << std::endl;
     return data;
   }
-  
+
+  // read and load the phenotype file
   std::string line;
   while (std::getline(file, line)) {
     std::istringstream lineStream(line);
@@ -924,7 +991,7 @@ std::unordered_map<std::string, std::pair<float,float>> CellTable::phenoread(con
 }
 
 
-void CellTable::AddFlagColumn(const Tag& tag,
+/*void CellTable::AddFlagColumn(const Tag& tag,
 			      FlagColPtr value,
 			      bool overwrite) {
 
@@ -947,7 +1014,8 @@ void CellTable::AddFlagColumn(const Tag& tag,
   // add to the table
   m_table[tag.GetName()] = value;
   
-}
+
+  }*/
 
 void CellTable::column_to_row_major(std::vector<double>& data, int nobs, int ndim) const {
 
@@ -969,7 +1037,7 @@ void CellTable::column_to_row_major(std::vector<double>& data, int nobs, int ndi
   
 }
 
-IntColPtr CellTable::GetIDColumn() const {
+/*IntColPtr CellTable::GetIDColumn() const {
 
   for (const auto& t: m_header.GetColTags()) {
     if (t.isIDTag()) {
@@ -979,9 +1047,26 @@ IntColPtr CellTable::GetIDColumn() const {
 
   assert(false);
   return IntColPtr();
-}
+  }*/
 
 void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
+
+  std::ifstream fileio(file, std::ios::binary);
+  cereal::PortableBinaryInputArchive inputArchive(fileio);
+
+  while (fileio.peek() != EOF) {
+
+    // read the cell
+    Cell cell;
+    inputArchive(cell);
+
+    // process it
+    proc.ProcessLine(cell);
+  }
+  
+}
+  
+void CellTable::StreamTableCSV(LineProcessor& proc, const std::string& file) {
 
   // csv reader
   std::unique_ptr<io::LineReader> reader;
@@ -994,8 +1079,8 @@ void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
     // Read from file
     reader = std::make_unique<io::LineReader>(file);
   }
-  
-  // Read and process the lines
+
+  // get read to read file
   std::string line;
   bool header_read = false;
   size_t flag_index = -1;
@@ -1004,6 +1089,7 @@ void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
   // for verbose
   size_t count = 0;
   
+  // Read and process the lines
   while ((next_line_ptr = reader->next_line()) != nullptr) {
 
     // get the line. Skip if empty
@@ -1051,39 +1137,51 @@ void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
 
 int CellTable::RadialDensity(uint64_t inner, uint64_t outer, uint64_t logor, uint64_t logand,
 			       const std::string& label) {
-  if (m_table.find("cellflag") == m_table.end() && (logor || logand)) {
+  
+  //if (m_table.find("flag") == m_table.end() && (logor || logand)) {
+
+  // get the flag column
+  shared_ptr<FlagColumn> fc = std::dynamic_pointer_cast<FlagColumn>(m_table["flag"]);
+  assert(fc);
+  assert(fc->size());
+  // ADD: check that there are non-zero values
+  //
+
+  // get the graph column
+  shared_ptr<GraphColumn> gc = std::dynamic_pointer_cast<GraphColumn>(m_table["spat"]);
+  assert(gc);
+  assert(gc->size());
+  // ADD: check that there are non-zero values
+  //
+  
+  // check sizes are good
+  assert(gc->size() == fc->size());
+  assert(gc->size() == CellCount());
+  
+  /*  if (!flag_ptr->size() && (logor || logand)) {  
     std::cerr << "Warning: need to phenotype cells first" << std::endl;
     return -1;
-  }
+    }
 
   if (m_table.find("spat") == m_table.end()) {
     std::cerr << "Warning: need to make spatial knn graph first" << std::endl;
+    assert(false);
     return -1;
-  }
+    }*/
 
   // check if already exists in the table
   if (m_table.find(label) != m_table.end()) {
     throw std::runtime_error("Adding density meta column " + label + " already in table");
   }
 
-  // get the flag column
-  shared_ptr<FlagColumn> fc = std::dynamic_pointer_cast<FlagColumn>(m_table["cellflag"]);
-
-  // get the graph column
-  shared_ptr<GraphColumn> gc = std::dynamic_pointer_cast<GraphColumn>(m_table["spat"]);
-
-  // check sizes are good
-  assert(gc->size() == fc->size());
   
   // store the densities
-  //shared_ptr<FloatCol> dc = std::make_shared<FloatCol>();
   shared_ptr<FloatCol> dc = std::make_shared<FloatCol>();  
   dc->resize(gc->size());
-
   dc->SetPrecision(2);
 
   // get the cell id colums
-  auto id_ptr = GetIDColumn();
+  auto id_ptr = m_table.at("id"); 
   assert(id_ptr->size() == gc->size());
 
   // flip it so that the id points to the zero-based index
@@ -1147,15 +1245,14 @@ int CellTable::RadialDensity(uint64_t inner, uint64_t outer, uint64_t logor, uin
     std::cerr << "...adding the density column" << std::endl;
   
   // add the column
-  Tag dtag("CA",label);
+  Tag dtag(Tag::CA_TAG, label, "");
+  //Tag dtag("CA",label);
   
   // insert as a meta key
   m_header.addTag(dtag); 
 
   // add densities to the table
-  m_table[dtag.GetName()] = dc;
+  m_table[dtag.id] = dc;
 
   return 0;
 }
-
-

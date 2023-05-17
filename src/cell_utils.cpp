@@ -147,8 +147,7 @@ void get_two_elements_as_floats(const std::string_view& str, size_t n, size_t m,
     }
 }
 
-
-void process_token_to_variant(const std::string_view& token,
+/*void process_token_to_variant(const std::string_view& token,
 			      const Tag& tag,
 			      CellDatum& value) {
 
@@ -164,24 +163,24 @@ void process_token_to_variant(const std::string_view& token,
     // String
     value = std::string(token);
     }
-}
+    }*/
 
-int read_one_line_to_cellrow(const std::string& line,
-                                  CellRow& values,
-                                  const CellHeader& m_header) {
-
-    size_t n = 0;
-    size_t start_pos = 0;
-    size_t end_pos = 0;
-
-    while ((end_pos = line.find(',', start_pos)) != std::string::npos) {
-      
-        std::string_view token(line.data() + start_pos, end_pos - start_pos);
-        const Tag tag = m_header.GetColumnTag(n);
-        process_token_to_variant(token, tag, values[n]);
-
-        start_pos = end_pos + 1;
-        ++n;
+/* int read_one_line_to_cellrow(const std::string& line,
+			     CellRow& values,
+			     const CellHeader& m_header) {
+  
+  size_t n = 0;
+  size_t start_pos = 0;
+  size_t end_pos = 0;
+  
+  while ((end_pos = line.find(',', start_pos)) != std::string::npos) {
+    
+    std::string_view token(line.data() + start_pos, end_pos - start_pos);
+    const Tag tag = m_header.GetColumnTag(n);
+    process_token_to_variant(token, tag, values[n]);
+    
+    start_pos = end_pos + 1;
+    ++n;
     }
 
     // Process the last token
@@ -191,6 +190,46 @@ int read_one_line_to_cellrow(const std::string& line,
 
     return n + 1;
 }
+*/
+
+/*int read_one_line_to_cell(const std::string& line,
+			  Cell& cell,
+			  const CellHeader& m_header) {
+  
+  size_t n = 0;
+  size_t start_pos = 0;
+  size_t end_pos = 0;
+  
+  while ((end_pos = line.find(',', start_pos)) != std::string::npos) {
+
+    std::string_view token(line.data() + start_pos, end_pos - start_pos);
+
+    if (n == 0) {
+      cell.m_id = std::stoi(std::string(token));
+    } else if (n == 1) {
+      cell.m_flag == std::stol(std::string(token));
+    } else if (n == 2) {
+      cell.m_x == std::strtof(std::string(token));
+    } else if (n == 3) {
+      cell.m_y == std::strtof(std::string(token));
+    } else {
+      const Tag tag = m_header.GetDataTag(n);
+      cell.m_data.push_back(std::strtof(std::string(token)));
+    }
+      //process_token_to_variant(token, tag, values[n]);
+    
+    start_pos = end_pos + 1;
+    ++n;
+  }
+
+    // Process the last token
+    std::string_view token(line.data() + start_pos, line.size() - start_pos);
+    const Tag tag = m_header.GetColumnTag(n);
+    process_token_to_variant(token, tag, values[n]);
+
+    return n + 1;
+}
+*/
 
 std::string round_string(const std::string& str, int precision) {
   

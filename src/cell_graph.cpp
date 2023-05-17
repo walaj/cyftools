@@ -3,6 +3,19 @@
 #include <charconv>
 #include <string_view>
 
+CellNode::CellNode(const std::vector<uint32_t>& ids,
+		   const std::vector<uint32_t>& dist) {
+
+  assert(ids.size() == dist.size());
+
+  for (size_t i = 0; i < ids.size(); i++) {
+    neighbors_.push_back({ids.at(i), dist.at(i)});
+    i++;
+  }
+  
+}
+
+
 void CellNode::parse_neighbors(const std::string& input_str) {
   std::string_view input_view(input_str);
   Neighbors neighbors;

@@ -17,6 +17,9 @@ using NeighborsInt = std::vector<std::pair<int, int>>;
 class CellNode {
  public:
   CellNode() = default;
+
+  CellNode(const std::vector<uint32_t>& ids,
+	   const std::vector<uint32_t>& dist);
   
   explicit CellNode(const Neighbors& neighbors);
   
