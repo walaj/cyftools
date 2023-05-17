@@ -5,6 +5,8 @@
 #include <unistd.h> // or #include <getopt.h> on Windows systems
 #include <getopt.h>
 
+#include "cell_row.h"
+
 namespace opt {
   static bool verbose = false;
   static std::string infile;
@@ -82,6 +84,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  radialdens - Calculate density of cells within a radius\n"
 "\n";
 
+static int cerealfunc(int argc, char** argv);
 static int catfunc(int argc, char** argv);
 static int radialdensfunc(int argc, char** argv);
 static int subsamplefunc(int argc, char** argv);
@@ -155,6 +158,8 @@ int main(int argc, char **argv) {
     return(log10func(argc, argv));
   } else if (opt::module == "cut") {
     val = cutfunc(argc, argv);
+  } else if (opt::module == "cereal") {
+    val = cerealfunc(argc, argv);
   } else if (opt::module == "info") {
     return(infofunc(argc, argv));
   } else if (opt::module == "view") {
@@ -554,7 +559,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "plot"  || opt::module == "roi" ||
 	 opt::module == "histogram" || opt::module == "log10" ||
 	 opt::module == "crop"  || opt::module == "knn" ||
-	 opt::module == "cat" || 
+	 opt::module == "cat" || opt::module == "cereal" || 
 	 opt::module == "correlate" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
 	 opt::module == "spatial" || opt::module == "radialdens" || 
@@ -1256,4 +1261,64 @@ static int radialdensfunc(int argc, char** argv) {
 int debugfunc(int argc, char** argv) {
   return 1;
 
+}
+
+static int cerealfunc(int argc, char** argv) {
+  
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'h' : opt::header = true; break;
+    default: die = true;
+    }
+  }
+
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+
+  // display help if no input
+  if (opt::infile.empty() || die) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift cereal [csvfile]\n"
+      "  ***\n" 
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -h                    Output with the header\n"      
+      "    -v, --verbose         Increase output to stderr\n"      
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  CerealProcessor cerp;
+
+  table.StreamTable(cerp, opt::infile);
+
+  return 0;
+  
+  std::ifstream file("cereal.bin", std::ios::binary);
+  cereal::BinaryInputArchive inputArchive(file);
+  
+  // Keep loading objects from the archive until you reach the end of the file:
+  std::vector<Cell> vec;
+  size_t i = 0;
+  while(file.peek() != EOF) {
+    Cell cell;
+    inputArchive(cell);
+    vec.push_back(cell);
+    if (i % 100000 == 0)
+      std::cerr << i << std::endl;
+    i++;
+    //objects.push_back(obj);
+  }
+  
+  return 0;
 }

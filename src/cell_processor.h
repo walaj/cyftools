@@ -5,6 +5,9 @@
 #include "cell_header.h"
 #include "polygon.h"
 
+#include <cereal/types/vector.hpp>
+#include <cereal/archives/binary.hpp>
+
 class CellProcessor {
  public:
   virtual ~CellProcessor() = default;
@@ -194,3 +197,29 @@ private:
   std::vector<size_t> m_graph_indicies;
   
 };
+
+class CerealProcessor : public CellProcessor { 
+
+ public:
+  
+  void SetParams(); 
+  
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(const std::string& line) override;
+
+private:
+
+  int cellid;
+  std::vector<float> vec1;
+  
+  bool m_header_only;
+  bool m_print_header;
+
+  CellHeader m_header;
+  
+  std::unique_ptr<std::ofstream> m_os;
+  std::unique_ptr<cereal::BinaryOutputArchive> m_archive;
+  
+};
+

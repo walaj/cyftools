@@ -33,7 +33,18 @@ class CellNode {
   size_t size() const { return neighbors_.size(); }
   
   friend std::ostream& operator<<(std::ostream& os, const CellNode& cn);
-  
+
+  template<class T>
+  void FillSparseFormat(std::vector<T>& ids, std::vector<T>& dist) const {
+    
+    ids.reserve(neighbors_.size());
+    dist.reserve(neighbors_.size());
+    for (const auto& n : neighbors_) {
+      ids.push_back(static_cast<T>(n.first));
+      ids.push_back(static_cast<T>(n.second));
+    }
+  }
+
  private:
   Neighbors neighbors_;
 

@@ -9,11 +9,18 @@
 #include <set>
 #include <sstream>
 
+#include <cereal/types/vector.hpp>
+#include <cereal/archives/binary.hpp>
+
 struct Tag {
 
+  static const uint8_t MA_TAG = 0; // marker tag
+  static const uint8_t GA_TAG = 1; // graph tag
+  
   static const std::unordered_set<std::string> ALLOWED_DATA_TAGS;
   static const std::unordered_set<std::string> ALLOWED_INFO_TAGS;  
-  
+
+  uint8_t tag_type;
   std::string record_type; // e.g., "MA", "CD"
   std::unordered_map<std::string, std::string> values; // Stores the tag fields and their data
   std::string name;
@@ -176,6 +183,13 @@ public:
 	out++;
     return out;
   }
+  
+  template <class Archive>
+  void serialize(Archive & ar)
+  {
+    ar();
+  }
+
   
 private:
 

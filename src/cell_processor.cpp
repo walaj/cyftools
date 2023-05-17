@@ -2,6 +2,8 @@
 #include "cell_utils.h"
 #include "cell_flag.h"
 
+#include "cell_row.h"
+
 int SelectProcessor::ProcessHeader(CellHeader& header) {
 
   // find which one the cellflag is
@@ -301,9 +303,9 @@ int CatProcessor::ProcessLine(const std::string& line) {
 
     // parse the node and rest the cell-ids with the offset
     CellNode node(graph_line);
-    //node.OffsetNodes(m_offset);
+    node.OffsetNodes(m_offset);
 
-    //tokens[i] = node.toString(false); // false is for "integerize"
+    tokens[i] = node.toString(false); // false is for "integerize"
   }
 
   /*
@@ -388,4 +390,25 @@ int CatProcessor::ProcessHeader(CellHeader& header) {
     m_master_header.Print();
   
   return 0;
+}
+
+int CerealProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+
+  std::string filename = "cereal32.bin";
+
+  m_os = std::make_unique<std::ofstream>(filename, std::ios::binary);
+  m_archive = std::make_unique<cereal::BinaryOutputArchive>(*m_os);
+  
+  return 0;
+}
+
+int CerealProcessor::ProcessLine(const std::string& line) {
+
+  Cell row(line, m_header);
+  
+  // serialize it
+  (*m_archive)(row);
+  return 0;
+  
 }
