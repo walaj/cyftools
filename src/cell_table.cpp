@@ -14,12 +14,6 @@ const CellHeader& CellTable::GetHeader() const {
   return m_header;
 }
 
-/*void CellTable::BuildTable(const std::string& file) {
-  process_csv_file__(file, [this](const CellRow& values) {
-    return this->add_row_to_table__(values);
-  });
-}
-*/
 bool CellTable::ContainsColumn(const std::string& name) const {
   return m_table.count(name) > 0;
 }
@@ -66,6 +60,7 @@ Cell CellTable::add_cell_to_table(const Cell& cell) {
   // add the graph data
   if (cell.m_spatial_ids.size()) {
     CellNode node(cell.m_spatial_ids, cell.m_spatial_dist);
+    static_cast<GraphColumn*>(m_table["spat"].get())->PushElem(node);
   }
 
   return Cell {};
@@ -196,10 +191,11 @@ size_t CellTable::CellCount() const {
   // loop the table and find the maximum length
   for (const auto &c : m_table) {
     size_t current_size = c.second->size();
-    
+
     if (prev_size.has_value() && current_size != prev_size.value()) {
       std::cerr << "Warning: Column sizes do not match. Column: " <<
-	c.first << " prev size " << prev_size.value() << " current_size " << current_size << std::endl;
+	c.first << " prev size " << prev_size.value() <<
+	" current_size " << current_size << std::endl;
     }
     
     prev_size = current_size;
@@ -211,11 +207,18 @@ size_t CellTable::CellCount() const {
 
 void CellTable::PrintTable(bool header) const {
 
+  //  for (const auto& m : m_table) {
+  // std::cerr << m.first << " - " << m.second->size() << std::endl;
+  //}
+  
   if (m_verbose)
     std::cerr << "...outputting table" << std::endl;
   
   if (header)
     m_header.Print();
+
+  // graph data
+  auto g_ptr = m_table.find("spat");
   
   // Create a lookup table with pointers to the Column values
   std::vector<ColPtr> lookup_table;
@@ -231,14 +234,79 @@ void CellTable::PrintTable(bool header) const {
   
   for (size_t row = 0; row < numRows; ++row) {
     size_t count = 1;
+    
     for (const auto& c : lookup_table) {
       c->PrintElem(row);
       if (count < lookup_table.size())
 	std::cout << ",";
       count++;
     }
+
+    // print the graph
+    if (g_ptr != m_table.end() && g_ptr->second->size()) {
+      std::cerr << ",";
+      g_ptr->second->PrintElem(row);
+    }
+    
     std::cout << std::endl;
   }
+
+}
+
+void CellTable::OutputTable(const std::string& file) const {
+
+  std::unique_ptr<std::ofstream> m_os;
+  std::unique_ptr<cereal::PortableBinaryOutputArchive> m_archive;
+  
+  // set the output to file or stdout
+  if (file == "-") {
+    m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(std::cout);
+  } else {
+    m_os = std::make_unique<std::ofstream>(file, std::ios::binary);
+    m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(*m_os);
+  }
+  
+  // archive the header
+  (*m_archive)(m_header);
+
+  // create the cells and print
+  size_t numRows = CellCount();
+
+  auto id_ptr = m_table.at("id");
+  auto flag_ptr = m_table.at("flag");
+  auto x_ptr = m_table.at("x");
+  auto y_ptr = m_table.at("y");
+  auto g_ptr = m_table.find("spat");
+
+  std::vector<ColPtr> col_ptr;
+  for (const auto& t : m_header.GetDataTags()) {
+    col_ptr.push_back(m_table.at(t.id));
+  }
+
+  for (size_t i = 0; i < numRows; i++) {
+
+    Cell cell;
+    
+    cell.m_id   = static_cast<IntCol*>(id_ptr.get())->GetNumericElem(i);
+    cell.m_flag = static_cast<IntCol*>(flag_ptr.get())->GetNumericElem(i);
+    cell.m_x    = static_cast<FloatCol*>(x_ptr.get())->GetNumericElem(i);
+    cell.m_y    = static_cast<FloatCol*>(y_ptr.get())->GetNumericElem(i);
+
+    for (const auto& c : col_ptr) {
+      cell.m_cols.push_back(static_cast<FloatCol*>(c.get())->GetNumericElem(i));
+    }
+    
+    // fill the Cell graph
+    if (g_ptr != m_table.end()) {
+      const CellNode& n = static_cast<GraphColumn*>(g_ptr->second.get())->GetNode(i);
+      n.FillSparseFormat(cell.m_spatial_ids, cell.m_spatial_dist);
+    }
+    
+    // write it
+    (*m_archive)(cell);
+    
+  }
+
 }
 
 void CellTable::Crop(float xlo, float xhi, float ylo, float yhi) {
@@ -410,7 +478,8 @@ void CellTable::AddColumn(const Tag& tag,
   
   // check if already exists in the table
   if (m_table.find(tag.id) != m_table.end()) {
-    throw std::runtime_error("Adding column already in table");
+    //throw std::runtime_error("Adding column already in table");
+    std::cerr << "Warning: Overwriting existing column " << tag.id << std::endl;
   }
   
   // insert as a meta key
@@ -469,17 +538,13 @@ void CellTable::SubsetROI(const std::vector<Polygon> &polygons) {
   }
 }
  
- void CellTable::check_header__() const {
-   assert(m_header.validate());
- }
- 
- void CellTable::KNN_spatial(int num_neighbors, int dist) {
-   
-   // number of cells
-   int nobs = CellCount();
-   
-   if (m_verbose)
-     std::cerr << "...finding K nearest-neighbors (spatial) on " << AddCommas(nobs) << " cells" << std::endl;  
+void CellTable::KNN_spatial(int num_neighbors, int dist) {
+  
+  // number of cells
+  int nobs = CellCount();
+  
+  if (m_verbose)
+    std::cerr << "...finding K nearest-neighbors (spatial) on " << AddCommas(nobs) << " cells" << std::endl;  
    
    // column major the coordinate data
    std::vector<double> concatenated_data;
@@ -700,210 +765,34 @@ void CellTable::print_correlation_matrix(const std::vector<std::pair<std::string
     }
 }
 
-/*void CellTable::process_csv_file__(const std::string& file, const std::function<CellRow(const CellRow&)>& func) {
+void CellTable::initialize_cols() {
 
-  // csv reader
-  std::unique_ptr<io::LineReader> reader;
+  // initialize cell id
+  m_table["id"] = std::make_shared<IntCol>();
+  m_table["flag"] = std::make_shared<IntCol>();  
+  m_table["x"] = std::make_shared<FloatCol>();
+  m_table["y"] = std::make_shared<FloatCol>();
 
-  // Initialize the reader depending on the input string
-  if (file == "-") {
-    // Read from stdin
-    reader = std::make_unique<io::LineReader>("", stdin);
-  } else {
-    // Read from file
-    reader = std::make_unique<io::LineReader>(file);
-  }
-
-  // for m_verbose
-  size_t count = 0;
+  m_table["spat"] = std::make_shared<GraphColumn>();
   
-  // Read and process the lines
-  std::string line;
-  bool header_read = false;
-  char* next_line_ptr;
-  while ((next_line_ptr = reader->next_line()) != nullptr) {
-    line = std::string(next_line_ptr);
-    if (line.size() == 0) {
-      break;
+  // initialize other data
+  for (const auto& t : m_header.GetDataTags()) {
+
+    // check that already doesn't exist
+    auto m_ptr = m_table.find(t.id);
+    if (m_ptr != m_table.end()) {
+      throw std::runtime_error("Can't initialize " + t.id + " since already in table");
     }
-    
-    // If the line starts with '@', parse it as a Tag and add it to m_header
-    if (line[0] == '@') {
-      Tag tag(line);
-      m_header.addTag(tag);
-    } else {
 
-      if (!header_read) {
-	header_read = true;
-	check_header__();
-      }
-
-      // if header only, we're done
-      if (m_header_only) {
-	break;
-      }
-      
-      // container to store just one line
-      int col_count = m_header.ColumnCount();
-      CellRow values(col_count); 
-
-      // read one line
-      int num_elems = read_one_line_to_cellrow(line, values, m_header);
-      if (num_elems != col_count) {
-	throw std::runtime_error("Error on line: " + line + "\n\tread " +
-				 std::to_string(num_elems) + " expected " +
-				 std::to_string(col_count));
-      }
-
-      func(values);
-      
-      // m_verbose output
-      if (m_verbose && count % 500000 == 0) {
-	std::cerr << "...read line " << AddCommas(count) << std::endl;
-      }
-      count++;
-      
-    }
+    // make the empty float column
+    m_table[t.id] = std::make_shared<FloatCol>();
   }
+
+  
 }
 
-void CellTable::process_csv_file__(const std::string& file, const std::function<Cell(const Cell&)>& func) {
 
-  // csv reader
-  std::unique_ptr<io::LineReader> reader;
-
-  // Initialize the reader depending on the input string
-  if (file == "-") {
-    // Read from stdin
-    reader = std::make_unique<io::LineReader>("", stdin);
-  } else {
-    // Read from file
-    reader = std::make_unique<io::LineReader>(file);
-  }
-
-  // for m_verbose
-  size_t count = 0;
-  
-  // Read and process the lines
-  std::string line;
-  bool header_read = false;
-  char* next_line_ptr;
-  while ((next_line_ptr = reader->next_line()) != nullptr) {
-    line = std::string(next_line_ptr);
-    if (line.size() == 0) {
-      break;
-    }
-    
-    // If the line starts with '@', parse it as a Tag and add it to m_header
-    if (line[0] == '@') {
-      Tag tag(line);
-      m_header.addTag(tag);
-    } else {
-
-      if (!header_read) {
-	header_read = true;
-	check_header__();
-      }
-
-      // if header only, we're done
-      if (m_header_only) {
-	break;
-      }
-      
-      // container to store just one line
-      int col_count = m_header.ColumnCount();
-      CellRow values(col_count);
-
-      // read one line
-      int num_elems = read_one_line_to_cellrow(line, values, m_header);
-      //int num_elems = read_one_line_to_cell(line, cell, m_header);      
-      if (num_elems != col_count) {
-	throw std::runtime_error("Error on line: " + line + "\n\tread " +
-				 std::to_string(num_elems) + " expected " +
-				 std::to_string(col_count));
-      }
-
-      func(values);
-      
-      // m_verbose output
-      if (m_verbose && count % 500000 == 0) {
-	std::cerr << "...read line " << AddCommas(count) << std::endl;
-      }
-      count++;
-      
-    }
-  }
-}
-*/
-
-/*void CellTable::ConvertColumns() {
-
-  // convert flag columns
-  for (const auto& f : m_header.flag_) {
-
-    auto it = m_table.find(f);
-    
-    // make sure we have data to convert
-    if (it == m_table.end())
-      throw std::runtime_error("CellTable convert columns error, expected flag column not found");
-
-    ColPtr column = it->second;
-    ColumnType ct = column->GetType();
-    StringColPtr sc;
-    IntColPtr nc;
-
-    switch (ct) {
-    case ColumnType::FLAG: {
-      std::cerr << "Flag column already converted" << std::endl; break;
-    } case ColumnType::STRING: {
-	throw std::runtime_error("Flag column should be read as int, not string");
-	break;
-      } case ColumnType::INT: {
-	  nc =  std::dynamic_pointer_cast<IntCol>(column);
-	  if (!nc)
-	    throw std::runtime_error("Column is not a NumericColumn as expected");
-	  m_table[f] = std::make_shared<FlagColumn>(nc);
-	  break;
-	}  default:
-      throw std::runtime_error("Trying to convert non-string column to flag");
-    }
-    
-  }
-  
-  // convert graph columns
-  if (m_verbose)
-    std::cerr << "...converting graph columns" << std::endl;
-  
-  for (const auto& f : m_header.graph_) {
-    
-    auto it = m_table.find(f);
-    
-    // make sure we have data to convert
-    if (it == m_table.end())
-      throw std::runtime_error("CellTable convert columns error, expected graph column not found");
-
-    ColPtr column = it->second;
-    ColumnType ct = column->GetType();
-    StringColPtr sc;
-    
-    switch (ct) {
-    case ColumnType::GRAPH: {
-      std::cerr << "Graph column already converted" << std::endl; break;
-    } case ColumnType::STRING: {
-      sc = std::dynamic_pointer_cast<StringColumn>(column);
-      if (!sc)
-	throw std::runtime_error("Column is not a StringColumn as expected");
-      m_table[f] = std::make_shared<GraphColumn>(sc, m_threads);
-      break;
-    } default:
-      throw std::runtime_error("Trying to convert non-string column to graph");
-    }
-
-  }
-}
-*/
-
-void CellTable::select(uint64_t on, uint64_t off) {
+/*void CellTable::select(uint64_t on, uint64_t off) {
 
   FlagColPtr fc = std::dynamic_pointer_cast<FlagColumn>(m_table["flag"]);
   assert(fc);
@@ -956,39 +845,7 @@ void CellTable::phenotype(const std::unordered_map<std::string, std::pair<float,
   //AddFlagColumn(ftag, fc, true);
   m_table["flag"] = fc;
 }
-
-PhenoMap CellTable::phenoread(const std::string& filename) const {
-  
-  PhenoMap data;
-
-  // open the phenotype file
-  // of format: marker(string), low_bound(float), upper_bound(float)
-  std::ifstream file(filename);
-  if (!file.is_open()) {
-    std::cerr << "Error opening file: " << filename << std::endl;
-    return data;
-  }
-
-  // read and load the phenotype file
-  std::string line;
-  while (std::getline(file, line)) {
-    std::istringstream lineStream(line);
-        std::string key;
-        float value1, value2;
-	
-        if (std::getline(lineStream, key, ',')) {
-	  lineStream >> value1;
-	  if (lineStream.get() == ',') {
-                lineStream >> value2;
-                data[key] = std::make_pair(value1, value2);
-	  }
-        }
-  }
-  
-  file.close();
-  return data;
-  
-}
+*/
 
 
 /*void CellTable::AddFlagColumn(const Tag& tag,
@@ -1051,18 +908,70 @@ void CellTable::column_to_row_major(std::vector<double>& data, int nobs, int ndi
 
 void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
 
-  std::ifstream fileio(file, std::ios::binary);
-  cereal::PortableBinaryInputArchive inputArchive(fileio);
-
-  while (fileio.peek() != EOF) {
-
-    // read the cell
-    Cell cell;
-    inputArchive(cell);
-
-    // process it
-    proc.ProcessLine(cell);
+  std::istream *inputStream = nullptr;
+  std::unique_ptr<std::ifstream> fileStream;
+  
+  // set input from file or stdin
+  if (file == "-") {
+    inputStream = &std::cin;
+  } else {
+    fileStream = std::make_unique<std::ifstream>(file, std::ios::binary);
+    inputStream = fileStream.get();
   }
+
+  cereal::PortableBinaryInputArchive inputArchive(*inputStream);
+
+  // First read the CellHeader
+  try {
+    inputArchive(m_header);
+  } catch (const std::bad_alloc& e) {
+    // Handle bad_alloc exception
+    std::cerr << "Memory allocation failed during deserialization: " << e.what() << std::endl;
+    return;  // or handle the error appropriately for your program
+  } catch (const cereal::Exception& e) {
+    // Handle exception if any error occurs while deserializing header
+    std::cerr << "Error while deserializing header: " << e.what() << std::endl;
+    return;  // or handle the error appropriately for your program
+  }
+
+  // process the header.
+  // if , don't print rest
+  int val = proc.ProcessHeader(m_header);
+  if (val == 1) { // just exit, all we need is header
+    return;
+  } else if (val == 2) { // we want to build the table
+    initialize_cols();
+  }
+  
+  // now read the Cell objects
+  while (true) {
+    Cell cell;
+    try {
+      inputArchive(cell);
+    } catch (const cereal::Exception& e) {
+      // Catch exception thrown on EOF or any other errors
+      break;
+    }
+
+    // process the cell and output if needed (returns 1)
+    int val = proc.ProcessLine(cell);
+    if (val == 1) {
+      proc.OutputLine(cell);
+    } else if (val == 2) {
+      add_cell_to_table(cell);
+    }
+
+  }
+
+  // clean up table
+  for (auto it = m_table.begin(); it != m_table.end();) {
+    if (!it->second->size()) {
+      it = m_table.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  
   
 }
   

@@ -35,6 +35,8 @@ public:
   
   friend std::ostream& operator<<(std::ostream& os, const CellFlag& cellFlag);
   
+  uint64_t toBase10_uint64_t() const;
+  
   long long base64_to_base10(const std::string& base64_num);
   
   bool testAndOr(uint64_t logor, uint64_t logand) const;
@@ -46,6 +48,8 @@ public:
   void fromBase10(uint64_t base10);
   
 private:
+  
+  // data
   std::bitset<BITMAP_SIZE> bitmap;
   
   void check_bounds(int n) const;

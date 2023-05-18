@@ -5,17 +5,41 @@
 #include "cell_header2.h"
 #include "cell_row.h"
 #include "polygon.h"
+#include "cysift.h"
 
 #include <cereal/types/vector.hpp>
-#include <cereal/archives/binary.hpp>
+#include <cereal/archives/portable_binary.hpp>
 
 class CellProcessor {
  public:
   virtual ~CellProcessor() = default;
   
   virtual int ProcessHeader(CellHeader& header) = 0;
-  //virtual int ProcessLine(const std::string& line) = 0;
-  virtual int ProcessLine(const Cell& cell) = 0;  
+
+  virtual int ProcessLine(Cell& cell) = 0;
+
+  void SetOutput(const std::string& file) {
+
+    // set the output to file or stdout
+    if (file == "-") {
+      m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(std::cout);
+    } else {
+      m_os = std::make_unique<std::ofstream>(file, std::ios::binary);
+      m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(*m_os);
+    }
+
+    assert(m_archive);
+  }
+  
+  void OutputLine(const Cell& cell) {
+    assert(m_archive);
+    (*m_archive)(cell);
+  }
+  
+  // common archiver objects
+  std::unique_ptr<std::ofstream> m_os;
+  std::unique_ptr<cereal::PortableBinaryOutputArchive> m_archive;
+  
 };
 
 class LineProcessor {
@@ -25,7 +49,6 @@ class LineProcessor {
   virtual int ProcessHeader(CellHeader& header) = 0;
   
   virtual int ProcessLine(const std::string& line) = 0;
-  //virtual int ProcessLine(const Cell& cell) = 0;  
 };
 
 
@@ -43,8 +66,7 @@ class CutProcessor : public CellProcessor {
   
   int ProcessHeader(CellHeader& header) override;
   
-  //int ProcessLine(const std::string& line) override;
-  int ProcessLine(const Cell& cell) override;
+  int ProcessLine(Cell& cell) override;
   
  private:
   
@@ -57,29 +79,46 @@ class CutProcessor : public CellProcessor {
   std::unordered_set<size_t> to_remove;
 };
 
+// Pheno processor
+class PhenoProcessor : public CellProcessor {
+  
+ public:
+  
+  void SetParams(PhenoMap p) {
+    m_p = p;
+  }
+  
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+  
+ private:
+  CellHeader m_header;
+  std::unordered_map<std::string, size_t> m_marker_map;
+  PhenoMap m_p;
+};
+
+
 // Select processor
 class SelectProcessor : public CellProcessor {
   
  public:
 
-  void SetParams(uint64_t logor, uint64_t logand, bool lognot, bool print_header)  {
+  void SetParams(uint64_t logor, uint64_t logand, bool lognot)  {
     m_or = logor;
     m_and = logand;
     m_not = lognot;
-    m_print_header = print_header;
   }
   
   int ProcessHeader(CellHeader& header) override;
   
-  int ProcessLine(const Cell& cell) override;
-  //  int ProcessLine(const std::string& line) override;
+  int ProcessLine(Cell& cell) override;
   
  private:
 
   uint64_t m_or;
   uint64_t m_and;
   bool m_not;
-  bool m_print_header;
 
   size_t m_flag_index;
   
@@ -91,21 +130,16 @@ class LogProcessor : public CellProcessor {
   
  public:
 
-  void SetParams(bool print_header)  {
-    m_print_header = print_header;
-  }
+  void SetParams()  { }
   
   int ProcessHeader(CellHeader& header) override;
 
-  int ProcessLine(const Cell& cell) override;
-  //int ProcessLine(const std::string& line) override;
+  int ProcessLine(Cell& cell) override;
   
  private:
 
   size_t m_line_number = 0;
   
-  bool m_print_header;
-
   std::unordered_set<size_t> m_to_log;
   
 };
@@ -114,18 +148,15 @@ class ROIProcessor : public CellProcessor {
 
  public:
   
-  void SetParams(bool print_header,
-		 bool label,
+  void SetParams(bool label,
 		 const std::vector<Polygon>& rois)  {
-    m_print_header = print_header;
     m_label = label;
     m_rois = rois;
   }
   
   int ProcessHeader(CellHeader& header) override;
 
-  int ProcessLine(const Cell& cell) override;
-  //int ProcessLine(const std::string& line) override;
+  int ProcessLine(Cell& cell) override;
 
  private:
 
@@ -134,8 +165,6 @@ class ROIProcessor : public CellProcessor {
   CellHeader m_header;
 
   bool m_label;
-  
-  bool m_print_header;
   
   size_t m_col_count;
 
@@ -159,8 +188,7 @@ class ViewProcessor : public CellProcessor {
   
   int ProcessHeader(CellHeader& header) override;
 
-  int ProcessLine(const Cell& cell) override;
-  //int ProcessLine(const std::string& line) override;
+  int ProcessLine(Cell& cell) override;
   
  private:
 
@@ -170,17 +198,29 @@ class ViewProcessor : public CellProcessor {
   
 };
 
+class BuildProcessor : public CellProcessor { 
+
+ public:
+  
+  void SetParams() {}
+  
+  int ProcessHeader(CellHeader& header) override;
+
+  int ProcessLine(Cell& cell) override;
+  
+ private:
+  
+  CellHeader m_header;
+  
+};
+
+
 class CatProcessor : public CellProcessor { 
 
  public:
   
-  void SetParams(bool print_header,
-		 bool header_only,
-		 int offset,
+  void SetParams(int offset,
 		 int sample) {
-    
-    m_print_header = print_header;
-    m_header_only = header_only;
     
     m_offset = offset;
     m_sample = sample;
@@ -193,15 +233,12 @@ class CatProcessor : public CellProcessor {
   
   int ProcessHeader(CellHeader& header) override;
 
-  int ProcessLine(const Cell& cell) override;
-  //int ProcessLine(const std::string& line) override;
+  int ProcessLine(Cell& cell) override;
 
   size_t GetMaxCellID() const { return m_max_cellid; }
   
 private:
   
-  bool m_header_only;
-  bool m_print_header;
   size_t m_cellid_index = static_cast<size_t>(-1);
   
   size_t m_offset;
@@ -221,7 +258,9 @@ class CerealProcessor : public LineProcessor {
 
  public:
   
-  void SetParams(); 
+  void SetParams(const std::string& filename) {
+    m_filename = filename;
+  }
   
   int ProcessHeader(CellHeader& header) override;
 
@@ -232,13 +271,12 @@ private:
 
   int cellid;
   std::vector<float> vec1;
-  
-  bool m_header_only;
-  bool m_print_header;
 
+  std::string m_filename;
+  
   CellHeader m_header;
   
   std::unique_ptr<std::ofstream> m_os;
-  std::unique_ptr<cereal::BinaryOutputArchive> m_archive;
+  std::unique_ptr<cereal::PortableBinaryOutputArchive> m_archive;
   
 };

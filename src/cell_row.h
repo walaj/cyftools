@@ -6,7 +6,7 @@
 
 #include "cell_header2.h"
 
-#include <cereal/archives/binary.hpp>
+#include <cereal/archives/portable_binary.hpp>
 
 class Cell {
 
@@ -15,6 +15,8 @@ class Cell {
   Cell() {}
 
   Cell(const std::string& row, const CellHeader& header);
+
+  void Print(int round) const;
   
   template <class Archive>
     void serialize(Archive & ar)
@@ -22,6 +24,12 @@ class Cell {
       ar(m_id, m_flag, m_x, m_y, m_cols, m_spatial_ids,
 	 m_spatial_dist); 
     }
+
+  friend std::ostream& operator<<(std::ostream& os, const Cell& cell);
+
+  
+  //ADD
+  // should make these private?
   
   uint32_t m_id;
   uint64_t m_flag;

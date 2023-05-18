@@ -5,6 +5,40 @@
 #include <limits>
 #include <cmath>
 
+PhenoMap phenoread(const std::string& filename) {
+  
+  PhenoMap data;
+  
+  // open the phenotype file
+  // of format: marker(string), low_bound(float), upper_bound(float)
+  std::ifstream file(filename);
+  if (!file.is_open()) {
+    std::cerr << "Error opening file: " << filename << std::endl;
+    return data;
+  }
+
+  // read and load the phenotype file
+  std::string line;
+  while (std::getline(file, line)) {
+    std::istringstream lineStream(line);
+        std::string key;
+        float value1, value2;
+	
+        if (std::getline(lineStream, key, ',')) {
+	  lineStream >> value1;
+	  if (lineStream.get() == ',') {
+                lineStream >> value2;
+                data[key] = std::make_pair(value1, value2);
+	  }
+        }
+  }
+  
+  file.close();
+  return data;
+  
+}
+
+
 std::string columnTypeToString(ColumnType type) {
   switch (type) {
     case ColumnType::INT:

@@ -6,44 +6,26 @@
 
 int SelectProcessor::ProcessHeader(CellHeader& header) {
 
-  // find which one the cellflag is
-  /*size_t ii = 0;
-  for (const auto& t : header.GetColTags()) {
-    if (t.isFlagTag()) {
-      m_flag_index = ii;
-    }
-    ii++;
-  }
+  // output the header
+  assert(m_archive);
+  (*m_archive)(header);
   
-  // must have a flag
-  if (m_flag_index == static_cast<size_t>(-1)) {
-    throw std::runtime_error("Header does not contain and flag tags");
-    }*/
-  
-  // print the completed header
-  //if (m_print_header)
-  //  header.Print();
-
   return 0;
 }
 
-int SelectProcessor::ProcessLine(const Cell& cell) {
-  //int SelectProcessor::ProcessLine(const std::string& line) {
+int SelectProcessor::ProcessLine(Cell& cell) {
 
   // get the flag value from the line
-  //uint64_t flag_val =  // = get_nth_element_as_integer(line, m_flag_index);
   CellFlag flag(cell.m_flag);
-
-  // test it and print line if so
-  //if (flag.test(m_on, m_off))
-  bool flags_met = flag.testAndOr(m_or, m_and);
   
-  if (flags_met != m_not)
-    ;
-    //std::cout << line << std::endl;
-    // ADD -- how to write this
+  // test it and print line if so
+  bool flags_met = flag.testAndOr(m_or, m_and);
 
-  return 0;
+  // if flags met, print the cell
+  if (flags_met != m_not)
+    return 1;
+
+  return 0; // dont if not
 }
 
 int CutProcessor::ProcessHeader(CellHeader& header) {
@@ -77,16 +59,12 @@ int CutProcessor::ProcessHeader(CellHeader& header) {
 
   // cut down the header
   header.Cut(m_include);
-
-  if (m_header_print) {
-    header.Print();
-  }
   */
   
   return 0;
 }
 
-int CutProcessor::ProcessLine(const Cell& cell) {
+int CutProcessor::ProcessLine(Cell& cell) {
   //int CutProcessor::ProcessLine(const std::string& line) {
 
   /*
@@ -108,7 +86,7 @@ int CutProcessor::ProcessLine(const Cell& cell) {
   std::cout << tokens_to_comma_string(output) << std::endl;
   */
   
-  return 0;
+  return 1;
 }
 
 int LogProcessor::ProcessHeader(CellHeader& header) {
@@ -128,7 +106,7 @@ int LogProcessor::ProcessHeader(CellHeader& header) {
 }
 
 //int LogProcessor::ProcessLine(const std::string& line) {
-int LogProcessor::ProcessLine(const Cell& cell) {
+int LogProcessor::ProcessLine(Cell& cell) {
 
   /*
   m_line_number++;
@@ -177,7 +155,7 @@ int LogProcessor::ProcessLine(const Cell& cell) {
   std::cout << tokens_to_comma_string(output) << std::endl;
   */
   
-  return 0;
+  return 1;
   
 }
 
@@ -206,7 +184,7 @@ int ROIProcessor::ProcessHeader(CellHeader& header) {
   return 0;
 }
 
-int ROIProcessor::ProcessLine(const Cell& cell) {
+int ROIProcessor::ProcessLine(Cell& cell) {
   //int ROIProcessor::ProcessLine(const std::string& line) {
 
   /*
@@ -246,8 +224,76 @@ int ROIProcessor::ProcessLine(const Cell& cell) {
     std::cout << line << std::endl;
 
   */
-  return 0;
+  return 1;
   
+}
+
+int PhenoProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+
+  // build up a map of the indices of the markers
+  // in the Cell
+  size_t i = 0;
+  for (const auto& t : header.GetDataTags()) {
+    if (t.type == Tag::MA_TAG)
+      m_marker_map[t.id] = i;
+    i++;
+  }
+
+  // loop through once and just warn about missing data
+  for (const auto& b : m_p) {
+    if (m_marker_map.find(b.first) == m_marker_map.end()) {
+      std::cerr << "Warning: Marker in phenotype file " <<
+	b.first << " is not in the header" << std::endl;
+    }
+  }
+
+  for (const auto& m : m_marker_map) {
+    if (m_p.find(m.first) == m_p.end()) {
+      std::cerr << "Warning: Marker in cell table " <<
+	m.first << " is not in the phenotype file. Bit will be OFF" << std::endl;
+    }
+  }
+
+  // output the header
+  assert(m_archive);
+  (*m_archive)(header);
+  
+  return 0;
+}
+
+int PhenoProcessor::ProcessLine(Cell& cell) {
+
+  // make a copy of the cell for output
+  Cell cell_new = cell;
+  
+  // initialize an empty flag
+  CellFlag flag;
+  
+  // loop through the gates
+  for (const auto& b : m_p) {
+
+    // skip if don't have the marker
+    auto m = m_marker_map.find(b.first);
+    if (m == m_marker_map.end()) {
+      continue;
+    }
+
+    // set the index of where
+    size_t marker_index = m->second;
+    
+    // set the flag on if it clears the gates
+    if (cell.m_cols.at(m->second) >= b.second.first &&
+	cell.m_cols.at(m->second) <= b.second.second)
+      flag.setFlagOn(marker_index);
+    
+  }
+
+  // convert to uint64_t for storage
+  cell.m_flag = flag.toBase10_uint64_t();
+  
+  return 1;
 }
 
 int ViewProcessor::ProcessHeader(CellHeader& header) {
@@ -260,38 +306,14 @@ int ViewProcessor::ProcessHeader(CellHeader& header) {
   
 }
 
-int ViewProcessor::ProcessLine(const Cell& line) {
-  //int ViewProcessor::ProcessLine(const std::string& line) {
+int ViewProcessor::ProcessLine(Cell& cell) {
 
-  /*
-  // should never get here if header-only
-  assert(!m_header_only);
-
-  // no rounding, so just dump line
-  if (m_round < 0) {
-    std::cout << line << std::endl;
-    return 0;
-  }
-
-  // rounding, so have to read the line and round
-  std::vector<std::string> tokens = tokenize_comma_delimited(line);
-
-  // store the modified strings
-  std::vector<std::string> output;
-  output.reserve(tokens.size());
-
-  // round the string
-  for (const auto& t : tokens)
-    output.push_back(round_string(t, m_round));
-
-  // concatenate output tokens
-  std::cout << tokens_to_comma_string(output) << std::endl;
-  */
-  
-  return 0;
+  cell.Print(m_round);
+    
+  return 0; // don't output, since already printing it
 }
 
-int CatProcessor::ProcessLine(const Cell& line) {
+int CatProcessor::ProcessLine(Cell& line) {
   //int CatProcessor::ProcessLine(const std::string& line) {
 
   //std::cerr << " processingl ine " << line << std::endl;
@@ -335,7 +357,7 @@ int CatProcessor::ProcessLine(const Cell& line) {
   std::cout << tokens_to_comma_string(tokens) << std::endl;
 
   */
-  return 0;
+  return 1;
 }
 
 int CatProcessor::ProcessHeader(CellHeader& header) {
@@ -412,11 +434,19 @@ int CatProcessor::ProcessHeader(CellHeader& header) {
 
 int CerealProcessor::ProcessHeader(CellHeader& header) {
   m_header = header;
+
+  assert(!m_filename.empty());
+
+  // set the output to file or stdout
+  if (m_filename == "-") {
+    m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(std::cout);
+  } else {
+    m_os = std::make_unique<std::ofstream>(m_filename, std::ios::binary);
+    m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(*m_os);
+  }
   
-  std::string filename = "cereal32.bin";
-  
-  m_os = std::make_unique<std::ofstream>(filename, std::ios::binary);
-  m_archive = std::make_unique<cereal::BinaryOutputArchive>(*m_os);
+  // archive the header
+  (*m_archive)(header);
   
   return 0;
 }
@@ -424,10 +454,22 @@ int CerealProcessor::ProcessHeader(CellHeader& header) {
 int CerealProcessor::ProcessLine(const std::string& line) {
 
   Cell row(line, m_header);
-  
+
   // serialize it
   (*m_archive)(row);
   return 0;
   
 }
 
+int BuildProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header; // store but don't print
+
+  return 2;
+}
+
+// just a pass through to place it in the table
+int BuildProcessor::ProcessLine(Cell& cell) {
+
+  return 2;
+  
+}

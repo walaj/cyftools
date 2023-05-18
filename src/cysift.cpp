@@ -45,7 +45,7 @@ namespace opt {
 
 static CellTable table;
 
-static void build_table(bool convert);
+static void build_table();
 
 static const char* shortopts = "jhHNyvr:t:a:d:g:b:q:c:s:k:n:r:w:l:x:X:o:R:f:";
 static const struct option longopts[] = {
@@ -182,7 +182,7 @@ int main(int argc, char **argv) {
 }
 
 // build the table into memory
-static void build_table(bool convert) {
+static void build_table() {
 
   // set table params
   if (opt::verbose)
@@ -190,15 +190,11 @@ static void build_table(bool convert) {
   
   if (opt::threads > 1)
     table.SetThreads(opt::threads);
-    
-  // read the table into memory
-  //table.BuildTable(opt::infile);
 
-  if (convert) {
-    if (opt::verbose)
-      std::cerr << "...read table: converting graph and flag columns" << std::endl;
-    // table.ConvertColumns();
-  }
+  // stream into memory
+  BuildProcessor buildp;
+  table.StreamTable(buildp, opt::infile);
+  
 }
 
 
@@ -254,24 +250,26 @@ static int knnfunc(int argc, char** argv) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'h' : opt::header = true; break;
     case 't' : arg >> opt::threads; break;
     case 'k' : arg >> n; break;
     default: die = true;
     }
   }
-
+  
   optind++;
   // Process any remaining no-flag options
   while (optind < argc) {
     if (opt::infile.empty()) {
       opt::infile = argv[optind];
-    } 
+    } else if (opt::outfile.empty()) {
+      opt::outfile = argv[optind];      
+    }
     optind++;
   }
   
-  // display help if no input
-  if (opt::infile.empty() || die) {
+  die = die || opt::infile.empty() || opt::outfile.empty();
+  
+  if (die) { 
     
     const char *USAGE_MESSAGE =
       "Usage: cysift knn [csvfile]\n"
@@ -288,7 +286,7 @@ static int knnfunc(int argc, char** argv) {
   // build the table
   // but don't have to convert columns
   // since we don't use pre-existing Graph or Flags for this
-  build_table(false);
+  build_table();
 
   // build the KNN graph in marker-space
   table.KNN_marker(n);
@@ -308,7 +306,6 @@ static int catfunc(int argc, char** argv) {
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 's' : arg >> samples; break;
-    case 'h' : opt::header = true; break;      
     default: die = true;
     }
   }
@@ -335,7 +332,6 @@ static int catfunc(int argc, char** argv) {
       "    csvfile: filepaths of cell tables\n"
       "    -v, --verbose             Increase output to stderr\n"
       "    -s                        Sample numbers, to be in same number as inputs and comma-sep\n"      
-      "    -h                        Output with the header\n"            
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
@@ -357,7 +353,7 @@ static int catfunc(int argc, char** argv) {
   size_t offset = 0;
 
   CatProcessor catp;
-  catp.SetParams(opt::header, opt::header_only, offset, 0);
+  catp.SetParams(offset, 0);
   
   for (size_t sample_num = 0; sample_num < opt::infile_vec.size(); sample_num++) {
 
@@ -423,7 +419,7 @@ static int infofunc(int argc, char** argv) {
   }
   
   // build it into memory and then provide information
-  build_table(false);
+  build_table();
 
   // provide information to stdout
   std::cout << table;
@@ -503,7 +499,6 @@ static int log10func(int argc, char** argv)  {
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'n' : arg >> opt::n; break;
-    case 'h' : opt::header = true; break;
     default: die = true;
     }
   }
@@ -525,7 +520,6 @@ static int log10func(int argc, char** argv)  {
       "  Calculate the log10 of marker intensities\n"
       "  csvfile: filepath or a '-' to stream to stdin\n"
       "  -v, --verbose             Increase output to stderr"
-      "  -h                        Output with the header\n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
@@ -536,7 +530,6 @@ static int log10func(int argc, char** argv)  {
     table.SetVerbose();
 
   LogProcessor log;
-  log.SetParams(opt::header);
 
   table.StreamTable(log, opt::infile);
 
@@ -619,7 +612,6 @@ static int roifunc(int argc, char** argv) {
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'n' : arg >> opt::n; break;
-    case 'h' : opt::header = true; break;
     case 'r' : arg >> opt::roifile;
     default: die = true;
     }
@@ -644,7 +636,6 @@ static int roifunc(int argc, char** argv) {
       "  csvfile: filepath or a '-' to stream to stdin\n"
       "  -r                        ROI file\n"
       "  -l                        Output all cells and add \"roi\" column with ROI label\n"      
-      "  -h                        Output with the header\n"
       "  -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -659,7 +650,7 @@ static int roifunc(int argc, char** argv) {
       std::cerr << c << std::endl;
 
   ROIProcessor roip;
-  roip.SetParams(opt::header, false, rois);// false is placeholder for label function, that i need to implement
+  roip.SetParams(false, rois);// false is placeholder for label function, that i need to implement
 
   table.StreamTable(roip, opt::infile);
 
@@ -689,12 +680,20 @@ static int viewfunc(int argc, char** argv) {
   while (optind < argc) {
     if (opt::infile.empty()) {
       opt::infile = argv[optind];
-    } 
+    } else if (opt::outfile.empty()) {
+      opt::outfile = argv[optind];      
+    }
     optind++;
   }
+
+  // default to stdout
+  if (opt::outfile.empty())
+    opt::outfile = "-";
   
+  die = die || opt::infile.empty();
+
   // display help if no input
-  if (opt::infile.empty() || die) {
+  if (die) { 
     
     const char *USAGE_MESSAGE =
       "Usage: cysift view [csvfile] <options>\n"
@@ -712,10 +711,10 @@ static int viewfunc(int argc, char** argv) {
   // set table params
   if (opt::verbose)
     table.SetVerbose();
-  
+
   ViewProcessor viewp;
   viewp.SetParams(opt::header, opt::header_only, precision);
-  
+
   table.StreamTable(viewp, opt::infile);
   
   return 0;  
@@ -810,7 +809,7 @@ static int plotfunc(int argc, char** argv) {
     return 1;
   }
 
-  build_table(false);
+  build_table();
   
   // make an ASCII plot of this
   table.PlotASCII(width, length);
@@ -829,7 +828,6 @@ static int subsamplefunc(int argc, char** argv) {
     case 'v' : opt::verbose = true; break;
     case 'n' : arg >> n; break;
     case 's' : arg >> opt::seed; break;      
-    case 'h' : opt::header = true; break;
     default: die = true;
     }
   }
@@ -852,14 +850,13 @@ static int subsamplefunc(int argc, char** argv) {
       "    csvfile: filepath or a '-' to stream to stdin\n"
       "    -n, --numrows             Number of rows to subsample\n"
       "    -s, --seed         [1337] Seed for random subsampling\n"
-      "    -h                        Output with the header\n"            
       "    -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << SUBSAMPLE_USAGE_MESSAGE;
     return 1;
   }
 
-  build_table(false);
+  build_table();
   
   // subsample
   table.Subsample(n, opt::seed);
@@ -907,7 +904,7 @@ static int correlatefunc(int argc, char** argv) {
     return 1;
   }
 
-  build_table(false);
+  build_table();
   
   //
   table.PrintPearson(opt::csv, opt::sort);
@@ -924,7 +921,6 @@ static int cropfunc(int argc, char** argv) {
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'c' : arg >> cropstring; break;
-    case 'h' : opt::header = true; break;      
      default: die = true;
     }
   }
@@ -947,7 +943,6 @@ static int cropfunc(int argc, char** argv) {
       "  Crop the table to a given rectangle (in pixels)\n"
       "    csvfile: filepath or a '-' to stream to stdin\n"
       "    --crop                    String of form xlo,xhi,ylo,yhi\n"
-      "    -h                        Output with the header\n"
       "    -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -981,7 +976,7 @@ static int cropfunc(int argc, char** argv) {
     throw std::runtime_error("Error: Fewer than 4 numbers provided");
   }
 
-  build_table(false);
+  build_table();
   
   //
   table.Crop(xlo, xhi, ylo, yhi);
@@ -1000,25 +995,27 @@ static int spatialfunc(int argc, char** argv) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'h' : opt::header = true; break;
     case 't' : arg >> opt::threads; break;
     case 'k' : arg >> n; break;
     case 'd' : arg >> d; break;            
     default: die = true;
     }
   }
-  
+
   optind++;
   // Process any remaining no-flag options
   while (optind < argc) {
     if (opt::infile.empty()) {
       opt::infile = argv[optind];
-    } 
+    } else if (opt::outfile.empty()) {
+      opt::outfile = argv[optind];      
+    }
     optind++;
   }
   
-  // display help if no input
-  if (opt::infile.empty() || die) {
+  die = die || opt::infile.empty() || opt::outfile.empty();
+  
+  if (die) { 
     
     const char *USAGE_MESSAGE =
       "Usage: cysift spatial [csvfile]\n"
@@ -1032,11 +1029,13 @@ static int spatialfunc(int argc, char** argv) {
     return 1;
   }
 
-  build_table(false);
+  build_table();
 
   table.KNN_spatial(n, d);
 
-  table.PrintTable(opt::header);
+  table.OutputTable(opt::outfile);
+  
+  //table.PrintTable(opt::header);
 
   return 0;
 }
@@ -1052,7 +1051,6 @@ static int selectfunc(int argc, char** argv) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'h' : opt::header = true; break;
     case 'o' : arg >> logor; break;
     case 'a' : arg >> logand; break;
     case 'N' : lognot = true; break;      
@@ -1065,13 +1063,16 @@ static int selectfunc(int argc, char** argv) {
   while (optind < argc) {
     if (opt::infile.empty()) {
       opt::infile = argv[optind];
-    } 
+    } else if (opt::outfile.empty()) {
+      opt::outfile = argv[optind];      
+    }
     optind++;
   }
   
+  die = die || opt::infile.empty() || opt::outfile.empty();
+  
   // display help if no input
-  if (opt::infile.empty() || die) {
-    
+  if (die) { 
     const char *USAGE_MESSAGE =
       "Usage: cysift select [csvfile]\n"
       "  Select cells by phenotype flag\n"
@@ -1079,7 +1080,6 @@ static int selectfunc(int argc, char** argv) {
       "    -o                    Logical OR flags\n"
       "    -a                    Logical AND flags\n"
       "    -N                    Not flag\n"
-      "    -h                    Output with the header\n"      
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -1093,7 +1093,8 @@ static int selectfunc(int argc, char** argv) {
 
   // setup the selector processor
   SelectProcessor select;
-  select.SetParams(logor, logand, lognot, opt::header);
+  select.SetParams(logor, logand, lognot);
+  select.SetOutput(opt::outfile);
 
   // process
   table.StreamTable(select, opt::infile);
@@ -1109,48 +1110,51 @@ static int phenofunc(int argc, char** argv) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'h' : opt::header = true; break;
     case 't' : arg >> file; break;
     default: die = true;
     }
   }
 
   optind++;
-  // Process any remaining no-flag options
-  while (optind < argc) {
+    // Process any remaining no-flag options
+    while (optind < argc) {
     if (opt::infile.empty()) {
       opt::infile = argv[optind];
-    } 
+    } else if (opt::outfile.empty()) {
+      opt::outfile = argv[optind];      
+    }
     optind++;
   }
   
+  die = die || opt::infile.empty() || opt::outfile.empty();
+  
+  
   // display help if no input
-  if (opt::infile.empty() || die) {
-    
+  if (die) { 
+
     const char *USAGE_MESSAGE =
       "Usage: cysift pheno [csvfile]\n"
       "  Phenotype cells (set the flags) with threshold file\n"
       "    csvfile: filepath or a '-' to stream to stdin\n"
-      "    -t                    Phenotype file\n"
-      "    -h                    Output with the header\n"      
-      "    -v, --verbose         Increase output to stderr\n"
+      "    -t               File that holds gates: marker(string), low(float), high(float)\n"
+      "    -v, --verbose    Increase output to stderr\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
-  build_table(false);
-
-  std::unordered_map<std::string, std::pair<float,float>> tt =
-    table.phenoread(file);
+  // read the phenotype filoe
+  PhenoMap pheno = phenoread(file);
   
   if (opt::verbose)
-    for (const auto& c : tt)
+    for (const auto& c : pheno)
       std::cerr << c.first << " -- " << c.second.first << "," << c.second.second << std::endl;
 
-  table.phenotype(tt);
+  PhenoProcessor phenop;
+  phenop.SetParams(pheno);
+  phenop.SetOutput(opt::outfile);
 
-  table.PrintTable(opt::header);
+  table.StreamTable(phenop, opt::infile);
   
   return 0;
 }
@@ -1170,7 +1174,6 @@ static int radialdensfunc(int argc, char** argv) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'h' : opt::header = true; break;
     case 't' : arg >> opt::threads; break;
     case 'R' : arg >> inner; break;
     case 'r' : arg >> outer; break;
@@ -1207,7 +1210,6 @@ static int radialdensfunc(int argc, char** argv) {
       "    -a                    Logical AND flags\n"
       "    -l                    Label the column\n"
       "    -f                    File for multiple labels [r,R,o,a,l]\n"
-      "    -h                    Output with the header\n"      
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -1238,7 +1240,7 @@ static int radialdensfunc(int argc, char** argv) {
     }
   }
   
-  build_table(true);
+  build_table();
 
   if (rsv.size()) {
     for (const auto& rr : rsv) {
@@ -1270,7 +1272,6 @@ static int cerealfunc(int argc, char** argv) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'h' : opt::header = true; break;
     default: die = true;
     }
   }
@@ -1280,7 +1281,11 @@ static int cerealfunc(int argc, char** argv) {
   while (optind < argc) {
     if (opt::infile.empty()) {
       opt::infile = argv[optind];
-    } 
+    } else if (opt::outfile.empty()) {
+      opt::outfile = argv[optind];
+    }
+      
+    
     optind++;
   }
 
@@ -1288,10 +1293,9 @@ static int cerealfunc(int argc, char** argv) {
   if (opt::infile.empty() || die) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift cereal [csvfile]\n"
-      "  ***\n" 
+      "Usage: cysift cys [csvfile]\n"
+      "  Create a .cys formatted file from a csv file\n" 
       "    csvfile: filepath or a '-' to stream to stdin\n"
-      "    -h                    Output with the header\n"      
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -1299,26 +1303,9 @@ static int cerealfunc(int argc, char** argv) {
   }
 
   CerealProcessor cerp;
+  cerp.SetParams(opt::outfile);
 
   table.StreamTableCSV(cerp, opt::infile);
 
-  return 0;
-  
-  std::ifstream file("cereal.bin", std::ios::binary);
-  cereal::BinaryInputArchive inputArchive(file);
-  
-  // Keep loading objects from the archive until you reach the end of the file:
-  std::vector<Cell> vec;
-  size_t i = 0;
-  while(file.peek() != EOF) {
-    Cell cell;
-    inputArchive(cell);
-    vec.push_back(cell);
-    if (i % 100000 == 0)
-      std::cerr << i << std::endl;
-    i++;
-    //objects.push_back(obj);
-  }
-  
   return 0;
 }

@@ -407,7 +407,6 @@ class GraphColumn : public Column {
       this->SetValueAt(i, CellNode(st->GetStringElem(i)));
     }
   }
-
   
   std::string GetStringElem(size_t i) const override {
     if (i >= m_vec.size())

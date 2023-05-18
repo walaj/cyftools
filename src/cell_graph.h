@@ -44,7 +44,7 @@ class CellNode {
     dist.reserve(neighbors_.size());
     for (const auto& n : neighbors_) {
       ids.push_back(static_cast<T>(n.first));
-      ids.push_back(static_cast<T>(n.second));
+      dist.push_back(static_cast<T>(n.second));
     }
   }
 

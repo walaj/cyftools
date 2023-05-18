@@ -13,9 +13,11 @@
 #include <variant>
 #include <unordered_set>
 
+#include "cysift.h"
 #include "cell_header2.h"
 #include "cell_column.h"
 #include "cell_row.h"
+
 
 /// @brief Alias for a single datum from a cell, which can be int, float or string
 using CellDatum = std::variant<uint64_t, float, std::string>;
@@ -39,6 +41,8 @@ template <typename T> inline std::string AddCommas(T data) {
       s.insert(i,",");
   return s;
 }
+
+PhenoMap phenoread(const std::string& filename);
 
 void process_token_to_variant(const std::string_view& token,
 			      const Tag& tag,

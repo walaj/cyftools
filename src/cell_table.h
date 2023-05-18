@@ -6,13 +6,8 @@
 #include "polygon.h"
 #include "cell_header2.h"
 #include "cell_processor.h"
+#include "cysift.h"
 
-// Define the function wrapper type
-typedef std::function<bool(const std::string& in, std::string& out)> LineStreamerWrapper;
-
-// define phenotype map
-typedef std::pair<float,float> Pheno;
-typedef std::unordered_map<std::string, Pheno> PhenoMap;
 
 class CellTable {
   
@@ -91,6 +86,8 @@ public:
   void phenotype(const std::unordered_map<std::string, std::pair<float,float>>& thresh);
 
   void StreamTable(CellProcessor& proc, const std::string& file);
+
+  void OutputTable(const std::string& file) const;
   
  private:
   
@@ -109,28 +106,13 @@ public:
   
   // internal member functions
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
-  
-  bool read_csv_line__(io::LineReader& reader, CellRow& values) const;
-  
-  void header_read__(const std::string& header_line);
-  
-  CellRow add_row_to_table__(const CellRow& values);
 
+  void initialize_cols();
+  
   Cell add_cell_to_table(const Cell& cell);
-
-  CellRow select_row_from_table__(const CellRow& values, uint64_t on,
-					     uint64_t off);
-
-  int read_one_line__(const std::string& line, CellRow& values) const;
-
-  void check_header__() const;
 
   void print_correlation_matrix(const std::vector<std::pair<std::string, const ColPtr>>& data,
 				const std::vector<std::vector<float>>& correlation_matrix, bool sort) const;
-
-  
-  void process_csv_file__(const std::string& file, const std::function<CellRow(const CellRow&)>& func);
-
 
   void column_to_row_major(std::vector<double>& data, int nobs, int ndim) const;
   

@@ -47,6 +47,10 @@ std::string CellFlag::toBitString() const {
   
 }
 
+uint64_t CellFlag::toBase10_uint64_t() const {
+  return bitmap.to_ullong();
+}
+
 void CellFlag::setFlagOn(int n) {
   check_bounds(n);
   bitmap.set(n, true);
