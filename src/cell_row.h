@@ -22,7 +22,7 @@ class Cell {
     void serialize(Archive & ar)
     {
       ar(m_id, m_flag, m_x, m_y, m_cols, m_spatial_ids,
-	 m_spatial_dist); 
+	 m_spatial_dist, m_spatial_flags); 
     }
 
   friend std::ostream& operator<<(std::ostream& os, const Cell& cell);
@@ -43,5 +43,6 @@ class Cell {
   // spatial graph
   std::vector<uint32_t> m_spatial_ids;
   std::vector<uint32_t> m_spatial_dist;
+  std::vector<uint64_t> m_spatial_flags;
 
 };

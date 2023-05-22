@@ -12,7 +12,9 @@ std::ostream& operator<<(std::ostream& os, const Cell& cell) {
         os << value << "\t";
     }
 
-    os << "Graph size: " << cell.m_spatial_ids.size() << " " << cell.m_spatial_dist.size();
+    os << "Graph size: " <<
+      cell.m_spatial_ids.size() << " " <<
+      cell.m_spatial_dist.size();
     return os;
 }
 
@@ -29,10 +31,16 @@ void Cell::Print(int round) const {
     std::cout << d << c;
 
   // print graph
+  /////////
+
+  // print delimiter if graph non-empty
   if (m_spatial_ids.size())
     std::cout << d;
+
+  // [print
   for (size_t i = 0; i < m_spatial_ids.size(); i++) {
-    std::cout << m_spatial_ids.at(i) << "^" << m_spatial_dist.at(i);
+    std::cout << m_spatial_ids.at(i) << "^" << m_spatial_dist.at(i) <<
+      "&" << m_spatial_flags.at(i);
     if (i != m_spatial_ids.size() - 1)
       std::cout << ";";
   }

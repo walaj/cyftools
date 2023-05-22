@@ -42,6 +42,8 @@ template <typename T> inline std::string AddCommas(T data) {
   return s;
 }
 
+void column_to_row_major(std::vector<float>& data, int nobs, int ndim);
+
 PhenoMap phenoread(const std::string& filename);
 
 void process_token_to_variant(const std::string_view& token,

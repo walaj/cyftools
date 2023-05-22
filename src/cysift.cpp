@@ -68,6 +68,7 @@ static const struct option longopts[] = {
 static const char *RUN_USAGE_MESSAGE =
 "Usage: cysift [module] <options> \n"
 "  view       - View the cell table\n"
+"  count      - Output number of cells in table\n"  
 "  cut        - Select only given markers and metas\n"
 "  cat        - Concatenate multiple samples\n"  
 "  subsample  - Subsample cells randomly\n"
@@ -84,6 +85,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  radialdens - Calculate density of cells within a radius\n"
 "\n";
 
+static int countfunc(int argc, char** argv);
 static int cerealfunc(int argc, char** argv);
 static int catfunc(int argc, char** argv);
 static int radialdensfunc(int argc, char** argv);
@@ -174,6 +176,8 @@ int main(int argc, char **argv) {
     val = selectfunc(argc, argv);
   } else if (opt::module == "pheno") {
     val = phenofunc(argc, argv);
+  } else if (opt::module == "count") {
+    countfunc(argc, argv);
   } else {
     assert(false);
   }
@@ -271,7 +275,7 @@ static int knnfunc(int argc, char** argv) {
   
   if (die) { 
     
-    const char *USAGE_MESSAGE =
+   const char *USAGE_MESSAGE =
       "Usage: cysift knn [csvfile]\n"
       "  Construct the KNN graph (in marker space)\n"
       "    csvfile: filepath or a '-' to stream to stdin\n"
@@ -552,6 +556,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "plot"  || opt::module == "roi" ||
 	 opt::module == "histogram" || opt::module == "log10" ||
 	 opt::module == "crop"  || opt::module == "knn" ||
+	 opt::module == "count" || 
 	 opt::module == "cat" || opt::module == "cereal" || 
 	 opt::module == "correlate" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
@@ -1031,9 +1036,9 @@ static int spatialfunc(int argc, char** argv) {
 
   build_table();
 
+  table.SetupOutputWriter(opt::outfile);
+  
   table.KNN_spatial(n, d);
-
-  table.OutputTable(opt::outfile);
   
   //table.PrintTable(opt::header);
 
@@ -1190,15 +1195,15 @@ static int radialdensfunc(int argc, char** argv) {
   while (optind < argc) {
     if (opt::infile.empty()) {
       opt::infile = argv[optind];
-    } 
+    } else if (opt::outfile.empty()) {
+      opt::outfile = argv[optind];      
+    }
     optind++;
   }
-
-  if (label.empty() && file.empty())
-    die = true;
   
-  // display help if no input
-  if (opt::infile.empty() || die) {
+  die = die || opt::infile.empty() || opt::outfile.empty();
+  
+  if (die) {
     
     const char *USAGE_MESSAGE =
       "Usage: cysift radialdens [csvfile]\n"
@@ -1221,6 +1226,7 @@ static int radialdensfunc(int argc, char** argv) {
     return 1;
   }
 
+  // read in the multiple selection file
   std::vector<RadialSelector> rsv;
   if (!file.empty()) {
     std::ifstream input_file(file);
@@ -1239,23 +1245,48 @@ static int radialdensfunc(int argc, char** argv) {
 	std::cerr << rr << std::endl;
     }
   }
-  
-  build_table();
 
+  // build the table into memory
+  build_table();
+  table.SetupOutputWriter(opt::outfile);
+
+  if (rsv.empty()) {
+    table.RadialDensity({inner},{outer},{logor},{logand},{label});
+  } else {
+    std::vector<uint64_t> innerV(rsv.size());
+    std::vector<uint64_t> outerV(rsv.size());  
+    std::vector<uint64_t> logorV(rsv.size());
+    std::vector<uint64_t> logandV(rsv.size());  
+    std::vector<std::string> labelV(rsv.size());
+    for (size_t i = 0; i < innerV.size(); i++) {
+      innerV[i] = rsv.at(i).int_data.at(0);
+      outerV[i] = rsv.at(i).int_data.at(1);
+      logorV[i] = rsv.at(i).int_data.at(2);
+      logandV[i] = rsv.at(i).int_data.at(3);     
+      labelV[i] = rsv.at(i).label;
+    }
+    table.RadialDensity(innerV, outerV, logorV, logandV, labelV);
+  }
+  
+  /*  
+  // run the selector
   if (rsv.size()) {
-    for (const auto& rr : rsv) {
-      if (opt::verbose)
-	std::cerr << "...working on radial density group: " << rr << std::endl;
-      
+  for (const auto& rr : rsv) {
+  if (opt::verbose)
+  std::cerr << "...working on radial density group: " << rr << std::endl;
+  
       table.RadialDensity(rr.int_data[0], rr.int_data[1],
 			  rr.int_data[2], rr.int_data[3],
 			  rr.label);
     }
   } else {
     table.RadialDensity(inner, outer, logor, logand, label);
-  }
+    }*/
+
+  // write the table
+  table.OutputTable();
   
-  table.PrintTable(opt::header);
+  //table.PrintTable(opt::header);
 
   return 0;
 }
@@ -1309,3 +1340,47 @@ static int cerealfunc(int argc, char** argv) {
 
   return 0;
 }
+
+
+static int countfunc(int argc, char** argv) {
+  
+  bool die = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    default: die = true;
+    }
+  }
+
+  optind++;
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    if (opt::infile.empty()) {
+      opt::infile = argv[optind];
+    } 
+    optind++;
+  }
+
+  // display help if no input
+  if (opt::infile.empty() || die) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift count [cysfile]\n"
+      "  Output the number of cells in a file\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
+      "    -v, --verbose         Increase output to stderr\n"      
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  CountProcessor countp;
+
+  table.StreamTable(countp, opt::infile);
+
+  countp.PrintCount();
+
+  return 0;
+}
+

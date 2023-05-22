@@ -392,26 +392,11 @@ class GraphColumn : public Column {
   GraphColumn(const CellNode& initial_elem) {
     m_vec.push_back(initial_elem);
   }
-
-  GraphColumn(const std::shared_ptr<StringColumn> st) {
-    this->resize(st->size());
-    for (size_t i = 0; i < st->size(); i++) {
-      this->SetValueAt(i, CellNode(st->GetStringElem(i)));
-    }
-  }
-
-  GraphColumn(const std::shared_ptr<StringColumn> st, size_t nthreads) {
-    this->resize(st->size());
-#pragma omp parallel for num_threads(nthreads)
-    for (size_t i = 0; i < st->size(); i++) {
-      this->SetValueAt(i, CellNode(st->GetStringElem(i)));
-    }
-  }
   
   std::string GetStringElem(size_t i) const override {
     if (i >= m_vec.size())
       throw std::out_of_range("Index out of range");
-    return m_vec.at(i).toString(m_integerize);
+    return m_vec.at(i).toString();
   }
   
   std::shared_ptr<Column> clone() const override {
@@ -493,10 +478,6 @@ class GraphColumn : public Column {
     }
   }
 
-  void SetIntegerize(bool ii) {
-    m_integerize = ii;
-  }
-  
   void reserve(size_t n) override {
     m_vec.clear();
     m_vec.reserve(n);
@@ -511,8 +492,6 @@ class GraphColumn : public Column {
 
   std::vector<CellNode> m_vec;
 
-  bool m_integerize = false;
-  
 };
 
 class FlagColumn : public Column {

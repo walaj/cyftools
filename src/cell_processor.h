@@ -99,6 +99,24 @@ class PhenoProcessor : public CellProcessor {
 };
 
 
+// Count processor
+class CountProcessor : public CellProcessor {
+  
+ public:
+  
+  void SetParams() {}
+  
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+
+  void PrintCount();
+  
+ private:
+  size_t m_count = 0;
+};
+
+
 // Select processor
 class SelectProcessor : public CellProcessor {
   
@@ -211,7 +229,7 @@ class BuildProcessor : public CellProcessor {
  private:
   
   CellHeader m_header;
-  
+
 };
 
 
@@ -278,5 +296,43 @@ private:
   
   std::unique_ptr<std::ofstream> m_os;
   std::unique_ptr<cereal::PortableBinaryOutputArchive> m_archive;
+  
+
+};
+
+class RadialProcessor : public CellProcessor { 
+
+ public:
+
+  void SetParams(std::vector<uint64_t> inner, std::vector<uint64_t> outer,
+		 std::vector<uint64_t> logor, std::vector<uint64_t> logand,
+		 std::vector<std::string> label) {
+
+    // check the radial geometry parameters
+    assert(inner.size());
+    assert(inner.size() == outer.size());
+    assert(inner.size() == logor.size());
+    assert(inner.size() == logand.size());
+    assert(inner.size() == label.size());    
+
+    m_inner = inner;
+    m_outer = outer;
+    m_logor = logor;
+    m_logand = logand;
+    m_label = label;
+    
+  }
+  
+  
+  int ProcessHeader(CellHeader& header) override;
+
+  int ProcessLine(Cell& cell) override;
+  
+ private:
+  
+  CellHeader m_header;
+
+  std::vector<uint64_t> m_inner, m_outer, m_logor, m_logand;
+  std::vector<std::string> m_label;
   
 };

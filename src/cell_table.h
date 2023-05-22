@@ -8,6 +8,8 @@
 #include "cell_processor.h"
 #include "cysift.h"
 
+#include <cereal/types/vector.hpp>
+#include <cereal/archives/portable_binary.hpp>
 
 class CellTable {
   
@@ -43,9 +45,10 @@ public:
 
   size_t CellCount() const;
 
-  int RadialDensity(uint64_t inner, uint64_t outer, uint64_t logor, uint64_t logand,
-		    const std::string& label);
-  
+  int RadialDensity(std::vector<uint64_t> inner, std::vector<uint64_t> outer,
+		    std::vector<uint64_t> logor, std::vector<uint64_t> logand,
+		    std::vector<std::string> label);
+
   const CellHeader& GetHeader() const;
   
   // display
@@ -87,17 +90,22 @@ public:
 
   void StreamTable(CellProcessor& proc, const std::string& file);
 
-  void OutputTable(const std::string& file) const;
+  void OutputTable() const;
+
+  void SetupOutputWriter(const std::string& file);
   
  private:
   
   unordered_map<string, ColPtr> m_table;
-  
-  string x;
-  string y;
+
+  std::unique_ptr<std::ofstream> m_os;
+  std::unique_ptr<cereal::PortableBinaryOutputArchive> m_archive;
 
   CellHeader m_header;
 
+  // for verbose
+  size_t m_count = 0;
+  
   // params
   bool m_verbose = false;
   bool m_header_only = false;
@@ -109,13 +117,11 @@ public:
 
   void initialize_cols();
   
-  Cell add_cell_to_table(const Cell& cell);
+  void add_cell_to_table(const Cell& cell);
 
   void print_correlation_matrix(const std::vector<std::pair<std::string, const ColPtr>>& data,
 				const std::vector<std::vector<float>>& correlation_matrix, bool sort) const;
 
-  void column_to_row_major(std::vector<double>& data, int nobs, int ndim) const;
-  
 #endif    
 };
 

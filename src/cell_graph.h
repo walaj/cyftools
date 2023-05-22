@@ -11,7 +11,7 @@
 #include "knncolle/knncolle.hpp"
 
 //using Neighbors = std::vector<umappp::Neighbor<float>>;
-using Neighbors    = std::vector<umappp::Neighbor<double>>;
+using Neighbors    = std::vector<umappp::Neighbor<float>>;
 using NeighborsInt = std::vector<std::pair<int, int>>;
 
 class CellNode {
@@ -20,18 +20,23 @@ class CellNode {
 
   CellNode(const std::vector<uint32_t>& ids,
 	   const std::vector<uint32_t>& dist);
-  
-  explicit CellNode(const Neighbors& neighbors);
-  
-  explicit CellNode(const std::string& input_str) { parse_neighbors(input_str); }
 
+  CellNode(const std::vector<uint32_t>& ids,
+	   const std::vector<uint32_t>& dist,
+	   const std::vector<uint64_t>& flags);
+
+  explicit CellNode(const Neighbors& neighbors) {};
+
+  explicit CellNode(const Neighbors& neighbors,
+		    const std::vector<uint64_t>& flags);
+  
   void OffsetNodes(size_t offset);
   
   const Neighbors& get_neighbors() const { return neighbors_; }
   
   void set_neighbors(const Neighbors& neighbors) { neighbors_ = neighbors; }
 
-  std::string toString(bool integerize) const;
+  std::string toString() const;
 
   size_t size() const { return neighbors_.size(); }
   
@@ -50,6 +55,10 @@ class CellNode {
 
  private:
   Neighbors neighbors_;
+
+  // vector of flags of neighbors. Must be length 0
+  // or same length as neighbors
+  std::vector<uint64_t> m_flags;
 
   void parse_neighbors(const std::string& input_str);
 

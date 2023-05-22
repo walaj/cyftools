@@ -21,7 +21,8 @@ public:
     }
   
   explicit CellFlag(uint64_t num) {
-      fromBase10(num);
+    bitmap = num;
+    //fromBase10(num);
       //fromBase10(base64_string);
     }
   
@@ -45,12 +46,13 @@ public:
     
   std::string toBase10() const;
   
-  void fromBase10(uint64_t base10);
+  //void fromBase10(uint64_t base10);
   
 private:
   
   // data
-  std::bitset<BITMAP_SIZE> bitmap;
+  //std::bitset<BITMAP_SIZE> bitmap;
+  uint64_t bitmap;
   
   void check_bounds(int n) const;
   

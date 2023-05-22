@@ -9,11 +9,26 @@ std::ostream& operator<<(std::ostream& os, const CellFlag& cellFlag) {
 
 bool CellFlag::testAndOr(uint64_t logor, uint64_t logand) const {
 
+  //bool resultN;
+  //bool result;
+  //std::bitset<64> bs(bitmap);
+  
+  // new way
+  bool orCondition = logor == 0 || (bitmap & logor) != 0; // True if logor not specified or any OR flags are turned on
+
+  if (orCondition) {
+    bool andCondition = (bitmap & logand) == logand; // True if all AND flags are turned on
+    return andCondition || logand == 0; // return true if all AND flags are turned on or if logand not specified
+  }
+
+  return false;
+  /*
+  // old way
   std::bitset<BITMAP_SIZE> orBitset(logor);
   std::bitset<BITMAP_SIZE> andBitset(logand);
 
-  bool orCondition = (bitmap & orBitset).any(); // True if any OR flags are turned on
-  bool andCondition = (bitmap & andBitset) == andBitset; // True if all AND flags are turned on
+  bool orCondition = (bs & orBitset).any(); // True if any OR flags are turned on
+  bool andCondition = (bs & andBitset) == andBitset; // True if all AND flags are turned on
 
   if (logor == 0) // don't gate on OR if not specified
     orCondition = true;
@@ -26,43 +41,39 @@ bool CellFlag::testAndOr(uint64_t logor, uint64_t logand) const {
     return false;
   }
 
-  /*  
-  
-  for (size_t i = 0; i < bitmap.size(); ++i) {
-    if (onBitset[i] && !bitmap[i]) {
-      return false;
-    }
-    if (offBitset[i] && bitmap[i]) {
-      return false;
-    }
-  }
-    
+  //std::cerr << " OLD " << result << " NEW " << resultN << " flag " << bitmap << " logor " << logor << " logand " << logand << std::endl;
+  return false;
   */
 }
 
 std::string CellFlag::toBitString() const {
-  
-  std::string bitmap_str = bitmap.to_string();
+
+  std::bitset<64> bs(bitmap);
+  //return std::to_string(bitmap);
+  std::string bitmap_str = bs.to_string();
   return bitmap_str;
   
 }
 
 uint64_t CellFlag::toBase10_uint64_t() const {
-  return bitmap.to_ullong();
+  return bitmap; //bitmap.to_ullong();
 }
 
 void CellFlag::setFlagOn(int n) {
   check_bounds(n);
-  bitmap.set(n, true);
+  bitmap |= (1ULL << n);
+  //bitmap.set(n, true);
 }
 
 void CellFlag::setFlagOff(int n) {
   check_bounds(n);
-  bitmap.set(n, false);
+  bitmap &= ~(1ULL << n);
+  //Xbitmap.set(n, false);
 }
 
 std::string CellFlag::toString() const {
-  return toBase10();
+  return std::to_string(bitmap);
+  //  return toBase10();
 }
 
 void CellFlag::check_bounds(int n) const {
@@ -71,7 +82,7 @@ void CellFlag::check_bounds(int n) const {
   }
 }
 
-std::string CellFlag::to_base64() const {
+/*std::string CellFlag::to_base64() const {
   int num_bytes = static_cast<int>(std::ceil(BITMAP_SIZE / 8.0));
   std::vector<unsigned char> bytes(num_bytes, 0);
   
@@ -100,8 +111,6 @@ std::string CellFlag::to_base64() const {
   
   return base64_string;
 }
-
-
 
 void CellFlag::from_base64(const std::string& base64_string) {
 
@@ -151,7 +160,7 @@ void CellFlag::from_base64(const std::string& base64_string) {
   std::cerr << " AFTER bitmap_str " << bitmap_str << std::endl;
   std::cerr <<  " -- " << std::string(128 - bitmap_str.size(), '0') << std::endl;
   
-}
+  }
 
 
 long long CellFlag::base64_to_base10(const std::string& base64_num) {
@@ -212,14 +221,15 @@ std::string CellFlag::toBase10() const {
     
     return result;
 }
+*/
 
-void CellFlag::fromBase10(uint64_t base10) {
+/*void CellFlag::fromBase10(uint64_t base10) {
   
   bitmap = std::bitset<BITMAP_SIZE>(base10);
   
-}
+  }*/
 
-bool CellFlag::test(uint64_t on, uint64_t off) const {
+/*bool CellFlag::test(uint64_t on, uint64_t off) const {
 
   std::bitset<BITMAP_SIZE> onBitset(on);
   std::bitset<BITMAP_SIZE> offBitset(off);
@@ -236,5 +246,5 @@ bool CellFlag::test(uint64_t on, uint64_t off) const {
   return true;
   
 }
-
+*/
 

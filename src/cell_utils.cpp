@@ -5,6 +5,27 @@
 #include <limits>
 #include <cmath>
 
+void column_to_row_major(std::vector<float>& data, int nobs, int ndim) {
+
+  float* temp = new float[data.size()];
+  
+  for (int row = 0; row < nobs; ++row) {
+    for (int col = 0; col < ndim; ++col) {
+      int old_index = col * nobs + row;
+      int new_index = row * ndim + col;
+      temp[new_index] = data[old_index];
+    }
+  }
+  
+  for (size_t i = 0; i < data.size(); ++i) {
+    data[i] = temp[i];
+  }
+  
+  delete[] temp;
+  
+}
+
+
 PhenoMap phenoread(const std::string& filename) {
   
   PhenoMap data;

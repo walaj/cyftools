@@ -28,6 +28,94 @@ int SelectProcessor::ProcessLine(Cell& cell) {
   return 0; // dont if not
 }
 
+int RadialProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+
+  // build a set (just for this method) to compare existing tags with
+  std::unordered_set<std::string> tag_set; 
+  for (const auto& t : m_header.GetDataTags())
+    tag_set.insert(t.id);
+  
+  // assure tags aren't already there
+  for (const auto& l : m_label) {
+
+    // warn if already there
+    if (tag_set.count(l)) {
+      std::cerr << "Warning: header already contains column: " <<
+	l << std::endl;
+    } else {
+      // otherwise add the new tags
+      Tag dtag(Tag::CA_TAG, l, "");
+      m_header.addTag(dtag);
+    }
+  }
+
+  return 0;
+  
+}
+
+int RadialProcessor::ProcessLine(Cell& cell) {
+
+  std::vector<float> cell_count(m_inner.size());
+  
+  assert(cell.m_spatial_ids.size() == cell.m_spatial_flags.size());
+  assert(cell.m_spatial_ids.size() == cell.m_spatial_dist.size());
+
+  // loop the nodes connected to each cell
+  for (size_t i = 0; i < cell.m_spatial_ids.size(); i++) { 
+    
+    // test if the connected cell meets the flag criteria
+    // n.first is cell_id of connected cell to this cell
+    for (size_t j = 0; j < m_inner.size(); j++) {
+      
+      CellFlag tflag(cell.m_spatial_flags.at(i));
+      float cell_count = 0;
+      
+      // both are 0, so take all cells OR it meets flag criteria
+      if ( (!m_logor[j] && !m_logand[j]) ||
+	   tflag.testAndOr(m_logor[j], m_logand[j])) {
+	
+	// then increment cell count if cell in bounds
+	cell_count += cell.m_spatial_dist.at(i) >= m_inner[j] &&
+    	              cell.m_spatial_dist.at(i) <= m_outer[j];
+	
+      }
+    }
+  }
+  
+  // calculate the density
+  std::vector<float> area(m_inner.size());
+  for (size_t j = 0; j < m_inner.size(); ++j) {
+    float outerArea = static_cast<float>(m_outer[j]) * static_cast<float>(m_outer[j]) * 3.1415926535f;
+    float innerArea = static_cast<float>(m_inner[j]) * static_cast<float>(m_inner[j]) * 3.1415926535f;
+    area[j] = outerArea - innerArea;
+  }
+  
+  // do the density calculation for each condition
+  // remember, i is iterator over cells, j is over conditions
+  for (size_t j = 0; j < area.size(); ++j) {
+    float value = cell.m_spatial_ids.empty() ? 0 : cell_count[j] * 1000000 / area[j]; // density per 1000 square pixels
+    cell.m_cols.push_back(value);
+  }
+
+  return 1;
+}
+
+
+int CountProcessor::ProcessHeader(CellHeader& header) {
+  return 0; // do nothing
+}
+
+int CountProcessor::ProcessLine(Cell& cell) {
+  m_count++;
+  return 0; // do nothing
+}
+
+void CountProcessor::PrintCount() {
+  std::cout << m_count << std::endl;
+}
+
 int CutProcessor::ProcessHeader(CellHeader& header) {
 
   // if not a strict cut, keep dims and id
