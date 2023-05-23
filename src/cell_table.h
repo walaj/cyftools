@@ -22,6 +22,8 @@ public:
   void BuildTable(const std::string& file);
 
   void StreamTableCSV(LineProcessor& proc, const std::string& file);
+
+  size_t size() const { return m_table.size(); }
   
   // add columns
   void AddColumn(const Tag& tag, ColPtr value);
@@ -31,6 +33,8 @@ public:
   
   void SetVerbose() { m_verbose = true; }
 
+  void SetCmd(const std::string cmd);
+  
   void SetThreads(size_t threads) { m_threads = threads; }
 
   void SetPrintHeader() { m_print_header = true; }

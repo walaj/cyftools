@@ -84,8 +84,11 @@ class PhenoProcessor : public CellProcessor {
   
  public:
   
-  void SetParams(PhenoMap p) {
+  void SetParams(PhenoMap p, const std::string& cmd,
+		 const std::string& output_file) {
     m_p = p;
+    m_cmd = cmd;
+    m_output_file = output_file;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -96,6 +99,8 @@ class PhenoProcessor : public CellProcessor {
   CellHeader m_header;
   std::unordered_map<std::string, size_t> m_marker_map;
   PhenoMap m_p;
+  std::string m_cmd;
+  std::string m_output_file;
 };
 
 
@@ -122,10 +127,12 @@ class SelectProcessor : public CellProcessor {
   
  public:
 
-  void SetParams(uint64_t logor, uint64_t logand, bool lognot)  {
+  void SetParams(uint64_t logor, uint64_t logand, bool lognot,
+		 const std::string& cmd)  {
     m_or = logor;
     m_and = logand;
     m_not = lognot;
+    m_cmd = cmd;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -138,6 +145,10 @@ class SelectProcessor : public CellProcessor {
   uint64_t m_and;
   bool m_not;
 
+  CellHeader m_header;
+  
+  std::string m_cmd;
+  
   size_t m_flag_index;
   
 };
@@ -213,7 +224,6 @@ class ViewProcessor : public CellProcessor {
   bool m_header_only;
   bool m_print_header;
   int m_round;
-  
 };
 
 class BuildProcessor : public CellProcessor { 
@@ -227,7 +237,7 @@ class BuildProcessor : public CellProcessor {
   int ProcessLine(Cell& cell) override;
   
  private:
-  
+
   CellHeader m_header;
 
 };
@@ -276,8 +286,10 @@ class CerealProcessor : public LineProcessor {
 
  public:
   
-  void SetParams(const std::string& filename) {
+  void SetParams(const std::string& filename,
+		 const std::string& cmd) {
     m_filename = filename;
+    m_cmd = cmd;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -290,6 +302,7 @@ private:
   int cellid;
   std::vector<float> vec1;
 
+  std::string m_cmd;
   std::string m_filename;
   
   CellHeader m_header;
@@ -304,10 +317,14 @@ class RadialProcessor : public CellProcessor {
 
  public:
 
-  void SetParams(std::vector<uint64_t> inner, std::vector<uint64_t> outer,
-		 std::vector<uint64_t> logor, std::vector<uint64_t> logand,
-		 std::vector<std::string> label) {
+  void SetParams(const std::vector<uint64_t>& inner, const std::vector<uint64_t>& outer,
+		 const std::vector<uint64_t>& logor, const std::vector<uint64_t>& logand,
+		 const std::vector<std::string>& label, const std::string& cmd,
+		 const std::string& output_file) {
 
+    m_cmd = cmd;
+    m_output_file = output_file;
+    
     // check the radial geometry parameters
     assert(inner.size());
     assert(inner.size() == outer.size());
@@ -320,7 +337,6 @@ class RadialProcessor : public CellProcessor {
     m_logor = logor;
     m_logand = logand;
     m_label = label;
-    
   }
   
   
@@ -334,5 +350,8 @@ class RadialProcessor : public CellProcessor {
 
   std::vector<uint64_t> m_inner, m_outer, m_logor, m_logand;
   std::vector<std::string> m_label;
+
+  std::string m_cmd;
+  std::string m_output_file;
   
 };

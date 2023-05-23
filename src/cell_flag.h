@@ -14,7 +14,7 @@ public:
   static const int BITMAP_SIZE = 64;
   static const std::string BASE64_CHARS;
   
-  CellFlag() {}
+  CellFlag() { bitmap = 0; }
   
   explicit CellFlag(const std::string& base64_string) {
       //fromBase10(base64_string);
@@ -52,7 +52,7 @@ private:
   
   // data
   //std::bitset<BITMAP_SIZE> bitmap;
-  uint64_t bitmap;
+  uint64_t bitmap = 0;
   
   void check_bounds(int n) const;
   

@@ -47,7 +47,7 @@ void CellTable::add_cell_to_table(const Cell& cell) {
 
   // add fixed data
   static_cast<IntCol*>(m_table["id"].get())->PushElem(cell.m_id);
-  static_cast<FlagColumn*>(m_table["flag"].get())->PushElem(CellFlag(cell.m_flag));
+  static_cast<IntCol*>(m_table["flag"].get())->PushElem(cell.m_flag);
   static_cast<FloatCol*>(m_table["x"].get())->PushElem(cell.m_x);
   static_cast<FloatCol*>(m_table["y"].get())->PushElem(cell.m_y);
 
@@ -467,23 +467,23 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
   
   if (m_verbose)
     std::cerr << "...finding K nearest-neighbors (spatial) on " << AddCommas(nobs) << " cells" << std::endl;  
-   
-   // column major the coordinate data
-   std::vector<float> concatenated_data;
-   
-   const int ndim = 2;
-
-   auto x_ptr = m_table.at("x");
-   auto y_ptr = m_table.at("y");
-   
-   const auto& x_data = std::dynamic_pointer_cast<FloatCol>(x_ptr)->getData(); // just a ptr, not a copy
-   if (m_verbose) 
-     std::cerr << "...adding " << AddCommas(x_data.size()) << " points on x" << std::endl;
-   concatenated_data.insert(concatenated_data.end(), x_data.begin(), x_data.end());
-   
-   const auto& y_data = std::dynamic_pointer_cast<FloatCol>(y_ptr)->getData();
-   if (m_verbose) 
-     std::cerr << "...adding " << AddCommas(y_data.size()) << " points on y" << std::endl;
+  
+  // column major the coordinate data
+  std::vector<float> concatenated_data;
+  
+  const int ndim = 2;
+  
+  auto x_ptr = m_table.at("x");
+  auto y_ptr = m_table.at("y");
+  
+  const auto& x_data = std::dynamic_pointer_cast<FloatCol>(x_ptr)->getData(); // just a ptr, not a copy
+  if (m_verbose) 
+    std::cerr << "...adding " << AddCommas(x_data.size()) << " points on x" << std::endl;
+  concatenated_data.insert(concatenated_data.end(), x_data.begin(), x_data.end());
+  
+  const auto& y_data = std::dynamic_pointer_cast<FloatCol>(y_ptr)->getData();
+  if (m_verbose) 
+    std::cerr << "...adding " << AddCommas(y_data.size()) << " points on y" << std::endl;
    concatenated_data.insert(concatenated_data.end(), y_data.begin(), y_data.end());
    
    // convert to row major?
@@ -529,8 +529,6 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
     col_ptr.push_back(m_table.at(t.id));
   }
   
-  // Create a thread-local storage for each thread to hold its cells.
-  
 #pragma omp parallel for num_threads(m_threads)
   for (size_t i = 0; i < nobs; ++i) {
 
@@ -542,26 +540,22 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
 	std::endl;
     
     Neighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
-    
-    // set the node pointer to CellID rather than 0-based
-    for (auto& cc : neigh) {
-      cc.first = id_ptr->GetNumericElem(cc.first);
-    }
 
     CellNode node;
-    
+
     // remove less than distance
     if (dist > 0) {
+      
       size_t osize = neigh.size();
       Neighbors neigh_trim;
       for (const auto& nnn : neigh) {
 	if (nnn.second < dist)
 	  neigh_trim.push_back(nnn);
       }
-
+      
       // print a warning if we trimmed off too many neighbors
       if (osize == neigh_trim.size()) {  
-    #pragma omp critical
+#pragma omp critical
 	{
 	  lost_cell++;
 	  if (lost_cell % 500 == 0)
@@ -581,8 +575,12 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
 
     assert(flag_vec.size() == neigh.size());
     
+    // Now, set the node pointer to CellID rather than 0-based
+    for (auto& cc : neigh) {
+      cc.first = id_ptr->GetNumericElem(cc.first);
+    }
     node = CellNode(neigh, flag_vec);
-    
+
     // build the Cell object
     ////////////////////////
     Cell cell;
@@ -617,14 +615,15 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
     
   }// end for
   
-  // After the loop, dump any remaining cells in the buffer.
-#pragma omp critical
+  /*  // After the loop, dump any remaining cells in the buffer.
+#pra8gma omp critical
   {
     for (const auto& buffered_cell : cell_buffer) {
       (*m_archive)(buffered_cell);
     }
   }
   cell_buffer.clear();
+  */
   
   if (m_verbose)
     std::cerr << "...done with graph construction" << std::endl;
@@ -757,7 +756,7 @@ void CellTable::initialize_cols() {
 
   // initialize cell id
   m_table["id"] = std::make_shared<IntCol>();
-  m_table["flag"] = std::make_shared<FlagColumn>();  
+  m_table["flag"] = std::make_shared<IntCol>();  
   m_table["x"] = std::make_shared<FloatCol>();
   m_table["y"] = std::make_shared<FloatCol>();
 
@@ -877,7 +876,7 @@ void CellTable::phenotype(const std::unordered_map<std::string, std::pair<float,
 
 void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
 
-  bool build_table_memory =false;
+  bool build_table_memory = false;
   
   std::istream *inputStream = nullptr;
   std::unique_ptr<std::ifstream> fileStream;
@@ -887,6 +886,10 @@ void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
     inputStream = &std::cin;
   } else {
     fileStream = std::make_unique<std::ifstream>(file, std::ios::binary);
+    if (!fileStream->good()) {
+      std::cerr << "Error opening file: " << file<< " - may not exist" << std::endl;
+      return;
+    }
     inputStream = fileStream.get();
   }
 
@@ -904,7 +907,7 @@ void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
     std::cerr << "Error while deserializing header: " << e.what() << std::endl;
     return;  // or handle the error appropriately for your program
   }
-
+  
   // process the header.
   // if , don't print rest
   int val = proc.ProcessHeader(m_header);
@@ -940,6 +943,8 @@ void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
 
   if (!build_table_memory)
     return;
+
+  /*
   
   // if graph is entirely empty, just remove it
   // but it should at least exist at this point, with empty nodes
@@ -962,7 +967,7 @@ void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
       ++it;
     }
   }
-  
+  */
   
 }
   
@@ -1054,7 +1059,8 @@ int CellTable::RadialDensity(std::vector<uint64_t> inner, std::vector<uint64_t> 
   }
   
   // get the flag column
-  shared_ptr<FlagColumn> fc = std::dynamic_pointer_cast<FlagColumn>(m_table["flag"]);
+  shared_ptr<IntCol> fc = std::dynamic_pointer_cast<IntCol>(m_table["flag"]);
+  //shared_ptr<FlagColumn> fc = std::dynamic_pointer_cast<FlagColumn>(m_table["flag"]);  
   assert(fc);
   assert(fc->size());
 
@@ -1132,7 +1138,9 @@ int CellTable::RadialDensity(std::vector<uint64_t> inner, std::vector<uint64_t> 
       for (size_t j = 0; j < inner.size(); j++) {
 	
 	// both are 0, so take all cells OR it meets flag criteria
-	if ( (!logor[j] && !logand[j]) || fc->TestFlagAndOr(logor[j], logand[j], cellindex)) {
+	CellFlag mflag(fc->GetNumericElem(cellindex))
+	  ;
+	if ( (!logor[j] && !logand[j]) || mflag.testAndOr(logor[j], logand[j])) {
 	  
 	  // then increment cell count if cell in bounds
 	  cell_count[j] += n.second >= inner[j] && n.second <= outer[j];
@@ -1193,4 +1201,10 @@ int CellTable::RadialDensity(std::vector<uint64_t> inner, std::vector<uint64_t> 
   m_table[dtag.id] = dc;
   */
   return 0;
+}
+
+void CellTable::SetCmd(const std::string cmd) {
+
+  m_header.addTag(Tag(Tag::PG_TAG, "", cmd));
+  
 }

@@ -6,9 +6,13 @@
 
 int SelectProcessor::ProcessHeader(CellHeader& header) {
 
+  m_header = header;
+
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  
   // output the header
   assert(m_archive);
-  (*m_archive)(header);
+  (*m_archive)(m_header);
   
   return 0;
 }
@@ -32,6 +36,8 @@ int RadialProcessor::ProcessHeader(CellHeader& header) {
 
   m_header = header;
 
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  
   // build a set (just for this method) to compare existing tags with
   std::unordered_set<std::string> tag_set; 
   for (const auto& t : m_header.GetDataTags())
@@ -39,7 +45,7 @@ int RadialProcessor::ProcessHeader(CellHeader& header) {
   
   // assure tags aren't already there
   for (const auto& l : m_label) {
-
+    
     // warn if already there
     if (tag_set.count(l)) {
       std::cerr << "Warning: header already contains column: " <<
@@ -50,7 +56,15 @@ int RadialProcessor::ProcessHeader(CellHeader& header) {
       m_header.addTag(dtag);
     }
   }
+  
+  // just in time output, so as not to write an empty file if the input crashes
+  // set the output to file or stdout
+  this->SetOutput(m_output_file);
 
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+  
   return 0;
   
 }
@@ -58,28 +72,27 @@ int RadialProcessor::ProcessHeader(CellHeader& header) {
 int RadialProcessor::ProcessLine(Cell& cell) {
 
   std::vector<float> cell_count(m_inner.size());
-  
+
   assert(cell.m_spatial_ids.size() == cell.m_spatial_flags.size());
   assert(cell.m_spatial_ids.size() == cell.m_spatial_dist.size());
-
+  
   // loop the nodes connected to each cell
   for (size_t i = 0; i < cell.m_spatial_ids.size(); i++) { 
-    
+
     // test if the connected cell meets the flag criteria
     // n.first is cell_id of connected cell to this cell
     for (size_t j = 0; j < m_inner.size(); j++) {
       
       CellFlag tflag(cell.m_spatial_flags.at(i));
-      float cell_count = 0;
       
       // both are 0, so take all cells OR it meets flag criteria
       if ( (!m_logor[j] && !m_logand[j]) ||
 	   tflag.testAndOr(m_logor[j], m_logand[j])) {
 	
 	// then increment cell count if cell in bounds
-	cell_count += cell.m_spatial_dist.at(i) >= m_inner[j] &&
+	cell_count[j] += cell.m_spatial_dist.at(i) >= m_inner[j] &&
     	              cell.m_spatial_dist.at(i) <= m_outer[j];
-	
+
       }
     }
   }
@@ -320,6 +333,8 @@ int PhenoProcessor::ProcessHeader(CellHeader& header) {
 
   m_header = header;
 
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  
   // build up a map of the indices of the markers
   // in the Cell
   size_t i = 0;
@@ -343,10 +358,14 @@ int PhenoProcessor::ProcessHeader(CellHeader& header) {
 	m.first << " is not in the phenotype file. Bit will be OFF" << std::endl;
     }
   }
-
+  
+  // just in time output, so as not to write an empty file if the input crashes
+  // set the output to file or stdout
+  this->SetOutput(m_output_file);
+  
   // output the header
   assert(m_archive);
-  (*m_archive)(header);
+  (*m_archive)(m_header);
   
   return 0;
 }
@@ -373,8 +392,11 @@ int PhenoProcessor::ProcessLine(Cell& cell) {
     
     // set the flag on if it clears the gates
     if (cell.m_cols.at(m->second) >= b.second.first &&
-	cell.m_cols.at(m->second) <= b.second.second)
+	cell.m_cols.at(m->second) <= b.second.second) {
+      //      std::cerr << "Marker: " << b.first << " cleared" << std::endl;
+      //std::cerr << "...before " << flag << std::endl; 
       flag.setFlagOn(marker_index);
+    }
     
   }
 
@@ -523,6 +545,8 @@ int CatProcessor::ProcessHeader(CellHeader& header) {
 int CerealProcessor::ProcessHeader(CellHeader& header) {
   m_header = header;
 
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  
   assert(!m_filename.empty());
 
   // set the output to file or stdout
@@ -534,7 +558,7 @@ int CerealProcessor::ProcessHeader(CellHeader& header) {
   }
   
   // archive the header
-  (*m_archive)(header);
+  (*m_archive)(m_header);
   
   return 0;
 }

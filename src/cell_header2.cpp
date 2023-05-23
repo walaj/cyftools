@@ -21,8 +21,10 @@ std::ostream& operator<<(std::ostream& os, const Tag& tag) {
     throw std::runtime_error("Unknown tag type with uint8_t value: " + std::to_string(tag.type));
   }
   os << "@" << ttype;
+
+  if (ttype != "PG")
+    os << "\tID:" << tag.id;
   
-  os << "\tID:" << tag.id;
   os << "\t" << tag.data;
   
   return os;
@@ -88,8 +90,9 @@ std::vector<Tag> CellHeader::GetMarkerTags() const {
 
 void CellHeader::Print() const {
 
-  for (const auto& tag : tags) 
+  for (const auto& tag : tags) {
     std::cout << tag << std::endl;
+  }
   //  for (const auto& tag : info_tags)
   //  std::cout << tag << std::endl;
   
