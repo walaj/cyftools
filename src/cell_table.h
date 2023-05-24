@@ -17,7 +17,7 @@ public:
   
   CellTable() {}
 
-  CellTable(CellRowFunc func);
+  //  CellTable(CellRowFunc func);
 
   void BuildTable(const std::string& file);
 

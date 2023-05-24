@@ -6,10 +6,13 @@
 #include "cell_graph.h"
 
 #define CELL_BUFFER_LIMIT 1
-static std::vector<Cell> cell_buffer;
+
 static size_t debugr = 0;
 
+#ifdef __clang__
+std::vector<Cell> cell_buffer;
 #pragma omp threadprivate(cell_buffer)
+#endif
 
 const CellHeader& CellTable::GetHeader() const {
   return m_header;
@@ -600,30 +603,40 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
     cell.m_spatial_flags = flag_vec;
 
     // Add the cell to the thread-local buffer.
-    //cell_buffer.push_back(cell);
+#ifdef __clang__
+    cell_buffer.push_back(cell);
+#endif
 
     //if (cell_buffer.size() >= CELL_BUFFER_LIMIT) {
 #pragma omp critical
     {
-      	(*m_archive)(cell);
-      //for (const auto& buffered_cell : cell_buffer) {
-      //	(*m_archive)(buffered_cell);
-      //}
+#ifdef __clang__
+      for (const auto& buffered_cell : cell_buffer) {
+      	(*m_archive)(buffered_cell);
+      }
+#else
+      (*m_archive)(cell);      
+#endif
     }
-    //cell_buffer.clear();
-    //}
+    
+#ifdef __clang__    
+    cell_buffer.clear();
+#endif
     
   }// end for
   
-  /*  // After the loop, dump any remaining cells in the buffer.
-#pra8gma omp critical
+  // After the loop, dump any remaining cells in the buffer.
+
+
+#ifdef __clang__
+#pragma omp critical
   {
     for (const auto& buffered_cell : cell_buffer) {
       (*m_archive)(buffered_cell);
     }
   }
   cell_buffer.clear();
-  */
+#endif
   
   if (m_verbose)
     std::cerr << "...done with graph construction" << std::endl;

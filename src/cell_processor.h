@@ -6,6 +6,7 @@
 #include "cell_row.h"
 #include "polygon.h"
 #include "cysift.h"
+#include <cassert>
 
 #include <cereal/types/vector.hpp>
 #include <cereal/archives/portable_binary.hpp>

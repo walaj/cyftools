@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <limits>
 #include <cmath>
+#include <fstream>
 
 void column_to_row_major(std::vector<float>& data, int nobs, int ndim) {
 
@@ -308,7 +309,7 @@ std::string round_string(const std::string& str, int precision) {
     return str;
 }
 
-std::string variantToString(const std::variant<uint64_t, float, std::string>& value) {
+/*std::string variantToString(const std::variant<uint64_t, float, std::string>& value) {
   return std::visit([](const auto& v) -> std::string {
     using T = std::decay_t<decltype(v)>;
     if constexpr (std::is_same_v<T, std::string>) {
@@ -319,3 +320,4 @@ std::string variantToString(const std::variant<uint64_t, float, std::string>& va
   }, value);
 }
 
+*/
