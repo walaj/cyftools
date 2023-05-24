@@ -132,35 +132,25 @@ void CountProcessor::PrintCount() {
 int CutProcessor::ProcessHeader(CellHeader& header) {
 
   // if not a strict cut, keep dims and id
-  /*  if (!m_strict_cut) {
-    m_include.insert("x"); //header.GetX());
-    m_include.insert("y"); //header.GetY());
-    m_include.insert("id"); //header.GetID());
-  }
-  m_include.erase(std::string());
   
   // find indicies of columns to remove
   size_t i = 0;
-  for (const auto& t : header.GetDataTags()) {
-    
-    // if not a strict cut, add dims and cellid
-    if (!m_strict_cut &&
-	(t.isDimTag() || t.isIDTag())) {
-      i++;
+  for (const auto& t : header.GetAllTags()) {
+
+    // don't cut non-data tags
+    if (t.type != Tag::MA_TAG && t.type != Tag::CA_TAG)
       continue;
-    } 
     
-    if (!m_include.count(t.GetName())) {
+    if (!m_include.count(t.id)) {
       to_remove.insert(i);
     }
 
     i++;
     
   }
-
+  
   // cut down the header
   header.Cut(m_include);
-  */
   
   return 0;
 }

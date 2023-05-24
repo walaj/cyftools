@@ -53,6 +53,9 @@ std::vector<Tag> CellHeader::GetInfoTags() const {
   return info_tags;
 }
 
+void CellHeader::Cut(const std::unordered_set<size_t> to_remove) {
+}
+
 void CellHeader::addTag(const Tag& tag) {
   
   // ADD: check tag type is valid

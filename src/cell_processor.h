@@ -72,10 +72,6 @@ class CutProcessor : public CellProcessor {
   
   std::unordered_set<std::string> m_include;
 
-  bool m_header_print;
-
-  bool m_strict_cut = false;
-  
   std::unordered_set<size_t> to_remove;
 };
 

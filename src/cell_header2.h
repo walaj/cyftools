@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <string>
+#include <unordered_set>
 
 #include <cereal/archives/binary.hpp>
 #include <cereal/types/vector.hpp>
@@ -26,7 +27,7 @@ class Tag {
   type(type), id(mid), data(mdata) {}
 
   Tag(const std::string& line);
-  
+
   friend std::ostream& operator<<(std::ostream& os, const Tag& tag);
 
   template <class Archive>
@@ -49,6 +50,8 @@ class CellHeader {
   
   std::vector<Tag> GetMarkerTags() const;
 
+  std::vector<Tag> GetAllTags() const { return tags; }
+  
   // Function to add a Tag to the header
   void addTag(const Tag& tag);
 
@@ -58,6 +61,8 @@ class CellHeader {
 
   size_t WhichColumn(const std::string& str, uint8_t tag_type) const;
 
+  void Cut(const std::unordered_set<size_t> to_remove);
+  
   template <class Archive>
     void serialize(Archive & ar)
     {
