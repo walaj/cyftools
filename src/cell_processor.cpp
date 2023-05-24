@@ -150,7 +150,7 @@ int CutProcessor::ProcessHeader(CellHeader& header) {
   }
   
   // cut down the header
-  header.Cut(m_include);
+  header.Cut(to_remove);
   
   return 0;
 }

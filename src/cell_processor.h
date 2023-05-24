@@ -58,11 +58,8 @@ class CutProcessor : public CellProcessor {
   
  public:
   
-  void SetParams(const std::unordered_set<std::string>& include,
-		 bool header_print, bool strict_cut) {
+  void SetParams(const std::unordered_set<std::string>& include) {
     m_include = include;
-    m_header_print = header_print;
-    m_strict_cut = strict_cut;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -72,7 +69,7 @@ class CutProcessor : public CellProcessor {
  private:
   
   std::unordered_set<std::string> m_include;
-
+  
   std::unordered_set<size_t> to_remove;
 };
 

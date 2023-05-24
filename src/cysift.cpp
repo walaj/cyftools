@@ -453,7 +453,7 @@ static int cutfunc(int argc, char** argv) {
   
   // setup the cut processor
   CutProcessor cutp;
-  cutp.SetParams(tokens, opt::header, strict_cut);
+  cutp.SetParams(tokens); 
 
   // process
   table.StreamTable(cutp, opt::infile);

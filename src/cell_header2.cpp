@@ -54,6 +54,14 @@ std::vector<Tag> CellHeader::GetInfoTags() const {
 }
 
 void CellHeader::Cut(const std::unordered_set<size_t> to_remove) {
+  
+  std::vector<Tag> new_tags;
+  for (size_t i = 0; i < tags.size(); i++) {
+    if (to_remove.count(i))
+      continue;
+    new_tags.push_back(tags.at(i));
+  }
+  tags = new_tags;
 }
 
 void CellHeader::addTag(const Tag& tag) {
