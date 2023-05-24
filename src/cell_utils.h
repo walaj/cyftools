@@ -10,8 +10,8 @@
 #include <iostream>
 #include <random>
 #include <set>
-#include <variant>
 #include <unordered_set>
+#include <string_view>
 
 #include "cysift.h"
 #include "cell_header2.h"
@@ -20,13 +20,13 @@
 
 
 /// @brief Alias for a single datum from a cell, which can be int, float or string
-using CellDatum = std::variant<uint64_t, float, std::string>;
+//using CellDatum = std::variant<uint64_t, float, std::string>;
 
 /// @brief Alias for a row of cells, which can contain integers, floats, or strings.
-using CellRow = std::vector<std::variant<uint64_t, float, std::string>>;
+//using CellRow = std::vector<std::variant<uint64_t, float, std::string>>;
 
 /// @brief Alias for a function pointer that handles a CellRow
-using CellRowFunc = CellRow(*)(const CellRow&);
+//using CellRowFunc = CellRow(*)(const CellRow&);
 
 /** Format an integer to include commas
  * @param data Number to format
@@ -46,9 +46,10 @@ void column_to_row_major(std::vector<float>& data, int nobs, int ndim);
 
 PhenoMap phenoread(const std::string& filename);
 
-void process_token_to_variant(const std::string_view& token,
+/*void process_token_to_variant(const std::string_view& token,
 			      const Tag& tag,
 			      CellDatum& value);
+*/
 
 void get_two_elements_as_floats(const std::string_view& str, size_t n, size_t m,
 				float &x, float &y);
@@ -63,9 +64,9 @@ int get_nth_element_as_integer(const std::string_view& str, size_t n);
 
 std::string exclude_elements(const std::string_view& str, const std::unordered_set<size_t>& exclude_set);
 
-int read_one_line_to_cellrow(const std::string& line,
-			     CellRow& values,
-			     const CellHeader& m_header);
+//int read_one_line_to_cellrow(const std::string& line,
+//			     CellRow& values,
+//			     const CellHeader& m_header);
 
 /*std::set<int> sampleWithoutReplacement(int n, int N, int seed) {
 
@@ -101,4 +102,4 @@ int read_one_line_to_cellrow(const std::string& line,
 enum class ColumnType;
 std::string columnTypeToString(ColumnType type);
 
-std::string variantToString(const std::variant<uint64_t, float, std::string>& value);
+//std::string variantToString(const std::variant<uint64_t, float, std::string>& value);

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <variant>
-
 #include "cell_utils.h"
 #include "cell_flag.h"
 #include "cell_graph.h"

@@ -11,19 +11,25 @@ KMEANS = -I$(HOME)/git/CppKmeans/include
 ANNOY = -I$(HOME)/git/annoy
 CEREAL = -I$(HOME)/software/cereal-1.3.2/include
 
-## clang
-OPENMP = -Xpreprocessor -fopenmp
-OMP = -I/opt/homebrew/opt/libomp/include
-OMPL = -L/opt/homebrew/opt/libomp/lib -lomp
+## set the OMP location
+ODIR := /opt/homebrew/opt/libomp/include
+ifeq ($(wildcard $(ODIR)),)  # If directory does not exist
+    OMP := -I$(HOME)/software/openmpi-4.1.5/include
+    OMPL := -L$(HOME)/software/openmpi-4.1.5/lib -lmpi
+else
+    OMP := -I/opt/homebrew/opt/libomp/include
+    OMPL = -L/opt/homebrew/opt/libomp/lib -lomp
+endif
 
-## GCC
-#OPENMP = -fopenmp
+## check compiler type. If clang then add -Xpreprocessor flag
+COMPILER_TYPE := $(shell $(CC) --version)
+ifneq (,$(findstring clang,$(COMPILER_TYPE)))
+    OPENMP = -Xpreprocessor -fopenmp
+else
+    OPENMP = -fopenmp
+endif
 
-BASE=/Users/jeremiahwala/opt/miniconda3
-
-CFLAGS = -O2 -g -std=c++17 $(OPENMP) -I. -I.. $(NETCDF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(HNSW) $(EIGEN) $(KMEANS) $(ANNOY) $(OMP) $(CEREAL)
-#CFLAGS = -g -std=c++17 -I. -I.. $(NETCDF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(HNSW) $(EIGEN) $(KMEANS) $(ANNOY)
-
+CFLAGS = -O2 -g -std=c++17 $(OPENMP) -I. -I.. $(NETCDF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(EIGEN) $(KMEANS) $(OMP) $(CEREAL) -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
 LDFLAGS = $(OMPL)
 
 # Specify the source files
