@@ -9,6 +9,11 @@ int SelectProcessor::ProcessHeader(CellHeader& header) {
   m_header = header;
 
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+
+  m_header.SortTags();
+  
+  // just in time, make the output stream
+  this->SetupOutputStream();
   
   // output the header
   assert(m_archive);
@@ -56,10 +61,12 @@ int RadialProcessor::ProcessHeader(CellHeader& header) {
       m_header.addTag(dtag);
     }
   }
+
+  m_header.SortTags();
   
   // just in time output, so as not to write an empty file if the input crashes
   // set the output to file or stdout
-  this->SetOutput(m_output_file);
+  this->SetupOutputStream(); 
 
   // output the header
   assert(m_archive);
@@ -131,8 +138,10 @@ void CountProcessor::PrintCount() {
 
 int CutProcessor::ProcessHeader(CellHeader& header) {
 
-  // if not a strict cut, keep dims and id
-  
+  m_header = header;
+
+
+
   // find indicies of columns to remove
   size_t i = 0;
   for (const auto& t : header.GetAllTags()) {
@@ -142,7 +151,7 @@ int CutProcessor::ProcessHeader(CellHeader& header) {
       continue;
     
     if (!m_include.count(t.id)) {
-      to_remove.insert(i);
+      m_to_remove.insert(i);
     }
 
     i++;
@@ -150,129 +159,173 @@ int CutProcessor::ProcessHeader(CellHeader& header) {
   }
   
   // cut down the header
-  header.Cut(to_remove);
+  m_header.Cut(m_to_remove);
+
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  m_header.SortTags();
+
+  // just in time output
+  this->SetupOutputStream();
+
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
   
   return 0;
 }
 
 int CutProcessor::ProcessLine(Cell& cell) {
-  //int CutProcessor::ProcessLine(const std::string& line) {
 
-  /*
-  // tokenize the input line
-  std::vector<std::string> tokens = tokenize_comma_delimited(line);
-
-  // have a place to store the output tokens
-  std::vector<std::string> output;
-  output.reserve(tokens.size());
+  // just transfer to a new set of columns,
+  // not including what is to be cut
+  std::vector<float> m_cols_new;
+  assert(cell.m_cols.size() >= m_to_remove.size());
+  m_cols_new.reserve(cell.m_cols.size() - m_to_remove.size());
   
-  // fill only tokens to output not labeled for removal
-  for (size_t i = 0; i < tokens.size(); ++i) {
-    if (!to_remove.count(i)) {
-      output.push_back(tokens.at(i));
+  for (size_t i = 0; i < cell.m_cols.size(); i++) {
+    if (!m_to_remove.count(i)) {
+      m_cols_new.push_back(cell.m_cols.at(i));
     }
   }
-  
-  // concatenate output tokens
-  std::cout << tokens_to_comma_string(output) << std::endl;
-  */
+  cell.m_cols = m_cols_new;
   
   return 1;
 }
 
 int LogProcessor::ProcessHeader(CellHeader& header) {
 
+  m_header = header;
+
   // setup which are marker indicies
   size_t i = 0;
-  for (const auto& t : header.GetMarkerTags()) {
-    m_to_log.insert(i);
+
+  for (const auto& t : header.GetAllTags()) { 
+    if (t.type == Tag::MA_TAG) {
+      m_to_log.insert(i);
+    }
     i++;
   }
   
-  // print the header
-  //if (m_print_header)
-  //  header.Print();
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  m_header.SortTags();
+  
+  // just in time output
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
 
   return 0;
 }
 
-//int LogProcessor::ProcessLine(const std::string& line) {
 int LogProcessor::ProcessLine(Cell& cell) {
 
-  /*
-  m_line_number++;
-  
-  // tokenize the line
-  std::vector<std::string> tokens = tokenize_comma_delimited(line);
-
-  // log10 it
-  std::vector<std::string> output;
-  output.reserve(tokens.size());
-
-  size_t i = 0;
-  for (const auto& t : tokens) {
-    
-    // don't log it
-    if (!m_to_log.count(i)) {
-      output.push_back(t);
-      // log it
-    } else {
-      try {
-	float value = std::stof(t);
-
-	float log_value;
+  m_count++;
+  for (size_t i = 0; i < cell.m_cols.size(); i++) {
+    if (m_to_log.count(i)) {
+      if (cell.m_cols[i] > 0) {
+	cell.m_cols[i] = std::log10(cell.m_cols.at(i));
+      } else {
 	
-	if (value <= 0) {
-	  //throw std::invalid_argument("Cannot take the logarithm of a zero or negative number: line" + std::to_string(m_line_number) + " at token " + std::to_string(i+1));
-	  std::cerr << "Warning: Cannot log <= 0 (setting output to size_t(-1)): line " + std::to_string(m_line_number) + " at token " + std::to_string(i+1) << std::endl;
-	  log_value = static_cast<size_t>(-1);
-	} else {
-	  log_value = std::log10(value);
+	if (!m_bool_warning_emitted) {
+	  m_bool_warning_emitted = true;
+	  std::cerr << "Warning: encountered zero or negative number to log on " <<
+	    "line " << m_count << " - removing this line in output. This warning " <<
+	    "will emit only once per file";
 	}
 	
-	std::ostringstream oss;
-	oss << log_value;
-	output.push_back(oss.str());
-      } catch (const std::invalid_argument& e) {
-	throw std::invalid_argument("The input token '" + t + "' is not a valid number. Line: " + std::to_string(m_line_number) + " token " + std::to_string(i+1));
-      } catch (const std::out_of_range& e) {
-	throw std::out_of_range("The input token '" + t + "' is out of range for conversion to float. Line: " + std::to_string(m_line_number) + " token " + std::to_string(i+1));
+	return 0;
       }
-      
     }
-    i++;
   }
-
-  std::cout << tokens_to_comma_string(output) << std::endl;
-  */
-  
+    
   return 1;
   
 }
 
 int ROIProcessor::ProcessHeader(CellHeader& header) {
 
-  /*
-  // how many columns per line
-  m_col_count = header.ColumnCount();
-
-  // which column is x and y
-  x_i = header.whichColumn(header.GetX());
-  y_i = header.whichColumn(header.GetY());  
-  
-  // save a copy of the original header, for reading lines below
   m_header = header;
+
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+
+  Tag roi_tag(Tag::CA_TAG,"roi", "");
+  m_header.addTag(roi_tag);
   
-  // add the roi tag
-  Tag roi_tag("CA","roi");
-  header.addTag(roi_tag);
+  m_header.SortTags();
 
-  // print the header
-  if (m_print_header)
-    header.Print();
+  // just in time, make the output stream
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
 
-  */
   return 0;
+}
+
+int CleanProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+
+  // cut the header
+  std::unordered_set<size_t> to_remove;
+  for (size_t i = 0; i < m_header.size(); i++) {
+    if ( (m_clean_meta   && m_header.at(i).type == Tag::CA_TAG) ||
+         (m_clean_marker && m_header.at(i).type == Tag::MA_TAG) ||
+	 (m_clean_graph  && m_header.at(i).type == Tag::GA_TAG))
+      to_remove.insert(i);
+  }
+  m_header.Cut(to_remove);
+
+  // which cells to cut
+  std::unordered_set<size_t> m_to_remove;
+  const std::vector<Tag> orig_data_tags = header.GetDataTags();
+  for (size_t i = 0; i < orig_data_tags.size(); i++) {
+    if ( (m_clean_meta   && orig_data_tags.at(i).type == Tag::CA_TAG) ||
+         (m_clean_marker && orig_data_tags.at(i).type == Tag::MA_TAG))
+      m_to_remove.insert(i);
+  }
+  
+  // just in time, make the output stream
+  this->SetupOutputStream();
+
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  m_header.SortTags();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+
+  return 0;
+
+}
+
+int CleanProcessor::ProcessLine(Cell& cell) {
+
+  // just transfer to a new set of columns,
+  // not including what is to be cut
+  std::vector<float> m_cols_new;
+  assert(cell.m_cols.size() >= m_to_remove.size());
+  m_cols_new.reserve(cell.m_cols.size() - m_to_remove.size());
+  
+  for (size_t i = 0; i < cell.m_cols.size(); i++) {
+    if (!m_to_remove.count(i)) {
+      m_cols_new.push_back(cell.m_cols.at(i));
+    }
+  }
+  cell.m_cols = m_cols_new;
+
+  // clean the graph
+  if (m_clean_graph) {
+    cell.m_spatial_ids.clear();
+    cell.m_spatial_dist.clear();
+    cell.m_spatial_flags.clear();
+  }
+
+  return 1;
+  
 }
 
 int ROIProcessor::ProcessLine(Cell& cell) {
@@ -351,8 +404,10 @@ int PhenoProcessor::ProcessHeader(CellHeader& header) {
   
   // just in time output, so as not to write an empty file if the input crashes
   // set the output to file or stdout
-  this->SetOutput(m_output_file);
+  this->SetupOutputStream(); 
   
+  m_header.SortTags();
+
   // output the header
   assert(m_archive);
   (*m_archive)(m_header);
@@ -461,7 +516,7 @@ int CatProcessor::ProcessLine(Cell& line) {
 }
 
 int CatProcessor::ProcessHeader(CellHeader& header) {
-
+  
   /*
   // if we already have the master header, just compare for error checking
   if (m_master_set) {
@@ -546,6 +601,8 @@ int CerealProcessor::ProcessHeader(CellHeader& header) {
     m_os = std::make_unique<std::ofstream>(m_filename, std::ios::binary);
     m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(*m_os);
   }
+
+  m_header.SortTags();
   
   // archive the header
   (*m_archive)(m_header);

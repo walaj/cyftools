@@ -53,6 +53,15 @@ std::vector<Tag> CellHeader::GetInfoTags() const {
   return info_tags;
 }
 
+void CellHeader::SortTags() {
+
+  // we are using the order provided by the tag definitions
+  std::sort(tags.begin(), tags.end(), [](const Tag &a, const Tag &b) {
+    return a.type < b.type;
+  });
+
+}
+
 void CellHeader::Cut(const std::unordered_set<size_t> to_remove) {
   
   std::vector<Tag> new_tags;

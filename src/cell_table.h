@@ -92,7 +92,7 @@ public:
   
   void phenotype(const std::unordered_map<std::string, std::pair<float,float>>& thresh);
 
-  void StreamTable(CellProcessor& proc, const std::string& file);
+  int StreamTable(CellProcessor& proc, const std::string& file);
 
   void OutputTable() const;
 

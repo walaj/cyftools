@@ -51,7 +51,7 @@ static CellTable table;
 
 static void build_table();
 
-static const char* shortopts = "jhHNyvr:t:a:d:g:b:c:s:k:n:r:w:l:x:X:o:R:f:";
+static const char* shortopts = "jhHNyvmMGAr:t:a:d:g:b:c:s:k:n:r:w:l:x:X:o:R:f:";
 static const struct option longopts[] = {
   { "verbose",                    no_argument, NULL, 'v' },
   { "threads",                    required_argument, NULL, 't' },
@@ -73,6 +73,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  view       - View the cell table\n"
 "  count      - Output number of cells in table\n"  
 "  cut        - Select only given markers and metas\n"
+"  clean      - Removes data to decrease disk size\n"
 "  cat        - Concatenate multiple samples\n"  
 "  subsample  - Subsample cells randomly\n"
 "  plot       - Generate an ASCII style plot\n"
@@ -89,6 +90,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  cereal     - Create a .cys format file from a CSV\n"
 "\n";
 
+static int cleanfunc(int argc, char** argv);
 static int countfunc(int argc, char** argv);
 static int cerealfunc(int argc, char** argv);
 static int catfunc(int argc, char** argv);
@@ -144,6 +146,8 @@ int main(int argc, char **argv) {
   // get the module
   if (opt::module == "debug") {
     val = debugfunc(argc, argv);
+  } else if (opt::module == "clean") {
+    val = cleanfunc(argc, argv);
   } else if (opt::module == "radialdens") {
     val = radialdensfunc(argc, argv);
   } else if (opt::module == "subsample") {
@@ -199,6 +203,7 @@ static void build_table() {
 
   // stream into memory
   BuildProcessor buildp;
+  buildp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   table.StreamTable(buildp, opt::infile);
   
   table.SetCmd(cmd_input);
@@ -290,6 +295,51 @@ static int knnfunc(int argc, char** argv) {
   return 0;
 }
 
+static int cleanfunc(int argc, char** argv) {
+
+  bool clean_graph = false;
+  bool clean_markers = false;
+  bool clean_meta = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'm' : clean_markers = true; break;
+    case 'M' : clean_meta = true; break;
+    case 'G' : clean_graph = true; break;
+    case 'A' : clean_graph = true; clean_markers = true; clean_meta = true; break;      
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift clean [csvfile]\n"
+      "  Clean up the data to reduce disk space\n"
+      "    <file>: filepath or a '-' to stream to stdin\n"
+      "    -m,          Remove all marker data\n"
+      "    -M,          Remove all meta data\n"
+      "    -G,          Remove all graph data\n"      
+      "    -A,          Remove all data\n"      
+      "    -v, --verbose             Increase output to stderr\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+  
+  CleanProcessor cleanp;
+  cleanp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  cleanp.SetParams(clean_graph, clean_meta, clean_markers);  
+
+  // process 
+  if (!table.StreamTable(cleanp, opt::infile)) {
+    return 1;
+  }
+
+  return 0;
+  
+}
+
 static int catfunc(int argc, char** argv) {
 
   std::string samples;
@@ -345,6 +395,7 @@ static int catfunc(int argc, char** argv) {
   size_t offset = 0;
 
   CatProcessor catp;
+  catp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   catp.SetParams(offset, 0);
   
   for (size_t sample_num = 0; sample_num < opt::infile_vec.size(); sample_num++) {
@@ -450,13 +501,16 @@ static int cutfunc(int argc, char** argv) {
   // set table params
   if (opt::verbose)
     table.SetVerbose();
-  
+
   // setup the cut processor
   CutProcessor cutp;
+  cutp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   cutp.SetParams(tokens); 
 
-  // process
-  table.StreamTable(cutp, opt::infile);
+  // process 
+  if (!table.StreamTable(cutp, opt::infile)) {
+    return 1;
+  }
 
   return 0;
 }
@@ -488,9 +542,11 @@ static int log10func(int argc, char** argv)  {
   if (opt::verbose)
     table.SetVerbose();
 
-  LogProcessor log;
+  LogProcessor logp;
+  logp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);  
 
-  table.StreamTable(log, opt::infile);
+  if (table.StreamTable(logp, opt::infile))
+    return 1; // non-zero status on StreamTable
 
   return 0;
 }
@@ -564,9 +620,11 @@ static int roifunc(int argc, char** argv) {
       std::cerr << c << std::endl;
 
   ROIProcessor roip;
+  roip.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   roip.SetParams(false, rois);// false is placeholder for label function, that i need to implement
 
-  table.StreamTable(roip, opt::infile);
+  if (table.StreamTable(roip, opt::infile))
+    return 1; // non-zero status in StreamTable
 
   return 0;
   
@@ -902,8 +960,8 @@ static int selectfunc(int argc, char** argv) {
 
   // setup the selector processor
   SelectProcessor select;
-  select.SetParams(logor, logand, lognot, cmd_input);
-  select.SetOutput(opt::outfile);
+  select.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  select.SetParams(logor, logand, lognot);
 
   // process
   table.StreamTable(select, opt::infile);
@@ -949,9 +1007,11 @@ static int phenofunc(int argc, char** argv) {
       std::cerr << c.first << " -- " << c.second.first << "," << c.second.second << std::endl;
 
   PhenoProcessor phenop;
-  phenop.SetParams(pheno, cmd_input, opt::outfile);
+  phenop.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  phenop.SetParams(pheno);
 
-  table.StreamTable(phenop, opt::infile);
+  if (table.StreamTable(phenop, opt::infile))
+    return 1; // non-zero StreamTable status
   
   return 0;
 }
@@ -1026,15 +1086,10 @@ static int radialdensfunc(int argc, char** argv) {
 
   /////// NEW WAY
   RadialProcessor radp;
+  radp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   
-  // build the table into memory
-  //build_table();
-  //table.SetupOutputWriter(opt::outfile);
-
   if (rsv.empty()) {
-    radp.SetParams({inner},{outer},{logor},{logand},{label}, cmd_input,
-		   opt::outfile);
-    //table.RadialDensity({inner},{outer},{logor},{logand},{label});
+    radp.SetParams({inner},{outer},{logor},{logand},{label});
   } else {
     std::vector<uint64_t> innerV(rsv.size());
     std::vector<uint64_t> outerV(rsv.size());  
@@ -1048,15 +1103,11 @@ static int radialdensfunc(int argc, char** argv) {
       logandV[i] = rsv.at(i).int_data.at(3);     
       labelV[i] = rsv.at(i).label;
     }
-    radp.SetParams(innerV, outerV, logorV, logandV, labelV, cmd_input,
-		   opt::outfile);
-    //table.RadialDensity(innerV, outerV, logorV, logandV, labelV);
+    radp.SetParams(innerV, outerV, logorV, logandV, labelV);
   }
 
-  table.StreamTable(radp, opt::infile);
-  
-  // write the table
-  //table.OutputTable();
+  if (table.StreamTable(radp, opt::infile))
+    return 1; // non-zero exit from StreamTable
 
   return 0;
 }
@@ -1120,8 +1171,9 @@ static int countfunc(int argc, char** argv) {
 
   CountProcessor countp;
 
-  table.StreamTable(countp, opt::infile);
-
+  if (table.StreamTable(countp, opt::infile)) 
+    return 1; // non-zero status on StreamTable
+  
   countp.PrintCount();
 
   return 0;

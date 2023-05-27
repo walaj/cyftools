@@ -887,7 +887,7 @@ void CellTable::phenotype(const std::unordered_map<std::string, std::pair<float,
   return IntColPtr();
   }*/
 
-void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
+int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
 
   bool build_table_memory = false;
   
@@ -900,8 +900,8 @@ void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
   } else {
     fileStream = std::make_unique<std::ifstream>(file, std::ios::binary);
     if (!fileStream->good()) {
-      std::cerr << "Error opening file: " << file<< " - may not exist" << std::endl;
-      return;
+      std::cerr << "Error opening: " << file<< " - file may not exist" << std::endl;
+      return 1;
     }
     inputStream = fileStream.get();
   }
@@ -914,18 +914,18 @@ void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
   } catch (const std::bad_alloc& e) {
     // Handle bad_alloc exception
     std::cerr << "Memory allocation failed during deserialization: " << e.what() << std::endl;
-    return;  // or handle the error appropriately for your program
+    return 1;  // or handle the error appropriately for your program
   } catch (const cereal::Exception& e) {
     // Handle exception if any error occurs while deserializing header
     std::cerr << "Error while deserializing header: " << e.what() << std::endl;
-    return;  // or handle the error appropriately for your program
+    return 1;  // or handle the error appropriately for your program
   }
   
   // process the header.
   // if , don't print rest
   int val = proc.ProcessHeader(m_header);
   if (val == 1) { // just exit, all we need is header
-    return;
+    return 0;
   } else if (val == 2) { // we want to build the table
     initialize_cols();
   }
@@ -955,7 +955,7 @@ void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
   }
 
   if (!build_table_memory)
-    return;
+    return 0;
 
   /*
   
@@ -981,6 +981,8 @@ void CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
     }
   }
   */
+
+  return 0;
   
 }
   

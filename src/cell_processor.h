@@ -19,13 +19,13 @@ class CellProcessor {
 
   virtual int ProcessLine(Cell& cell) = 0;
 
-  void SetOutput(const std::string& file) {
+  void SetupOutputStream() { 
 
     // set the output to file or stdout
-    if (file == "-") {
+    if (m_output_file == "-") {
       m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(std::cout);
     } else {
-      m_os = std::make_unique<std::ofstream>(file, std::ios::binary);
+      m_os = std::make_unique<std::ofstream>(m_output_file, std::ios::binary);
       m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(*m_os);
     }
 
@@ -36,11 +36,38 @@ class CellProcessor {
     assert(m_archive);
     (*m_archive)(cell);
   }
+
+  void SetCommonParams(const std::string& output_file,
+		       const std::string& cmd,
+		       bool verbose) {
+    m_output_file = output_file;
+    m_cmd = cmd;
+    m_verbose = verbose;
+
+    
+  }
+  
+protected:
+
+  // copy of the header to manipiulate and output
+  CellHeader m_header;
+
+  // name of the output file. empty if none
+  std::string m_output_file;
+
+  // string representation of the input command,
+  // to track in PG tag in header
+  std::string m_cmd;
   
   // common archiver objects
   std::unique_ptr<std::ofstream> m_os;
   std::unique_ptr<cereal::PortableBinaryOutputArchive> m_archive;
-  
+
+  // increase verbosity
+  bool m_verbose = false;
+
+  // count the lines as they come, for verbosity
+  size_t m_count = 0; 
 };
 
 class LineProcessor {
@@ -70,19 +97,45 @@ class CutProcessor : public CellProcessor {
   
   std::unordered_set<std::string> m_include;
   
-  std::unordered_set<size_t> to_remove;
+  std::unordered_set<size_t> m_to_remove;
+
 };
+
+class CleanProcessor : public CellProcessor {
+
+public:
+
+  void SetParams(bool clean_graph, bool clean_meta, bool clean_marker) {
+    
+    m_clean_graph = clean_graph;
+    m_clean_meta = clean_meta;
+    m_clean_marker = clean_marker;
+    
+  }
+  
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+
+
+private:
+
+  bool m_clean_graph  = false; 
+  bool m_clean_meta   = false; 
+  bool m_clean_marker = false; 
+
+  std::unordered_set<size_t> m_to_remove;
+  
+};
+
 
 // Pheno processor
 class PhenoProcessor : public CellProcessor {
   
  public:
   
-  void SetParams(PhenoMap p, const std::string& cmd,
-		 const std::string& output_file) {
+  void SetParams(PhenoMap p) {
     m_p = p;
-    m_cmd = cmd;
-    m_output_file = output_file;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -90,13 +143,14 @@ class PhenoProcessor : public CellProcessor {
   int ProcessLine(Cell& cell) override;
   
  private:
-  CellHeader m_header;
-  std::unordered_map<std::string, size_t> m_marker_map;
-  PhenoMap m_p;
-  std::string m_cmd;
-  std::string m_output_file;
-};
 
+  // map connecting marker names to indicies
+  std::unordered_map<std::string, size_t> m_marker_map;
+
+  // map of all of the gates (string - pair<float,float>)
+  PhenoMap m_p;
+
+};
 
 // Count processor
 class CountProcessor : public CellProcessor {
@@ -121,12 +175,10 @@ class SelectProcessor : public CellProcessor {
   
  public:
 
-  void SetParams(uint64_t logor, uint64_t logand, bool lognot,
-		 const std::string& cmd)  {
+  void SetParams(uint64_t logor, uint64_t logand, bool lognot) {
     m_or = logor;
     m_and = logand;
     m_not = lognot;
-    m_cmd = cmd;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -135,15 +187,14 @@ class SelectProcessor : public CellProcessor {
   
  private:
 
+  // or flags
   uint64_t m_or;
-  uint64_t m_and;
-  bool m_not;
 
-  CellHeader m_header;
-  
-  std::string m_cmd;
-  
-  size_t m_flag_index;
+  // and flags
+  uint64_t m_and;
+
+  // should we NOT the output
+  bool m_not;
   
 };
 
@@ -161,9 +212,9 @@ class LogProcessor : public CellProcessor {
   
  private:
 
-  size_t m_line_number = 0;
-  
   std::unordered_set<size_t> m_to_log;
+
+  bool m_bool_warning_emitted = false;
   
 };
 
@@ -172,7 +223,7 @@ class ROIProcessor : public CellProcessor {
  public:
   
   void SetParams(bool label,
-		 const std::vector<Polygon>& rois)  {
+		 const std::vector<Polygon>& rois) {
     m_label = label;
     m_rois = rois;
   }
@@ -185,14 +236,8 @@ class ROIProcessor : public CellProcessor {
 
   std::vector<Polygon> m_rois;
 
-  CellHeader m_header;
-
   bool m_label;
-  
-  size_t m_col_count;
 
-  size_t x_i;
-  size_t y_i;
 };
 
 class ViewProcessor : public CellProcessor { 
@@ -216,7 +261,10 @@ class ViewProcessor : public CellProcessor {
  private:
 
   bool m_header_only;
+  
   bool m_print_header;
+
+  // number of integers to round output to
   int m_round;
 };
 
@@ -231,8 +279,6 @@ class BuildProcessor : public CellProcessor {
   int ProcessLine(Cell& cell) override;
   
  private:
-
-  CellHeader m_header;
 
 };
 
@@ -313,12 +359,8 @@ class RadialProcessor : public CellProcessor {
 
   void SetParams(const std::vector<uint64_t>& inner, const std::vector<uint64_t>& outer,
 		 const std::vector<uint64_t>& logor, const std::vector<uint64_t>& logand,
-		 const std::vector<std::string>& label, const std::string& cmd,
-		 const std::string& output_file) {
+		 const std::vector<std::string>& label) {
 
-    m_cmd = cmd;
-    m_output_file = output_file;
-    
     // check the radial geometry parameters
     assert(inner.size());
     assert(inner.size() == outer.size());
@@ -340,12 +382,7 @@ class RadialProcessor : public CellProcessor {
   
  private:
   
-  CellHeader m_header;
-
   std::vector<uint64_t> m_inner, m_outer, m_logor, m_logand;
   std::vector<std::string> m_label;
-
-  std::string m_cmd;
-  std::string m_output_file;
   
 };
