@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkbox Generator</title>
+  <style>
+    div {
+      display: inline-block;
+      vertical-align: top;
+      margin-right: 20px;
+    }
+  </style>
+</head>
+<body>
+  <textarea id="inputText" rows="10" cols="50"></textarea>
+  <button id="makeButton">Make</button>
+  <div>
+    <h3>Inclusive</h3>
+    <div id="inclusiveContainer"></div>
+    <p>Base-10 Number: <span id="inclusiveBase10Number">0</span></p>
+    <input type="number" id="inclusiveBase10Input" placeholder="Enter base-10 number" min="0">
+  </div>
+  <div>
+    <h3>Exclusive</h3>
+    <div id="exclusiveContainer"></div>
+    <p>Base-10 Number: <span id="exclusiveBase10Number">0</span></p>
+    <input type="number" id="exclusiveBase10Input" placeholder="Enter base-10 number" min="0">
+  </div>
+  
+  <script>
+    document.getElementById('makeButton').addEventListener('click', () => {
+      const inputText = document.getElementById('inputText').value;
+      parseText(inputText);
+    });
+
+    function parseText(text) {
+      const lines = text.split('\n');
+      const maFields = lines.filter(line => line.startsWith('@MA')).map(line => line.split('\t')[1].split(':')[1]);
+
+      generateToggleButtons(maFields, 'inclusiveContainer', 'inclusive');
+      generateToggleButtons(maFields, 'exclusiveContainer', 'exclusive');
+    }
+
+    function generateToggleButtons(maFields, containerId, name) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = '';
+
+      maFields.forEach(field => {
+        const label = document.createElement('label');
+        label.textContent = field;
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.name = name;
+
+        label.appendChild(checkbox);
+        container.appendChild(label);
+        container.appendChild(document.createElement('br'));
+
+        checkbox.addEventListener('change', () => updateBase10Number(name));
+      });
+	
+	// Add event listener for the base-10 input
+	document.getElementById(name + 'Base10Input').addEventListener('input', () => setCheckboxesFromBase10(name));
+	
+    }
+    
+    function updateBase10Number(name) {
+	const checkboxes = document.getElementsByName(name);
+	let base10Number = 0;
+	
+	for (let i = 0; i < checkboxes.length; i++) {
+            if (checkboxes[i].checked) {
+		base10Number += Math.pow(2, i);
+            }
+	}
+	
+	document.getElementById(name + 'Base10Number').textContent = base10Number;
+	document.getElementById(name + 'Base10Input').value = base10Number;
+    }
+
+    function setCheckboxesFromBase10(name) {
+	const base10Number = parseInt(document.getElementById(name + 'Base10Input').value);
+	const checkboxes = document.getElementsByName(name);
+	
+	for (let i = 0; i < checkboxes.length; i++) {
+	    checkboxes[i].checked = (base10Number & (1 << i)) !== 0;
+	}
+	
+	// Update the displayed base-10 number
+	document.getElementById(name + 'Base10Number').textContent = base10Number;
+    }
+    
+  </script>
+</body>
+</html>

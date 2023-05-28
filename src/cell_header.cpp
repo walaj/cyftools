@@ -1,5 +1,6 @@
 #include "cell_header.h"
 
+#include <regex>
 #include <iostream>
 
 // ADD: need to fill out
