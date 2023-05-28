@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cysift.h"
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -7,6 +8,8 @@
 #include "cell_header2.h"
 
 #include <cereal/archives/portable_binary.hpp>
+
+
 
 class Cell {
 
@@ -32,7 +35,8 @@ class Cell {
   // should make these private?
   
   uint32_t m_id;
-  uint64_t m_flag;
+
+  cy_uint m_flag;
   
   float m_x;
   float m_y;
@@ -43,6 +47,6 @@ class Cell {
   // spatial graph
   std::vector<uint32_t> m_spatial_ids;
   std::vector<uint32_t> m_spatial_dist;
-  std::vector<uint64_t> m_spatial_flags;
+  std::vector<cy_uint> m_spatial_flags;
 
 };

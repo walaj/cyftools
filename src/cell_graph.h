@@ -9,6 +9,7 @@
 #include "umappp/optimize_layout.hpp"
 #include "umappp/spectral_init.hpp"
 #include "knncolle/knncolle.hpp"
+#include "cysift.h"
 
 //using Neighbors = std::vector<umappp::Neighbor<float>>;
 using Neighbors    = std::vector<umappp::Neighbor<float>>;
@@ -23,12 +24,12 @@ class CellNode {
 
   CellNode(const std::vector<uint32_t>& ids,
 	   const std::vector<uint32_t>& dist,
-	   const std::vector<uint64_t>& flags);
+	   const std::vector<cy_uint>& flags);
 
   explicit CellNode(const Neighbors& neighbors) {};
 
   explicit CellNode(const Neighbors& neighbors,
-		    const std::vector<uint64_t>& flags);
+		    const std::vector<cy_uint>& flags);
   
   void OffsetNodes(size_t offset);
   
@@ -58,7 +59,7 @@ class CellNode {
 
   // vector of flags of neighbors. Must be length 0
   // or same length as neighbors
-  std::vector<uint64_t> m_flags;
+  std::vector<cy_uint> m_flags;
 
   void parse_neighbors(const std::string& input_str);
 

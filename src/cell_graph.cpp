@@ -4,7 +4,7 @@
 #include <string_view>
 
 CellNode::CellNode(const Neighbors& neighbors,
-		  const std::vector<uint64_t>& flags) {
+		  const std::vector<cy_uint>& flags) {
   
   neighbors_ = neighbors;
   m_flags = flags;
@@ -14,7 +14,7 @@ CellNode::CellNode(const Neighbors& neighbors,
 
 CellNode::CellNode(const std::vector<uint32_t>& ids,
 		   const std::vector<uint32_t>& dist,
-		   const std::vector<uint64_t>& flags) {
+		   const std::vector<cy_uint>& flags) {
 
   assert(ids.size() == dist.size());
   assert(ids.size() == flags.size());

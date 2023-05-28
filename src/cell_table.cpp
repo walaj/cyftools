@@ -415,29 +415,6 @@ void CellTable::AddColumn(const Tag& tag,
   
 }
 
-/*void CellTable::AddMetaColumn(const std::string& key,
-			      ColPtr value) {
-
-  // warn if creating a ragged table, but proceed anyway
-  if (value->size() != CellCount()) {
-    throw std::runtime_error("Adding meta column of incorrect size");
-  }
-  
-  // check if already exists in the table
-  if (m_table.find(key) != m_table.end()) {
-    throw std::runtime_error("Adding meta column already in table");
-  }
-
-  // insert as a meta key
-  m_header.addTag(Tag("CA",key));
-
-  // add the table
-  m_table[key] = value;
-  
-  return;
-  
-  }*/
-
 void CellTable::SubsetROI(const std::vector<Polygon> &polygons) {
 
   size_t nc = CellCount();
@@ -571,7 +548,7 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
     }
 
     // add the cell flags
-    std::vector<uint64_t> flag_vec(neigh.size());
+    std::vector<cy_uint> flag_vec(neigh.size());
     for (size_t j = 0; j < neigh.size(); j++) {
       flag_vec[j] = static_cast<IntCol*>(flag_ptr.get())->GetNumericElem(neigh.at(j).first);
     }
@@ -792,100 +769,6 @@ void CellTable::initialize_cols() {
 }
 
 
-/*void CellTable::select(uint64_t on, uint64_t off) {
-
-  FlagColPtr fc = std::dynamic_pointer_cast<FlagColumn>(m_table["flag"]);
-  assert(fc);
-  
-  assert(fc->size());
-  std::vector<size_t> s;
-  
-  for (size_t i = 0; i < fc->size(); i++) {
-    
-    if (fc->TestFlag(on, off, i))
-      s.push_back(i);
-  }
-  
-  for (auto& m : m_table) {
-    m.second->SubsetColumn(s);
-  }
-  
-  return;
-}
-
-void CellTable::phenotype(const std::unordered_map<std::string, std::pair<float,float>>& thresh) {
-  
-  FlagColPtr fc = std::make_shared<FlagColumn>();
-  fc->resize(CellCount());
-  
-  for (const auto& b : thresh) {
-    
-    if (m_table.count(b.first) == 0) {
-      continue;
-    }
-    
-    if (m_table.at(b.first)->GetType() != ColumnType::FLOAT) {
-      std::cerr << "Error: Expected marker from threshold table not a float marker: " << b.first << std::endl;
-      continue;
-    }
-
-    FloatColPtr nc = std::dynamic_pointer_cast<FloatCol>(m_table.at(b.first));
-
-    int index = m_header.WhichColumn(b.first, Tag::MA_TAG);
-        
-    for (size_t i = 0; i < nc->size(); i++) {
-      if (nc->GetNumericElem(i) >= b.second.first &&
-	  nc->GetNumericElem(i) <= b.second.second) {
-	fc->SetFlagOn(index, i);
-      }
-    }
-  }
-  
-  //Tag ftag("FA","cellflag");
-  //AddFlagColumn(ftag, fc, true);
-  m_table["flag"] = fc;
-}
-*/
-
-
-/*void CellTable::AddFlagColumn(const Tag& tag,
-			      FlagColPtr value,
-			      bool overwrite) {
-
-  if (value->size() != CellCount()) {
-    throw std::runtime_error("Adding flag column of incorrect size");
-  }
-
- 
-  
-  // check if already exists in the table
-  if (m_table.find(tag.GetName()) != m_table.end()) {
-    if (!overwrite)
-      throw std::runtime_error("Adding flag column already in table");
-  }
-  
-  // insert as a meta key
-  if (m_table.find(tag.GetName()) == m_table.end())
-    m_header.addTag(tag); 
-
-  // add to the table
-  m_table[tag.GetName()] = value;
-  
-
-  }*/
-
-
-/*IntColPtr CellTable::GetIDColumn() const {
-
-  for (const auto& t: m_header.GetColTags()) {
-    if (t.isIDTag()) {
-      return std::dynamic_pointer_cast<IntCol>(m_table.at(t.GetName()));
-    }
-  }
-
-  assert(false);
-  return IntColPtr();
-  }*/
 
 int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
 
@@ -1055,8 +938,8 @@ void CellTable::StreamTableCSV(LineProcessor& proc, const std::string& file) {
   }
 }
 
-int CellTable::RadialDensity(std::vector<uint64_t> inner, std::vector<uint64_t> outer,
-			     std::vector<uint64_t> logor, std::vector<uint64_t> logand,
+int CellTable::RadialDensity(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
+			     std::vector<cy_uint> logor, std::vector<cy_uint> logand,
 			     std::vector<std::string> label) {
 
   // check the radial geometry parameters

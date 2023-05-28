@@ -272,6 +272,8 @@ int CleanProcessor::ProcessHeader(CellHeader& header) {
   // cut the header
   std::unordered_set<size_t> to_remove;
   for (size_t i = 0; i < m_header.size(); i++) {
+    std::cerr << " i " << i << " tag " << m_header.at(i).id << " typ " <<
+      static_cast<unsigned int>(m_header.at(i).type) << std::endl;
     if ( (m_clean_meta   && m_header.at(i).type == Tag::CA_TAG) ||
          (m_clean_marker && m_header.at(i).type == Tag::MA_TAG) ||
 	 (m_clean_graph  && m_header.at(i).type == Tag::GA_TAG))
@@ -280,14 +282,13 @@ int CleanProcessor::ProcessHeader(CellHeader& header) {
   m_header.Cut(to_remove);
 
   // which cells to cut
-  std::unordered_set<size_t> m_to_remove;
   const std::vector<Tag> orig_data_tags = header.GetDataTags();
   for (size_t i = 0; i < orig_data_tags.size(); i++) {
     if ( (m_clean_meta   && orig_data_tags.at(i).type == Tag::CA_TAG) ||
          (m_clean_marker && orig_data_tags.at(i).type == Tag::MA_TAG))
       m_to_remove.insert(i);
   }
-  
+
   // just in time, make the output stream
   this->SetupOutputStream();
 
@@ -311,7 +312,7 @@ int CleanProcessor::ProcessLine(Cell& cell) {
   m_cols_new.reserve(cell.m_cols.size() - m_to_remove.size());
   
   for (size_t i = 0; i < cell.m_cols.size(); i++) {
-    if (!m_to_remove.count(i)) {
+    if (m_to_remove.count(i) == 0) {
       m_cols_new.push_back(cell.m_cols.at(i));
     }
   }
@@ -445,8 +446,8 @@ int PhenoProcessor::ProcessLine(Cell& cell) {
     
   }
 
-  // convert to uint64_t for storage
-  cell.m_flag = flag.toBase10_uint64_t();
+  // convert to cy_uint for storage
+  cell.m_flag = flag.toBase10();
   
   return 1;
 }

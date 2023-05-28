@@ -49,8 +49,8 @@ public:
 
   size_t CellCount() const;
 
-  int RadialDensity(std::vector<uint64_t> inner, std::vector<uint64_t> outer,
-		    std::vector<uint64_t> logor, std::vector<uint64_t> logand,
+  int RadialDensity(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
+		    std::vector<cy_uint> logor, std::vector<cy_uint> logand,
 		    std::vector<std::string> label);
 
   const CellHeader& GetHeader() const;
@@ -86,7 +86,7 @@ public:
   
   void Cut(const std::set<std::string>& tokens);
 
-  void select(uint64_t on, uint64_t off);
+  void select(cy_uint on, cy_uint off);
 
   PhenoMap phenoread(const std::string& filename) const;
   
@@ -176,7 +176,7 @@ struct RadialSelector {
     return os;
   }
   
-  std::vector<uint64_t> int_data;
+  std::vector<cy_uint> int_data;
   std::string label;
   
 };

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cysift.h"
 #include "cell_utils.h"
 #include "cell_flag.h"
 #include "cell_graph.h"
@@ -68,7 +69,7 @@ class NumericColumn : public Column {
   
   NumericColumn() {
     
-    if (std::is_same_v<T, uint64_t>) {
+    if (std::is_same_v<T, cy_uint>) {
       m_type = ColumnType::INT;
     } else if (std::is_same_v<T, float>) {
       m_type = ColumnType::FLOAT;
@@ -80,7 +81,7 @@ class NumericColumn : public Column {
 
   NumericColumn(const T& initial_elem) {
     
-    if (std::is_same_v<T, uint64_t>) {
+    if (std::is_same_v<T, cy_uint>) {
       m_type = ColumnType::INT;
     } else if (std::is_same_v<T, float>) {
       m_type = ColumnType::FLOAT;
@@ -498,27 +499,27 @@ class FlagColumn : public Column {
  
   FlagColumn() = default;
 
-  FlagColumn(const std::shared_ptr<StringColumn> st) {
+  /*FlagColumn(const std::shared_ptr<StringColumn> st) {
     this->reserve(st->size());
     for (size_t i = 0; i < st->size(); i++) {
       this->PushElem(CellFlag(st->GetStringElem(i)));
     }
-  }
+    }*/
 
-  FlagColumn(const std::shared_ptr<NumericColumn<uint64_t>> st) {
+  FlagColumn(const std::shared_ptr<NumericColumn<cy_uint>> st) {
     this->reserve(st->size());
     for (size_t i = 0; i < st->size(); i++) {
       this->PushElem(CellFlag(st->GetNumericElem(i)));
     }
   }
 
-  bool TestFlag(uint64_t on, uint64_t off, size_t i) const {
+  /*  bool TestFlag(cy_uint on, cy_uint off, size_t i) const {
     if (i >= m_vec.size())
       throw std::out_of_range("Index out of range");
     return m_vec.at(i).test(on, off);
-  }
+    }*/
 
-  bool TestFlagAndOr(uint64_t logor, uint64_t logand, size_t i) const {
+  bool TestFlagAndOr(cy_uint logor, cy_uint logand, size_t i) const {
     if (i >= m_vec.size())
       throw std::out_of_range("Index out of range");
     return m_vec.at(i).testAndOr(logor, logand);
@@ -627,7 +628,7 @@ class FlagColumn : public Column {
 };
 
 // aliases
-using IntCol = NumericColumn<uint64_t>;
+using IntCol = NumericColumn<cy_uint>;
 using FloatCol = NumericColumn<float>;
 
 using GraphColPtr = std::shared_ptr<GraphColumn>;

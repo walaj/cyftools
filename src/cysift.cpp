@@ -566,7 +566,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "plot"  || opt::module == "roi" ||
 	 opt::module == "histogram" || opt::module == "log10" ||
 	 opt::module == "crop"  || opt::module == "knn" ||
-	 opt::module == "count" || 
+	 opt::module == "count" || opt::module == "clean" ||
 	 opt::module == "cat" || opt::module == "cereal" || 
 	 opt::module == "correlate" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
@@ -928,8 +928,8 @@ static int spatialfunc(int argc, char** argv) {
 
 static int selectfunc(int argc, char** argv) {
 
-  uint64_t logor = 0;
-  uint64_t logand = 0;
+  cy_uint logor = 0;
+  cy_uint logand = 0;
   bool lognot = false;
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1018,10 +1018,10 @@ static int phenofunc(int argc, char** argv) {
 
 static int radialdensfunc(int argc, char** argv) {
 
-  uint64_t inner = 0;
-  uint64_t outer = 20;
-  uint64_t logor = 0;
-  uint64_t logand = 0;
+  cy_uint inner = 0;
+  cy_uint outer = 20;
+  cy_uint logor = 0;
+  cy_uint logand = 0;
   std::string label;
 
   std::string file;
@@ -1091,10 +1091,10 @@ static int radialdensfunc(int argc, char** argv) {
   if (rsv.empty()) {
     radp.SetParams({inner},{outer},{logor},{logand},{label});
   } else {
-    std::vector<uint64_t> innerV(rsv.size());
-    std::vector<uint64_t> outerV(rsv.size());  
-    std::vector<uint64_t> logorV(rsv.size());
-    std::vector<uint64_t> logandV(rsv.size());  
+    std::vector<cy_uint> innerV(rsv.size());
+    std::vector<cy_uint> outerV(rsv.size());  
+    std::vector<cy_uint> logorV(rsv.size());
+    std::vector<cy_uint> logandV(rsv.size());  
     std::vector<std::string> labelV(rsv.size());
     for (size_t i = 0; i < innerV.size(); i++) {
       innerV[i] = rsv.at(i).int_data.at(0);

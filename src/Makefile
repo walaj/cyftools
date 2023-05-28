@@ -11,6 +11,8 @@ KMEANS = -I$(HOME)/git/CppKmeans/include
 ANNOY = -I$(HOME)/git/annoy
 CEREAL = -I$(HOME)/software/cereal-1.3.2/include
 
+#USE64BIT=-DUSE_64_BIT
+
 ## set the OMP location
 ODIR := /opt/homebrew/opt/libomp/include
 ifeq ($(wildcard $(ODIR)),)  # If directory does not exist
@@ -29,7 +31,7 @@ else
     OPENMP = -fopenmp
 endif
 
-CFLAGS = -O2 -g -std=c++17 $(OPENMP) -I. -I.. $(NETCDF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(EIGEN) $(KMEANS) $(OMP) $(CEREAL) -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
+CFLAGS = -O2 -g -std=c++17 $(USE64BIT) $(OPENMP) -I. -I.. $(NETCDF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(EIGEN) $(KMEANS) $(OMP) $(CEREAL) -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
 LDFLAGS = $(OMPL)
 
 # Specify the source files

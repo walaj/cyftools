@@ -175,7 +175,7 @@ class SelectProcessor : public CellProcessor {
   
  public:
 
-  void SetParams(uint64_t logor, uint64_t logand, bool lognot) {
+  void SetParams(cy_uint logor, cy_uint logand, bool lognot) {
     m_or = logor;
     m_and = logand;
     m_not = lognot;
@@ -188,10 +188,10 @@ class SelectProcessor : public CellProcessor {
  private:
 
   // or flags
-  uint64_t m_or;
+  cy_uint m_or;
 
   // and flags
-  uint64_t m_and;
+  cy_uint m_and;
 
   // should we NOT the output
   bool m_not;
@@ -357,8 +357,8 @@ class RadialProcessor : public CellProcessor {
 
  public:
 
-  void SetParams(const std::vector<uint64_t>& inner, const std::vector<uint64_t>& outer,
-		 const std::vector<uint64_t>& logor, const std::vector<uint64_t>& logand,
+  void SetParams(const std::vector<cy_uint>& inner, const std::vector<cy_uint>& outer,
+		 const std::vector<cy_uint>& logor, const std::vector<cy_uint>& logand,
 		 const std::vector<std::string>& label) {
 
     // check the radial geometry parameters
@@ -382,7 +382,7 @@ class RadialProcessor : public CellProcessor {
   
  private:
   
-  std::vector<uint64_t> m_inner, m_outer, m_logor, m_logand;
+  std::vector<cy_uint> m_inner, m_outer, m_logor, m_logand;
   std::vector<std::string> m_label;
   
 };

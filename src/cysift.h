@@ -1,8 +1,11 @@
-#include <functional>
-
-// Define the function wrapper type
-//typedef std::function<bool(const std::string& in, std::string& out)> LineStreamerWrapper;
+#include <unordered_map>
 
 // define phenotype map
 typedef std::pair<float,float> Pheno;
 typedef std::unordered_map<std::string, Pheno> PhenoMap;
+
+#ifdef USE_64_BIT
+typedef uint64_t cy_uint;
+#else
+typedef uint32_t cy_uint;
+#endif
