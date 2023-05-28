@@ -1,334 +1,172 @@
 #include "cell_header.h"
 
-#include <regex>
-#include <set>
+#include <iostream>
 
-const std::unordered_set<std::string> Tag::ALLOWED_DATA_TAGS =
-  {"MA","ID","GA","CA","FA","XD","YD","ZD"};
-
-const std::unordered_set<std::string> Tag::ALLOWED_INFO_TAGS =
-  {"HD","CN","FN"};
-
-
-Tag::Tag(const std::string& type, const std::string& nm) {
-
-  // tag has to be allowed
-  if (!ALLOWED_DATA_TAGS.count(type) && !ALLOWED_INFO_TAGS.count(type)) {
-    throw std::runtime_error("Tag with type " + type + " is not allowed");
-  }
-  
-  record_type = type;
-  name = nm;
-  
+// ADD: need to fill out
+bool CellHeader::validate() const {
+  return true;
 }
 
-void CellHeader::Cut(const std::unordered_set<std::string>& include) {
+std::ostream& operator<<(std::ostream& os, const Tag& tag) {
 
-  // build <set> of all tags
-  std::unordered_set<std::string> tags_set;
+  // get string representation of tag type
+  std::string ttype;
+  switch (tag.type) {
+  case Tag::MA_TAG: ttype = "MA"; break;
+  case Tag::CA_TAG: ttype = "CA"; break;
+  case Tag::GA_TAG: ttype = "GA"; break;
+  case Tag::PG_TAG: ttype = "PG"; break;
+  default:
+    throw std::runtime_error("Unknown tag type with uint8_t value: " + std::to_string(tag.type));
+  }
+  os << "@" << ttype;
+
+  if (ttype != "PG")
+    os << "\tID:" << tag.id;
+  
+  os << "\t" << tag.data;
+  
+  return os;
+}
+
+
+std::vector<Tag> CellHeader::GetDataTags() const {
+
+  std::vector<Tag> data_tags;
   for (const auto& t : tags)
-    tags_set.insert(t.name);
-  
-  // warn if elements from include list are in header
-  for (const auto& token : include) {
-    if (tags_set.count(token) == 0) {
-      std::cerr << "Warning: '" << token << "' not found in header" << std::endl;
-    }
-  }
-
-  // Remove elements of tags if their name is not in the vector
-  tags.erase(std::remove_if(tags.begin(), tags.end(),
-                            [&include](const Tag& tag) {
-                              return include.find(tag.GetName()) == include.end();
-                            }),
-             tags.end());
+    if (t.type == Tag::MA_TAG || t.type == Tag::CA_TAG)
+      data_tags.push_back(t);
+      
+  return data_tags;
 }
 
-void CellHeader::Remove(const std::string& token) {
-  
-  bool token_found = false;
+std::vector<Tag> CellHeader::GetInfoTags() const {
+
+  std::vector<Tag> info_tags;
+  for (const auto& t : tags)
+    if (t.type == Tag::GA_TAG || t.type == Tag::PG_TAG)
+      info_tags.push_back(t);
       
-  if (markers_.count(token) > 0) {
-    markers_.erase(token);
-  } else if (meta_.count(token) > 0) {
-    meta_.erase(token);
-  } else {
-    std::cerr << "Warning: '" << token << "' not found in the markers or meta of table" << std::endl;
-  }
+  return info_tags;
   
-  // Remove elements of tags if they are in the tokens vector
-  auto new_end = std::remove_if(tags.begin(), tags.end(), [&token, &token_found](const Tag& item) {
-    if (item.name == token) {
-      token_found = true;
-      return true;
-    }
-    return false;
+  return info_tags;
+}
+
+void CellHeader::SortTags() {
+
+  // we are using the order provided by the tag definitions
+  std::sort(tags.begin(), tags.end(), [](const Tag &a, const Tag &b) {
+    return a.type < b.type;
   });
 
-  // Emit a warning to std::cerr if the token is not found in tags
-  if (!token_found) {
-    std::cerr << "Warning: '" << token << "' not found in tags" << std::endl;
-  } else {
-    // Resize col_order to remove the elements that were found in tokens
-   tags.resize(new_end - tags.begin());
-  }
+}
 
+void CellHeader::Cut(const std::unordered_set<size_t> to_remove) {
+  
+  std::vector<Tag> new_tags;
+  for (size_t i = 0; i < tags.size(); i++) {
+    if (to_remove.count(i))
+      continue;
+    new_tags.push_back(tags.at(i));
+  }
+  tags = new_tags;
+}
+
+void CellHeader::addTag(const Tag& tag) {
+  
+  // ADD: check tag type is valid
+  ///
+
+  // add tags to data_tags that store
+  // float values in the column
+  tags.push_back(tag);
+
+  // info tags that don't store column data
+  //if (tag.type == Tag::PG_TAG ||
+  //    tag.type == Tag::GA_TAG) {
+  //  info_tags.push_back(tag);
+  //  return;
+  //}
+}
+
+
+std::vector<Tag> CellHeader::GetMarkerTags() const {
+
+  // return only tags that hold marker data
+  std::vector<Tag> marker_tags;
+  for (const auto& t : tags)
+    if (t.type == Tag::MA_TAG)
+      marker_tags.push_back(t);
+  
+  return marker_tags;
+}
+
+/*const Tag& CellHeader::GetDataTag(int i) const {
+  assert(i < data_tags.size());
+  return data_tags.at(i);
+  }*/
+
+
+void CellHeader::Print() const {
+
+  for (const auto& tag : tags) {
+    std::cout << tag << std::endl;
+  }
+  //  for (const auto& tag : info_tags)
+  //  std::cout << tag << std::endl;
   
 }
 
-void CellHeader::Print() const {
-  for (const auto& tag : info_tags)
-    std::cout << tag << std::endl;
-  for (const auto& tag : tags) 
-    std::cout << tag << std::endl;
+size_t CellHeader::WhichColumn(const std::string& str, uint8_t tag_type) const {
+
+  // ADD: error check on tag_type to make sure allowed
+  ////
+
+  // find the tag index
+  size_t count = 0;
+  for (const auto& t : tags) {
+    if (t.type == tag_type) {
+      if (t.id == str)
+	return count;
+      count++;
+    }
+  }
+  
+  throw std::runtime_error("Column: " + str + " not in header");
+  return static_cast<size_t>(-1);
+  
 }
 
 Tag::Tag(const std::string& line) {
 
+  // setup a regex to parse on spaces
   std::regex ws_re("\\s+");
   std::sregex_token_iterator it(line.begin(), line.end(), ws_re, -1); 
   std::sregex_token_iterator end;
   
   if (it != end) {
     std::string token = *it;
-    record_type = token.substr(1); // Remove the '@' character
+
+    if      (token.substr(1) == "MA") { type = Tag::MA_TAG; }
+    else if (token.substr(1) == "GA") { type = Tag::GA_TAG; }
+    else if (token.substr(1) == "CA") { type = Tag::CA_TAG; }
+    else if (token.substr(1) == "PG") { type = Tag::PG_TAG; }
+    else { throw std::runtime_error("Tag of type" + token.substr(1) + "not an allowed tag"); }
+    
     ++it;
   }
-
+  
   // Parse the tag fields and their data
   for (; it != end; ++it) {
     std::string token = *it;
     std::string field = token.substr(0, 2);
     std::string value = token.substr(3);
-    this->addValue(field, value);
-  }
-}
 
-bool Tag::isFlagTag() const {
-  bool v = record_type == "FA";
-
-  if (!v)
-    return v;
-  
-  // enforce any requirements for further tags
-  //***
-  
-  return v;
-}
-
-bool Tag::isVersionTag() const {
-  
-  bool v = record_type == "HD";
-
-  if (!v)
-    return v;
-  
-  if (values.empty()) {
-    throw std::runtime_error("Error: @HD tag malformed, needs VN key");
-  }
-  
-  const auto& iter = values.find("VN");
-  if (iter == values.end()) {
-    throw std::runtime_error("Error: 'VN' required tag of @HD");
-  }
-
-  return v;
-
-}
-
-bool Tag::isMarkerTag() const {
-  return record_type == "MA";
-}
-
-bool Tag::isMetaTag() const {
-  return record_type == "CA";
-}
-
-bool Tag::isStringTag() const {
-  // right now only accepted string tag is graph
-  // but this can be modified in future
-  return isGraphTag();
-}
-
-bool Tag::isGraphTag() const {
-  return record_type == "GA";
-}
-
-bool Tag::isDimTag() const {
-  return isXDim() || isYDim() || isZDim();
-}
-
-bool Tag::isXDim() const {
-  return record_type == "XD";
-}
-
-bool Tag::isYDim() const {
-  return record_type == "YD";
-}
-
-bool Tag::isZDim() const {
-  return record_type == "ZD";
-}
-
-bool Tag::isIDTag() const {
-  return record_type == "ID";
-}
-
-
-std::string Tag::GetName() const {
-  
-  if (!isInfoTag() && name.empty())
-    throw std::runtime_error("Error: tag " + record_type + " requires NM tag");
-  
-  return name;
-}
-
-void Tag::addValue(const std::string& field, const std::string& value) {
-  
-  if (field == "NM") {
-    name = value;
-    return;
-  }
-  
-  values[field] = value;
-
-}
-
-bool Tag::hasName() const {
-  return !name.empty();
-}
-
-bool CellHeader::hasTag(const std::string& tagname) const {
-
-  for (const auto& t : tags)
-    if (tagname == t.GetName())
-      return true;
-
-  return false;
-}
-
-bool CellHeader::identicalColumns(const CellHeader& header) const {
-
-  size_t i = 0;
-
-  if (this->tags.size() != header.tags.size())
-    return false;
-
-  for (size_t i = 0; i < this->tags.size(); i++) {
-    if (this->tags.at(i).GetName() != header.tags.at(i).GetName())
-      return false;
-  }
-
-  return true;
-  
-  
-  
-}
-
-void CellHeader::addTag(const Tag& tag) {
-
-  /// check that tags has a name if its a column tag
-  if (!tag.isInfoTag()) {
-    if (!tag.hasName()) {
-      throw std::runtime_error("Tag of record type " + tag.record_type + " needs an NM:<name> field");
+    // special case for ID
+    if (field == "ID") {
+      id = value;
+    } else {
+      data = data + field + ":" + value;
     }
   }
-
-  // throw error if already exists
-  if (hasTag(tag.GetName())) {
-    throw std::runtime_error("Trying to add tag " + tag.GetName() + " that already exists in header");
-  }
-
-  // add the tag
-  if (tag.isInfoTag())
-    info_tags.push_back(tag);
-  else if (tag.isColumnTag())
-    tags.push_back(tag);
-  
-  if (tag.isMarkerTag()) {
-    markers_.insert(tag.GetName());
-  } else if (tag.isMetaTag()) {
-    meta_.insert(tag.GetName());
-  } else if (tag.isXDim()) {
-    x_ = tag.GetName();
-  } else if (tag.isYDim()) {
-    y_ = tag.GetName();
-  } else if (tag.isZDim()) {
-    z_ = tag.GetName();
-  } else if (tag.isIDTag()) {
-    id_ = tag.GetName();
-  } else if (tag.isInfoTag()) {
-    ;//
-  } else if (tag.isGraphTag()) {
-    graph_.insert(tag.GetName());
-  } else if (tag.isFlagTag()) {
-    flag_.insert(tag.GetName());
-  } else {
-    throw std::runtime_error("Tag: " + tag.record_type + " - must be one of: HD, MA, CA, XD, YD, ZD, ID");
-  }
-}
-
-std::ostream& operator<<(std::ostream& os, const Tag& tag) {
-  os << "@" << tag.record_type;
-  if (!tag.name.empty())
-    os << "\tNM:" << tag.name;
-  for (const auto& kv : tag.values) {
-    os << "\t" << kv.first << ":" << kv.second;
-  }
-  return os;
-
-}
-
-bool CellHeader::hasMarker(const std::string& m) const {
-  return (markers_.count(m));
-}
-
-bool CellHeader::hasMeta(const std::string& m) const {
-  return (meta_.count(m));
-}
-
-bool CellHeader::hasFlag(const std::string& m) const {
-  return (flag_.count(m));
-}
-
-bool CellHeader::hasGraph(const std::string& m) const {
-  return (graph_.count(m));
-}
-
-std::ostream& operator<<(std::ostream& os, const CellHeader& h) {
-  for (const auto& k : h.tags)
-    os << k << std::endl;
-  return os;
-}
-
-size_t CellHeader::whichColumn(const std::string& str) const {
-
-  size_t count = 0;
-  for (const auto& t : tags) {
-    if (t.isColumnTag()) {
-      if (t.GetName() == str)
-	return count;
-      count++;
-    }
-  }
-  
-  std::cerr << "Column: " << str << " never found in header" << std::endl;
-  return static_cast<size_t>(-1);
-
-}
-
-size_t CellHeader::whichMarkerColumn(const std::string& str) const {
-
-  size_t count = 0;
-  for (const auto& t : tags) {
-    if (t.isColumnTag() && t.isMarkerTag()) {
-      if (t.GetName() == str)
-	return count;
-      count++;
-    }
-  }
-  
-  std::cerr << "Column: " << str << " never found in header" << std::endl;
-  return static_cast<size_t>(-1);
-  
 }
