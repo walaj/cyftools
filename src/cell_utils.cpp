@@ -26,7 +26,6 @@ void column_to_row_major(std::vector<float>& data, int nobs, int ndim) {
   
 }
 
-
 PhenoMap phenoread(const std::string& filename) {
   
   PhenoMap data;

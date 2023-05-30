@@ -5,6 +5,7 @@
 #include <unistd.h> // or #include <getopt.h> on Windows systems
 #include <getopt.h>
 #include <ctime>
+#include <regex>
 
 #include "cell_row.h"
 
@@ -1074,7 +1075,17 @@ static int radialdensfunc(int argc, char** argv) {
     }
     
     std::string line;
+    std::regex pattern("^[-+]?[0-9]*\\.?[0-9]+,");
     while (std::getline(input_file, line)) {
+
+      // remove white space
+      line.erase(std::remove_if(line.begin(), line.end(), ::isspace),line.end());
+	  
+      // make sure starts with number
+      if (!std::regex_search(line, pattern))
+	continue;
+      
+      
       rsv.push_back(RadialSelector(line));
     }
     
