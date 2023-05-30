@@ -20,12 +20,16 @@ class Tag {
   uint8_t type;
   std::string id;
   std::string data;  
+  int i = -1;
   
   Tag() = default;
   
  Tag(uint8_t type, const std::string& mid, const std::string& mdata) :
-  type(type), id(mid), data(mdata) {}
+   type(type), id(mid), data(mdata), i(-1) {}
 
+  Tag(uint8_t type, const std::string& mid, const std::string& mdata, int mi) :
+    type(type), id(mid), data(mdata), i(mi) {}
+  
   Tag(const std::string& line);
 
   friend std::ostream& operator<<(std::ostream& os, const Tag& tag);
@@ -33,7 +37,7 @@ class Tag {
   template <class Archive>
   void serialize(Archive & ar)
   {
-    ar(type, id, data);    
+    ar(type, id, i, data);
   }
   
 };

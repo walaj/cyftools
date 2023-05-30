@@ -24,7 +24,7 @@ else
 	csvcut -c "CellID,Xt,Yt,Hoechst,AF1,CD31,CD45,CD68,Blank,CD4,FOXP3,CD8a,CD45RO,CD20,PD_L1,CD3e,CD163,E_cadherin,PD_1,Ki67,Pan_CK,SMA,Area,MajorAxisLength,MinorAxisLength,Eccentricity,Solidity,Extent,Orientation,X,Y,Pan_CKp,CD31p,Ki67p,CD68p,CD163p,CD20p,CD4p,CD8ap,CD45ROp,PD_L1p,CD3ep,E_cadherinp,PD_1p,FOXP3p,CD45p,SMAp,col,row,frame,TDist,Region,topics" ${input_file} > ${rar_file}
     else
 	echo "Orion 1-40"
-	csvcut -c "CellID,Xt,Yt,Hoechst,AF1,CD31,CD45,CD68,Argo550,CD4,FOXP3,CD8a,CD45RO,CD20,PD_L1,CD163,E_cadherin,PD_1,Ki67,Pan_CK,SMA,Area,MajorAxisLength,MinorAxisLength,Eccentricity,Solidity,Extent,Orientation" ${input_file} > ${rar_file}
+	csvcut -c "CellID,Xt,Yt,Hoechst,AF1,CD31,CD45,CD68,Argo550,CD4,FOXP3,CD8a,CD45RO,CD20,PD_L1,CD3e,CD163,E_cadherin,PD_1,Ki67,Pan_CK,SMA,Area,MajorAxisLength,MinorAxisLength,Eccentricity,Solidity,Extent,Orientation" ${input_file} > ${rar_file}
     fi
 
 fi

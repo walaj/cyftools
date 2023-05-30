@@ -25,6 +25,9 @@ std::ostream& operator<<(std::ostream& os, const Tag& tag) {
   if (ttype != "PG")
     os << "\tID:" << tag.id;
   
+  if (ttype == "MA" || ttype == "CA")
+    os << "\tIN:" << tag.i;
+  
   os << "\t" << tag.data;
   
   return os;
@@ -57,7 +60,9 @@ void CellHeader::SortTags() {
 
   // we are using the order provided by the tag definitions
   std::sort(tags.begin(), tags.end(), [](const Tag &a, const Tag &b) {
-    return a.type < b.type;
+    if (a.i == -1 || b.i == -1)
+      return a.type < b.type;
+    return a.i < b.i;
   });
 
 }
@@ -78,16 +83,16 @@ void CellHeader::addTag(const Tag& tag) {
   // ADD: check tag type is valid
   ///
 
+  Tag thistag = tag;
+  
+  // add the index if not already added
+  if ( (tag.type == Tag::CA_TAG || tag.type == Tag::MA_TAG) && tag.i == -1 )
+    thistag.i = GetDataTags().size();
+  
   // add tags to data_tags that store
   // float values in the column
-  tags.push_back(tag);
+  tags.push_back(thistag);
 
-  // info tags that don't store column data
-  //if (tag.type == Tag::PG_TAG ||
-  //    tag.type == Tag::GA_TAG) {
-  //  info_tags.push_back(tag);
-  //  return;
-  //}
 }
 
 

@@ -1078,26 +1078,11 @@ int CellTable::RadialDensity(std::vector<cy_uint> inner, std::vector<cy_uint> ou
     
     // form the data tag
     Tag dtag(Tag::CA_TAG, label[i], "");
-
+    
     AddColumn(dtag, dc[i]);
     
-    // insert column info 
-    //m_header.addTag(dtag); 
-    
-    // add densities to the table
-    //m_table[dtag.id] = dc[i];
   }
 
-  /*  
-  // add the column
-  Tag dtag(Tag::CA_TAG, label, "");
-  
-  // insert as a meta key
-  m_header.addTag(dtag); 
-
-  // add densities to the table
-  m_table[dtag.id] = dc;
-  */
   return 0;
 }
 
