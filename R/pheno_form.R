@@ -1,6 +1,4 @@
-# load necessary libraries
-library(dplyr)
-library(tidyr)
+library(data.table)
 
 options(scipen = 999)
 
@@ -8,22 +6,24 @@ options(scipen = 999)
 args <- commandArgs(trailingOnly = TRUE)
 
 # read input file
-df <- read.csv(args[1])
+dt <- data.table::fread(args[1])
 
-# get column names
-cols <- names(df)
+# get column namesv
+cols <- colnames(dt)
 
 # find the columns that match the pattern "AF\d+"
-marker_cols <- grep("\\d+$", cols, value = TRUE)
+marker_cols <- grep("p$", cols, value = TRUE)
+marker_cols <- sub("p$", "", marker_cols)
 
 # for each marker, find the min value where corresponding p column equals 1
 result <- lapply(marker_cols, function(marker) {
-  p_col <- paste0(marker, "p")
-  min_val <- df[df[[p_col]] == 1, marker] %>% min(na.rm = TRUE)
-  return(c(marker, min_val, 100000))
+    p_col <- paste0(marker, "p")
+    min_val <- dt[get(p_col) == 1, min(get(marker), na.rm=TRUE)]
+  return(data.table::data.table(marker, min_val, 100000))
 })
 
 # convert the result to a data frame and write to output file
-result_df <- do.call(rbind, result)
-colnames(result_df) <- c("Marker", "MinVal", "FixedVal")
-write.table(result_df, args[2], row.names = FALSE, quote = FALSE, col.names = FALSE, sep = ",")
+result_df <- data.table::rbindlist(result)
+result_df[, marker := gsub("_","-",marker)]
+write.table(result_df, args[2], row.names = FALSE,
+            quote = FALSE, col.names = FALSE, sep = ",")
