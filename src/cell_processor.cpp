@@ -272,8 +272,8 @@ int CleanProcessor::ProcessHeader(CellHeader& header) {
   // cut the header
   std::unordered_set<size_t> to_remove;
   for (size_t i = 0; i < m_header.size(); i++) {
-    std::cerr << " i " << i << " tag " << m_header.at(i).id << " typ " <<
-      static_cast<unsigned int>(m_header.at(i).type) << std::endl;
+    //std::cerr << " i " << i << " tag " << m_header.at(i).id << " typ " <<
+    //  static_cast<unsigned int>(m_header.at(i).type) << std::endl;
     if ( (m_clean_meta   && m_header.at(i).type == Tag::CA_TAG) ||
          (m_clean_marker && m_header.at(i).type == Tag::MA_TAG) ||
 	 (m_clean_graph  && m_header.at(i).type == Tag::GA_TAG))

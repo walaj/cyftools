@@ -136,7 +136,7 @@ struct RadialSelector {
     std::vector<std::string> tokens = split(line, ',');
     
     if (tokens.size() != 5) {
-      throw std::runtime_error("There must be exactly 5 tokens.");
+      throw std::runtime_error("There must be exactly 5 tokens: " + line);
     }
 
     int_data.resize(4);

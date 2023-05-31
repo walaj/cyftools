@@ -1084,8 +1084,7 @@ static int radialdensfunc(int argc, char** argv) {
       // make sure starts with number
       if (!std::regex_search(line, pattern))
 	continue;
-      
-      
+     
       rsv.push_back(RadialSelector(line));
     }
     
