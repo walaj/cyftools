@@ -5,6 +5,22 @@ options(scipen = 999)
 # get command line arguments
 args <- commandArgs(trailingOnly = TRUE)
 
+# check if command line arguments are provided
+if (length(args) < 2) {
+  stop("Two arguments are required: input and output file paths.")
+}
+
+# check if input file exists and is readable
+if (!file.exists(args[1]) || !file.access(args[1], 4) == 0) {
+  stop(paste("Input file does not exist or is not readable:", args[1]))
+}
+
+# check if output directory is writable
+output_directory <- dirname(args[2])
+if (!dir.exists(output_directory) || !file.access(output_directory, 2) == 0) {
+  stop(paste("Output directory does not exist or is not writable:", output_directory))
+}
+
 # read input file
 dt <- data.table::fread(args[1])
 
