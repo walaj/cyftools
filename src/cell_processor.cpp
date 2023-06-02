@@ -22,6 +22,64 @@ int SelectProcessor::ProcessHeader(CellHeader& header) {
   return 0;
 }
 
+int AverageProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+
+  // which columns store data
+  /*for (size_t i = 0; i < m_header.GetAllTags()) {
+    const Tag& tag = m_header.GetAllTags().at(i);
+    if (tag.type == Tag::CA_TAG || tag.type == Tag::MA_TAG))
+    inds.push_back(i);
+    }*/
+
+  // initialize sums to zero
+  sums.resize(m_header.GetDataTags().size());
+  if (sums.size())
+    assert(sums.at(0) == 0);
+  
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+
+  m_header.SortTags();
+  
+  // just in time, make the output stream
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+  
+  return 0;
+}
+
+int AverageProcessor::ProcessLine(Cell& cell) {
+
+  for (size_t i = 0; i < cell.m_cols.size(); i++) {
+    sums[i] += cell.m_cols.at(i);
+  }
+  n++;
+
+  // don't emit anything in StreamTable
+  return CellProcessor::NO_WRITE_CELL;
+}
+
+void AverageProcessor::EmitCell() const {
+
+  Cell cell;
+
+  std::vector<float> means(sums.size());
+  if (n > 0) {
+    for (size_t i = 0; i < means.size(); i++) {
+      means[i] = sums.at(i) / n;
+    }
+  }
+
+  cell.m_cols = means;
+
+  // write the one cell
+  OutputLine(cell);
+}
+
 int SelectProcessor::ProcessLine(Cell& cell) {
 
   // get the flag value from the line
@@ -32,9 +90,9 @@ int SelectProcessor::ProcessLine(Cell& cell) {
 
   // if flags met, print the cell
   if (flags_met != m_not)
-    return 1;
+    return CellProcessor::WRITE_CELL;
 
-  return 0; // dont if not
+  return CellProcessor::NO_WRITE_CELL; // don't write if not selected
 }
 
 int RadialProcessor::ProcessHeader(CellHeader& header) {

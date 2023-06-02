@@ -807,9 +807,9 @@ int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
   // process the header.
   // if , don't print rest
   int val = proc.ProcessHeader(m_header);
-  if (val == 1) { // just exit, all we need is header
+  if (val == CellProcessor::ONLY_WRITE_HEADER) { // just exit, all we need is header
     return 0;
-  } else if (val == 2) { // we want to build the table
+  } else if (val == CellProcessor::SAVE_HEADER) { // we want to build the table
     initialize_cols();
   }
   
@@ -828,11 +828,15 @@ int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
 
     // process the cell and output if needed (returns 1)
     int val = proc.ProcessLine(cell);
-    if (val == 1) {
+    if (val == CellProcessor::WRITE_CELL) {
       proc.OutputLine(cell);
-    } else if (val == 2) {
+    } else if (val == CellProcessor::SAVE_CELL) {
       build_table_memory = true;
       add_cell_to_table(cell);
+    } else if (val == CellProcessor::NO_WRITE_CELL) {
+      ; // do nothing
+    } else {
+      assert(false);
     }
 
   }

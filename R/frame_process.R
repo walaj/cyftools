@@ -1,8 +1,8 @@
 library(data.table)
 
 DEBUG=FALSE
-radcols=c("CD32_20r","CD45_20r","CD68_20r","CD4_20r","FOXP3_20r","CD8_20r","CD20_20r","PD_L1_20r","CD3_20r","CD163_20r","Ecad_20r","PD1_20r","PanCK_20r","SMA_20r")
-frame_size <- 250
+radcols=c("CD31_200r","CD45_200r","CD68_200r","CD4_200r","FOXP3_200r","CD8_200r","CD20_200r","PD_L1_200r","CD3_200r","CD163_200r","Ecad_200r","PD1_200r","PanCK_200r","SMA_200r")
+frame_size <- 400
 
 # get command line arguments
 args <- commandArgs(trailingOnly = TRUE)

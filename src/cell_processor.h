@@ -13,6 +13,14 @@
 
 class CellProcessor {
  public:
+
+  static const int NO_WRITE_CELL = 0;
+  static const int WRITE_CELL = 1;
+  static const int SAVE_CELL = 2;
+  static const int WRITE_HEADER = 0;
+  static const int ONLY_WRITE_HEADER = 1;
+  static const int SAVE_HEADER = 2;
+  
   virtual ~CellProcessor() = default;
   
   virtual int ProcessHeader(CellHeader& header) = 0;
@@ -32,7 +40,7 @@ class CellProcessor {
     assert(m_archive);
   }
   
-  void OutputLine(const Cell& cell) {
+  void OutputLine(const Cell& cell) const {
     assert(m_archive);
     (*m_archive)(cell);
   }
@@ -125,6 +133,25 @@ private:
   bool m_clean_marker = false; 
 
   std::unordered_set<size_t> m_to_remove;
+  
+};
+
+class AverageProcessor : public CellProcessor {
+
+public:
+
+  void SetParams() {}
+
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+
+  void EmitCell() const;
+  
+private:
+
+  size_t n = 0;
+  std::vector<double> sums;
   
 };
 
