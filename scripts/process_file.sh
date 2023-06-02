@@ -41,8 +41,11 @@ for infile in *.csv; do
 	# check_file_exists "${base}.phenotype.cys"
 	# sbatch /home/jaw34/git/cysift/scripts/spatial.sh "${base}.phenotype.cys" "${base}.spat.cyz"
 
-	check_file_exists "${base}.spat.cyz"
-	sbatch /home/jaw34/git/cysift/scripts/radial.sh "${base}.spat.cyz" "${base}.rad.cys"
+	#check_file_exists "${base}.spat.cyz"
+	#sbatch /home/jaw34/git/cysift/scripts/radial.sh "${base}.spat.cyz" "${base}.rad.cys"
+
+	check_file_exists "${base}.rad.cys"
+	sbatch /home/jaw34/git/cysift/scripts/frame.sh "${base}.rad.cys" "${base}.frame.csv"
 	
     fi
     

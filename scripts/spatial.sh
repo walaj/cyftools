@@ -26,5 +26,3 @@ else
     echo "...running: cysift spatial -k $K -d $D -t $T -v ${input_file} - | gzip > ${output_file}"
     cysift spatial -k $K -d $D -t $T -v ${input_file} - | gzip > ${output_file}
 fi
-
-

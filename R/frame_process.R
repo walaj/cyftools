@@ -1,8 +1,11 @@
 library(data.table)
 
+options(scipen=999)
+
 DEBUG=FALSE
-radcols=c("CD32_20r","CD45_20r","CD68_20r","CD4_20r","FOXP3_20r","CD8_20r","CD20_20r","PD_L1_20r","CD3_20r","CD163_20r","Ecad_20r","PD1_20r","PanCK_20r","SMA_20r")
-frame_size <- 250
+CELL_COUNT <- 10
+radcols=c("CD31_200r","CD45_200r","CD68_200r","CD4_200r","FOXP3_200r","CD8_200r","CD20_200r","PD_L1_200r","CD3_200r","CD163_200r","Ecad_200r","PD1_200r","PanCK_200r","SMA_200r")
+frame_size <- 400
 
 # get command line arguments
 args <- commandArgs(trailingOnly = TRUE)
@@ -13,7 +16,6 @@ split_str <- strsplit(basename(cysfile), split = "\\.")
 sample <- split_str[[1]][1]
 
 if (DEBUG) cysfile <- "~/Sorger/orion/orion_1_40/LSP10353.rad.cys"
-
 
 # check if command line arguments are provided
 if (length(args) < 2) {
@@ -30,8 +32,6 @@ output_directory <- dirname(args[2])
 if (!dir.exists(output_directory) || !file.access(output_directory, 2) == 0) {
   stop(paste("Output directory does not exist or is not writable:", output_directory))
 }
-
-
 
 ##########
 ### DATA READ
@@ -65,9 +65,19 @@ get_frame <- function(coordinate) {
 dt[, c("frame_x", "frame_y") := .(get_frame(x), get_frame(y))]
 dt[, frame_id := frame_x * 1e6 + frame_y]
 
+# count the cells per frame
+dt.n <- dt[, .N, by=frame_id]
+setnames(dt.n, "N","cellcount")
+
 # find the frame identity of each cell
 dt.framed <- dt[, lapply(.SD, mean), by = frame_id, .SDcols = radcols]
-dt.framed <- dt.framed[, lapply(.SD, round), .SDcols = radcols]
+
+# round the counts
+for (col in radcols) {
+    dt.framed[[col]] <- round(dt.framed[[col]])
+}
+
+# remove rows
 dt.framed <- dt.framed[rowSums(dt.framed[,..radcols] != 0) > 0]
 dt.framed[, sample := sample]
 
@@ -77,9 +87,8 @@ frames <- dt[, .(centroid_x = (as.numeric(frame_x) - 0.5) * frame_size,
              by = frame_id]
 frames <- frames[!duplicated(frame_id)]
 dt.framed <- merge(dt.framed, frames, all.x=TRUE, by="frame_id")
+dt.framed <- merge(dt.framed, dt.n, all.x=TRUE, by="frame_id")
+setcolorder(dt.framed, c("frame_id", "centroid_x", "centroid_y", "sample", "cellcount", setdiff(names(dt.framed), c("frame_id", "centroid_x", "centroid_y", "sample","cellcount"))))
 
-setcolorder(dt.framed, c("frame_id", "centroid_x", "centroid_y", "sample", setdiff(names(dt.framed), c("frame_id", "centroid_x", "centroid_y", "sample"))))
-
-
-write.table(dt.framed, args[2], row.names = FALSE,
+write.table(dt.framed[cellcount > CELL_COUNT], args[2], row.names = FALSE,
             quote = FALSE, col.names = FALSE, sep = ",")
