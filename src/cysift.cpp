@@ -75,6 +75,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  count      - Output number of cells in table\n"  
 "  cut        - Select only given markers and metas\n"
 "  clean      - Removes data to decrease disk size\n"
+"  average    - Average all of the data columns\n"  
 "  cat        - Concatenate multiple samples\n"  
 "  subsample  - Subsample cells randomly\n"
 "  plot       - Generate an ASCII style plot\n"
@@ -91,6 +92,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  cereal     - Create a .cys format file from a CSV\n"
 "\n";
 
+static int averagefunc(int argc, char** argv);
 static int cleanfunc(int argc, char** argv);
 static int countfunc(int argc, char** argv);
 static int cerealfunc(int argc, char** argv);
@@ -169,6 +171,8 @@ int main(int argc, char **argv) {
     val = cutfunc(argc, argv);
   } else if (opt::module == "cereal") {
     val = cerealfunc(argc, argv);
+  } else if (opt::module == "average") {
+    val = averagefunc(argc, argv);
   } else if (opt::module == "info") {
     return(infofunc(argc, argv));
   } else if (opt::module == "view") {
@@ -516,6 +520,46 @@ static int cutfunc(int argc, char** argv) {
   return 0;
 }
 
+static int averagefunc(int argc, char** argv) {
+ 
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    default: die = true;
+    }
+  }
+  
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift average [csvfile] <options>\n"
+      "  Calculate the average of each data column\n"
+      "  csvfile: filepath or a '-' to stream to stdin\n"
+      "  -v, --verbose             Increase output to stderr"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // set table params
+  if (opt::verbose)
+    table.SetVerbose();
+
+  AverageProcessor avgp;
+  avgp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);  
+
+  if (table.StreamTable(avgp, opt::infile))
+    return 1; // non-zero status on StreamTable
+
+  // write the one line with the averages
+  avgp.EmitCell();
+  
+  return 0;
+
+  
+}
+
 static int log10func(int argc, char** argv)  {
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -552,6 +596,8 @@ static int log10func(int argc, char** argv)  {
   return 0;
 }
 
+
+
 // parse the command line options
 static void parseRunOptions(int argc, char** argv) {
 
@@ -571,6 +617,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "cat" || opt::module == "cereal" || 
 	 opt::module == "correlate" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
+	 opt::module == "average" || 
 	 opt::module == "spatial" || opt::module == "radialdens" || 
 	 opt::module == "select" || opt::module == "pheno")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
