@@ -97,6 +97,8 @@ public:
   void OutputTable() const;
 
   void SetupOutputWriter(const std::string& file);
+
+  void HDF5Write(const std::string& file) const;
   
  private:
   

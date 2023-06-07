@@ -18,6 +18,8 @@
 #include "cell_column.h"
 #include "cell_row.h"
 
+#include <H5Cpp.h>
+
 /** Format an integer to include commas
  * @param data Number to format
  * @return String with formatted number containing commas
@@ -49,6 +51,7 @@ int get_nth_element_as_integer(const std::string_view& str, size_t n);
 
 std::string exclude_elements(const std::string_view& str, const std::unordered_set<size_t>& exclude_set);
 
+void write_hdf5_dataframe_attributes(H5::Group& group);
 
 enum class ColumnType;
 std::string columnTypeToString(ColumnType type);

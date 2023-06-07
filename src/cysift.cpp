@@ -1,6 +1,7 @@
 #include "cell_column.h"
 #include "cell_table.h"
 #include "cell_processor.h"
+#include "cell_lda.h"
 
 #include <unistd.h> // or #include <getopt.h> on Windows systems
 #include <getopt.h>
@@ -92,6 +93,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  cereal     - Create a .cys format file from a CSV\n"
 "\n";
 
+static int ldafunc(int argc, char** argv);
 static int averagefunc(int argc, char** argv);
 static int cleanfunc(int argc, char** argv);
 static int countfunc(int argc, char** argv);
@@ -149,6 +151,8 @@ int main(int argc, char **argv) {
   // get the module
   if (opt::module == "debug") {
     val = debugfunc(argc, argv);
+  } else if (opt::module == "lda") {
+    val = ldafunc(argc, argv);
   } else if (opt::module == "clean") {
     val = cleanfunc(argc, argv);
   } else if (opt::module == "radialdens") {
@@ -298,6 +302,43 @@ static int knnfunc(int argc, char** argv) {
   table.PrintTable(opt::header);
   
   return 0;
+}
+
+static int ldafunc(int argc, char** argv) {
+
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift lda [csvfile]\n"
+      "  Perform topic-model learning using Latent Dirichlet Allocation\n"
+      "    <file>: filepath or a '-' to stream to stdin\n"
+      "    -v, --verbose             Increase output to stderr\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // stream into memory
+  BuildProcessor buildp;
+  buildp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  table.StreamTable(buildp, opt::infile);
+
+  //
+  std::cerr << "...writing" << std::endl;
+  table.HDF5Write("output.h5");
+  
+  //CellLDA lda_topic;
+  //lda_topic.run();
+  
+  return 0;
+  
 }
 
 static int cleanfunc(int argc, char** argv) {
@@ -617,7 +658,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "cat" || opt::module == "cereal" || 
 	 opt::module == "correlate" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
-	 opt::module == "average" || 
+	 opt::module == "average" || opt::module == "lda" || 
 	 opt::module == "spatial" || opt::module == "radialdens" || 
 	 opt::module == "select" || opt::module == "pheno")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;

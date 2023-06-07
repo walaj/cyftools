@@ -202,3 +202,24 @@ void get_two_elements_as_floats(const std::string_view& str, size_t n, size_t m,
     }
 }
 
+void write_hdf5_dataframe_attributes(H5::Group& group) {
+
+  H5::DataSpace scalar_dataspace(H5S_SCALAR);
+  H5::StrType strdatatype(H5::PredType::C_S1, H5T_VARIABLE);
+    
+  // write the word "_index"
+  H5::Attribute attr = group.createAttribute("_index", strdatatype, scalar_dataspace);
+  const char* temp_cstr1 = "_index";
+  attr.write(strdatatype, &temp_cstr1);
+
+  // write the encoding-type
+  attr = group.createAttribute("encoding-type", strdatatype, scalar_dataspace);
+  const char* temp_cstr2 = "dataframe";
+  attr.write(strdatatype, &temp_cstr2);
+
+  // write the encoding-version
+  attr = group.createAttribute("encoding-version", strdatatype, scalar_dataspace);
+  const char* temp_cstr3 = "0.1.0";
+  attr.write(strdatatype, &temp_cstr3);
+  
+}

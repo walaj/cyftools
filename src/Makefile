@@ -10,7 +10,13 @@ EIGEN = -I$(HOME)/software/eigen-3.4.0
 KMEANS = -I$(HOME)/git/CppKmeans/include
 ANNOY = -I$(HOME)/git/annoy
 CEREAL = -I$(HOME)/software/cereal-1.3.2/include
+LDA = -I$(HOME)/git/supervised-lda/include
+HD5 = -I$(HOME)/software/hdf5-1.14.1/include
 
+LDALIB = -L $(HOME)/git/supervised-lda/lib -lldaplusplus -Wl,-rpath,/Users/jeremiahwala/git/supervised-lda/lib
+HD5LIB = -L $(HOME)/software/hdf5-1.14.1/lib -lhdf5_cpp -lhdf5
+
+# cysift specific parameter
 #USE64BIT=-DUSE_64_BIT
 
 ## set the OMP location
@@ -31,11 +37,12 @@ else
     OPENMP = -fopenmp
 endif
 
-CFLAGS = -O2 -g -std=c++17 $(USE64BIT) $(OPENMP) -I. -I.. $(NETCDF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(EIGEN) $(KMEANS) $(OMP) $(CEREAL) -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
-LDFLAGS = $(OMPL)
+CFLAGS = -O2 -g -std=c++17 $(USE64BIT) $(OPENMP) -I. -I.. $(NETCDF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(EIGEN) $(KMEANS) $(OMP) $(CEREAL) -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY $(LDA) $(HD5)
+LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB)
+#LDFLAGS = $(OMPL) -L /Users/jeremiahwala/git/supervised-lda/lib -lldaplusplus -Wl,-rpath=/Users/jeremiahwala/git/supervised-lda/lib
 
 # Specify the source files
-SRCS = cysift.cpp cell_table.cpp polygon.cpp cell_header.cpp cell_graph.cpp cell_flag.cpp cell_utils.cpp cell_processor.cpp cell_row.cpp
+SRCS = cysift.cpp cell_table.cpp polygon.cpp cell_header.cpp cell_graph.cpp cell_flag.cpp cell_utils.cpp cell_processor.cpp cell_row.cpp cell_lda.cpp
 
 # Specify the object files
 OBJS = $(SRCS:.cpp=.o)

@@ -54,6 +54,8 @@ class CellHeader {
   
   std::vector<Tag> GetMarkerTags() const;
 
+  std::vector<Tag> GetMetaTags() const;
+
   std::vector<Tag> GetAllTags() const { return tags; }
 
   size_t size() const { return tags.size(); }

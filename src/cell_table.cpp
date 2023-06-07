@@ -5,6 +5,8 @@
 #include "cell_table.h"
 #include "cell_graph.h"
 
+#include <H5Cpp.h>
+
 #define CELL_BUFFER_LIMIT 1
 
 static size_t debugr = 0;
@@ -20,6 +22,183 @@ const CellHeader& CellTable::GetHeader() const {
 
 bool CellTable::ContainsColumn(const std::string& name) const {
   return m_table.count(name) > 0;
+}
+
+void CellTable::HDF5Write(const std::string& file) const {
+
+  
+  ///////
+  // VAR (markers)
+  ///////
+  // setup for the "var" data (marker string names)
+  std::vector<std::string> var_strings; // Use this to manage the lifetime of the strings
+  std::vector<const char*> var;
+  for (const auto& t : m_header.GetMarkerTags()) {
+    var_strings.push_back(t.id);
+    if (m_table.find(t.id) == m_table.end())
+      std::cerr << " can't find " << t.id << std::endl;
+  }
+  
+  // Then populate var using the strings in var_strings
+  for (const auto& s : var_strings) {
+    var.push_back(s.c_str());
+  }
+
+  /// DIMS
+  hsize_t var_dims[1] = {var.size()};  
+  hsize_t obs_dims[1] = {CellCount()};
+  hsize_t x_dims[2] = {CellCount(), var_strings.size()}; // Number of rows and columns
+  hsize_t empty_dims[1] = {0};
+  
+  ///////
+  // OBS
+  ///////
+  // setup for the "var" data (marker string names)
+  std::vector<std::string> obs_strings; // Use this to manage the lifetime of the strings
+  std::vector<const char*> obs;
+  obs_strings.push_back("x");
+  obs_strings.push_back("y");
+  obs_strings.push_back("flag");
+  for (const auto& t : m_header.GetMetaTags()) {
+    obs_strings.push_back(t.id);
+    if (m_table.find(t.id) == m_table.end())
+      std::cerr << " can't find " << t.id << std::endl;
+  }
+  
+  // Then populate obs using the strings in obs_strings
+  for (const auto& s : obs_strings) {
+    obs.push_back(s.c_str());
+  }
+
+  ///////
+  // OBS DATA
+  ///////
+  // Convert meta data to contiguous array
+  std::vector<float> flat_data_meta;
+  for (const auto& t : obs_strings) {
+    const auto& ptr = m_table.find(std::string(t));
+    assert(ptr != m_table.end());
+    for (size_t i = 0; i < ptr->second->size(); i++) {
+      flat_data_meta.push_back(ptr->second->GetNumericElem(i));
+    }
+  }
+
+  
+  ///////
+  // X
+  ///////
+  // Convert X data to contiguous array
+  // NOTE that in python, data is read as column major, so we need to do the same here
+  std::vector<float> flat_data;
+  for (const auto& t : var_strings) {
+    const auto& ptr = m_table.find(std::string(t));
+    assert(ptr != m_table.end());
+    for (size_t i = 0; i < ptr->second->size(); i++) {
+      flat_data.push_back(ptr->second->GetNumericElem(i));
+    }
+  }
+
+  ///////
+  // CELL ID
+  ///////
+  // setup for cellid
+  std::vector<const char*> id_data;
+  std::vector<std::unique_ptr<char[]>> unique_id_data;
+  const auto& ptr = m_table.find("id");
+  for (size_t i = 0; i < ptr->second->size(); i++) {
+    std::string str = "cellid_" + std::to_string(static_cast<uint32_t>(ptr->second->GetNumericElem(i)));
+    std::unique_ptr<char[]> cstr(new char[str.length() + 1]);
+    std::strcpy(cstr.get(), str.c_str());
+    id_data.push_back(cstr.get());
+    unique_id_data.push_back(std::move(cstr));
+  }
+
+  //// FILE
+  ///////
+  // just in time setup file output
+  H5::StrType strdatatype(H5::PredType::C_S1, H5T_VARIABLE);  
+  H5::H5File h5file(file, H5F_ACC_TRUNC);
+
+  // setup groups
+  const H5std_string OBS_GROUP_NAME("obs");
+  H5::Group group(h5file.createGroup(OBS_GROUP_NAME));
+
+  const H5std_string VAR_GROUP_NAME("var");
+  H5::Group vargroup(h5file.createGroup(VAR_GROUP_NAME));
+
+  const H5std_string UNS_GROUP_NAME("uns");
+  H5::Group unsgroup(h5file.createGroup(UNS_GROUP_NAME));
+
+  //////
+  // WRITE
+
+  // write obs (float data)
+  assert(obs_strings.size() == obs.size());
+  H5::DataSpace obs_dataspace(1, obs_dims);
+  for (const auto& o : obs_strings) {
+    H5::DataSet obs_dataset(group.createDataSet(o, H5::PredType::NATIVE_FLOAT, obs_dataspace));
+    std::vector<float> odata;
+    const auto ptr = m_table.find(o);
+    odata.reserve(CellCount());
+    for (size_t i = 0; i < CellCount(); i++)
+      odata.push_back(ptr->second->GetNumericElem(i));
+    obs_dataset.write(odata.data(), H5::PredType::NATIVE_FLOAT);
+  }
+
+  // Assume that `obsGroup` is an H5::Group corresponding to the 'obs' group,
+  // and `colName` is a std::string containing the name of your column.
+  //H5::StrType strType(0, H5T_VARIABLE); // 0 means size of the string is variable
+  hsize_t odim[1] = {obs.size()};
+  H5::DataSpace obsnames_dataspace(1, odim);
+  H5::Attribute columnOrderAttribute = group.createAttribute("column-order", strdatatype, obsnames_dataspace);
+  columnOrderAttribute.write(strdatatype, obs.data());
+
+  write_hdf5_dataframe_attributes(group);
+  write_hdf5_dataframe_attributes(vargroup);  
+  
+  // write the _index data for obs
+  H5::DataSet obsnames_dataset(group.createDataSet("_index", strdatatype, obs_dataspace));  
+  obsnames_dataset.write(unique_id_data.data(), strdatatype);
+  
+  // write the _index data va
+  H5::DataSpace var_dataspace(1, var_dims);
+  H5::DataSet varnames_dataset(vargroup.createDataSet("_index", strdatatype, var_dataspace));
+  varnames_dataset.write(var.data(), strdatatype);
+
+  // and the var column order
+  H5::DataSpace empty_dataspace = H5::DataSpace(1, empty_dims);
+  H5::Attribute varcolumnOrderAttribute = vargroup.createAttribute("column-order", strdatatype, empty_dataspace);
+  //varcolumnOrderAttribute.write(strdatatype, var.data());
+  
+  // write obs (index)
+  //H5::DataSet obs_dataset(group.createDataSet("_index", strdatatype, obs_dataspace));
+  //std::vector<const char*> cell_id;
+  //obs_dataset.write(unique_id_data.data(), strdatatype);
+
+  // write uns
+  H5::DataSpace uns_dataspace(1, var_dims);
+  H5::DataSet uns_dataset(unsgroup.createDataSet("all_markers", strdatatype, uns_dataspace));
+  uns_dataset.write(var.data(), strdatatype);
+  
+  /*hsize_t obs_dims[1] = {obs.size()};
+  H5::DataSpace obs_dataspace(1, obs_dims);
+  H5::DataSet obs_dataset = h5file.createDataSet("/obs", strdatatype, obs_dataspace);  
+  obs_dataset.write(obs_data.data(), strdatatype);
+
+  // write obs (numeric)
+  hsize_t obs_data_dims[2] = {CellCount(), obs.size()};
+  H5::DataSpace obs_data_dataspace(1, obs_data_dims);
+  H5::DataSet obs_data_dataset = h5file.createDataSet("/obs_data", H5::PredType::NATIVE_FLOAT, obs_dataspace);
+  obs_data_dataset.write(flat_data_meta.data(), H5::PredType::NATIVE_FLOAT);
+  */
+  
+  // write X (numeric)
+  H5::DataSpace dataspace(2, x_dims);
+  H5::DataSet dataset = h5file.createDataSet("/X", H5::PredType::NATIVE_FLOAT, dataspace);
+  dataset.write(flat_data.data(), H5::PredType::NATIVE_FLOAT);
+
+  h5file.close();
+  
 }
 
 std::ostream& operator<<(std::ostream& os, const CellTable& table) {

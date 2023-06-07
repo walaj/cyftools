@@ -107,6 +107,18 @@ std::vector<Tag> CellHeader::GetMarkerTags() const {
   return marker_tags;
 }
 
+std::vector<Tag> CellHeader::GetMetaTags() const {
+
+  // return only tags that hold meta data
+  std::vector<Tag> meta_tags;
+  for (const auto& t : tags)
+    if (t.type == Tag::CA_TAG)
+      meta_tags.push_back(t);
+  
+  return meta_tags;
+}
+
+
 /*const Tag& CellHeader::GetDataTag(int i) const {
   assert(i < data_tags.size());
   return data_tags.at(i);
