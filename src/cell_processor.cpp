@@ -83,7 +83,7 @@ void AverageProcessor::EmitCell() const {
 int SelectProcessor::ProcessLine(Cell& cell) {
 
   // get the flag value from the line
-  CellFlag flag(cell.m_flag);
+  CellFlag flag(cell.m_pheno_flag);
   
   // test it and print line if so
   bool flags_met = flag.testAndOr(m_or, m_and);
@@ -505,7 +505,7 @@ int PhenoProcessor::ProcessLine(Cell& cell) {
   }
 
   // convert to cy_uint for storage
-  cell.m_flag = flag.toBase10();
+  cell.m_pheno_flag = flag.toBase10();
   
   return 1;
 }

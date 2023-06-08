@@ -11,6 +11,8 @@
 #include <cereal/types/vector.hpp>
 #include <cereal/archives/portable_binary.hpp>
 
+#include "KDTree.hpp"
+
 class CellTable {
   
 public:
@@ -42,6 +44,8 @@ public:
   void SetHeaderOnly() { m_header_only = true; }
   
   IntColPtr GetIDColumn() const;
+
+  void BuildKDTree();
   
   friend std::ostream& operator<<(std::ostream& os, const CellTable& table);
   
@@ -96,6 +100,11 @@ public:
 
   void OutputTable() const;
 
+  int RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
+		      std::vector<cy_uint> logor, std::vector<cy_uint> logand,
+		      std::vector<std::string> label);
+
+  
   void SetupOutputWriter(const std::string& file);
 
   void HDF5Write(const std::string& file) const;
@@ -109,6 +118,8 @@ public:
 
   CellHeader m_header;
 
+  KDTree m_kdtree;
+  
   // for verbose
   size_t m_count = 0;
   

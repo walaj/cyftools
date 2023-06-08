@@ -51,6 +51,8 @@ int get_nth_element_as_integer(const std::string_view& str, size_t n);
 
 std::string exclude_elements(const std::string_view& str, const std::unordered_set<size_t>& exclude_set);
 
+float euclidean_distance(float x1, float y1, float x2, float y2);
+
 void write_hdf5_dataframe_attributes(H5::Group& group);
 
 enum class ColumnType;

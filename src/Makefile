@@ -12,9 +12,11 @@ ANNOY = -I$(HOME)/git/annoy
 CEREAL = -I$(HOME)/software/cereal-1.3.2/include
 LDA = -I$(HOME)/git/supervised-lda/include
 HD5 = -I$(HOME)/software/hdf5-1.14.1/include
+KDTREE = -I$(HOME)/git/KDTree
 
 LDALIB = -L $(HOME)/git/supervised-lda/lib -lldaplusplus -Wl,-rpath,/Users/jeremiahwala/git/supervised-lda/lib
 HD5LIB = -L $(HOME)/software/hdf5-1.14.1/lib -lhdf5_cpp -lhdf5
+KDLIB = -L $(HOME)/git/KDTree/lib -lKDTree -Wl,-rpath,$(HOME)/git/KDTree/lib
 
 # cysift specific parameter
 #USE64BIT=-DUSE_64_BIT
@@ -37,8 +39,8 @@ else
     OPENMP = -fopenmp
 endif
 
-CFLAGS = -O2 -g -std=c++17 $(USE64BIT) $(OPENMP) -I. -I.. $(NETCDF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(EIGEN) $(KMEANS) $(OMP) $(CEREAL) -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY $(LDA) $(HD5)
-LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB)
+CFLAGS = -O2 -g -std=c++17 $(USE64BIT) $(OPENMP) -I. -I.. $(NETCDF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(EIGEN) $(KMEANS) $(OMP) $(CEREAL) -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY $(LDA) $(HD5) $(KDTREE)
+LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB) $(KDLIB)
 #LDFLAGS = $(OMPL) -L /Users/jeremiahwala/git/supervised-lda/lib -lldaplusplus -Wl,-rpath=/Users/jeremiahwala/git/supervised-lda/lib
 
 # Specify the source files

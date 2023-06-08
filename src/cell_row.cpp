@@ -4,7 +4,8 @@
 
 std::ostream& operator<<(std::ostream& os, const Cell& cell) {
     os << cell.m_id << "\t"
-       << cell.m_flag << "\t"
+       << cell.m_cell_flag << "\t"
+       << cell.m_pheno_flag << "\t"      
        << cell.m_x << "\t"
        << cell.m_y << "\t";
 
@@ -22,7 +23,7 @@ void Cell::Print(int round) const {
 
   char d = ',';
   
-  std::cout << m_id << d << m_flag << d;
+  std::cout << m_id << d << m_cell_flag << d << m_pheno_flag << d;
   std::cout << std::setprecision(round) << m_x << d <<
     m_y;
 
@@ -56,7 +57,8 @@ Cell::Cell(const std::string& row, const CellHeader& header) {
     throw std::runtime_error("CSV file should have at least three columns: id, x, y");
   }
 
-  m_flag = 0;
+  m_pheno_flag = 0;
+  m_cell_flag = 0;  
   
   // assume the first entry is cellid
   m_id = std::stoi(tokens.at(0));

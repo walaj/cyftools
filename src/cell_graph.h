@@ -54,6 +54,23 @@ class CellNode {
     }
   }
 
+  void FillSparseFormat(std::vector<cy_uint>& ids, std::vector<cy_uint>& dist,
+			std::vector<cy_uint>& flag) const {
+    
+    ids.reserve(neighbors_.size());
+    dist.reserve(neighbors_.size());
+    flag.reserve(neighbors_.size());
+
+    size_t i = 0;
+    for (const auto& n : neighbors_) {
+      ids.push_back(n.first);
+      dist.push_back(n.second);
+      dist.push_back(m_flags.at(i));
+      i++;
+    }
+  }
+
+  
  private:
   Neighbors neighbors_;
 

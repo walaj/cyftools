@@ -87,6 +87,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  info       - Display information about the dataset"
 "  knn        - Construct the marker space KNN graph\n"
 "  spatial    - Construct the spatial KNN graph\n"
+"  tumor      - Set the tumor flag\n"
 "  select     - Select by cell phenotype flags\n"
 "  pheno      - Phenotype cells to set the flag\n"
 "  radialdens - Calculate density of cells within a radius\n"
@@ -1007,7 +1008,7 @@ static int spatialfunc(int argc, char** argv) {
     return 1;
   
   table.SetupOutputWriter(opt::outfile);
-  
+
   table.KNN_spatial(n, d);
 
   //table.PrintTable(opt::header);
@@ -1182,18 +1183,19 @@ static int radialdensfunc(int argc, char** argv) {
     }
   }
 
-  /////// NEW WAY
+  
+  // streaming way
   RadialProcessor radp;
   radp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  
+
+  std::vector<cy_uint> innerV(rsv.size());
+  std::vector<cy_uint> outerV(rsv.size());  
+  std::vector<cy_uint> logorV(rsv.size());
+  std::vector<cy_uint> logandV(rsv.size());  
+  std::vector<std::string> labelV(rsv.size());
   if (rsv.empty()) {
     radp.SetParams({inner},{outer},{logor},{logand},{label});
   } else {
-    std::vector<cy_uint> innerV(rsv.size());
-    std::vector<cy_uint> outerV(rsv.size());  
-    std::vector<cy_uint> logorV(rsv.size());
-    std::vector<cy_uint> logandV(rsv.size());  
-    std::vector<std::string> labelV(rsv.size());
     for (size_t i = 0; i < innerV.size(); i++) {
       innerV[i] = rsv.at(i).int_data.at(0);
       outerV[i] = rsv.at(i).int_data.at(1);
@@ -1204,6 +1206,17 @@ static int radialdensfunc(int argc, char** argv) {
     radp.SetParams(innerV, outerV, logorV, logandV, labelV);
   }
 
+  // building way
+  build_table();
+
+  table.SetupOutputWriter(opt::outfile);
+  
+  table.RadialDensityKD(innerV, outerV, logorV, logandV, labelV);
+
+  table.OutputTable();
+  
+  return 0;
+  
   if (table.StreamTable(radp, opt::infile))
     return 1; // non-zero exit from StreamTable
 

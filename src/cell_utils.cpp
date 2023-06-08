@@ -223,3 +223,9 @@ void write_hdf5_dataframe_attributes(H5::Group& group) {
   attr.write(strdatatype, &temp_cstr3);
   
 }
+
+float euclidean_distance(float x1, float y1, float x2, float y2) {
+    float dx = x2 - x1;
+    float dy = y2 - y1;
+    return std::sqrt(dx*dx + dy*dy);
+}
