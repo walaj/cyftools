@@ -17,6 +17,8 @@ class CellProcessor {
   static const int NO_WRITE_CELL = 0;
   static const int WRITE_CELL = 1;
   static const int SAVE_CELL = 2;
+  static const int SAVE_NODATA_CELL = 3;
+  static const int SAVE_NODATA_NOGRAPH_CELL = 4;  
   static const int WRITE_HEADER = 0;
   static const int ONLY_WRITE_HEADER = 1;
   static const int SAVE_HEADER = 2;

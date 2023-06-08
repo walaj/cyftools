@@ -226,7 +226,7 @@ std::ostream& operator<<(std::ostream& os, const CellTable& table) {
   return os;
 }
 
-void CellTable::add_cell_to_table(const Cell& cell) {
+void CellTable::add_cell_to_table(const Cell& cell, bool nodata, bool nograph) {
 
   // add fixed data
   static_cast<IntCol*>(m_table["id"].get())->PushElem(cell.m_id);
@@ -236,15 +236,19 @@ void CellTable::add_cell_to_table(const Cell& cell) {
   static_cast<FloatCol*>(m_table["y"].get())->PushElem(cell.m_y);
 
   // add the info data
-  size_t i = 0;
-  for (const auto& t : m_header.GetDataTags()) {
-    static_cast<FloatCol*>(m_table[t.id].get())->PushElem(cell.m_cols.at(i));
-    i++;
+  if (!nodata) {
+    size_t i = 0;
+    for (const auto& t : m_header.GetDataTags()) {
+      static_cast<FloatCol*>(m_table[t.id].get())->PushElem(cell.m_cols.at(i));
+      i++;
+    }
   }
-
+  
   // add the graph data
-  CellNode node(cell.m_spatial_ids, cell.m_spatial_dist);
-  static_cast<GraphColumn*>(m_table["spat"].get())->PushElem(node);
+  if (!nograph) {
+    CellNode node(cell.m_spatial_ids, cell.m_spatial_dist);
+    static_cast<GraphColumn*>(m_table["spat"].get())->PushElem(node);
+  }
   
 }
 
@@ -1142,7 +1146,13 @@ int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
       proc.OutputLine(cell);
     } else if (val == CellProcessor::SAVE_CELL) {
       build_table_memory = true;
-      add_cell_to_table(cell);
+      add_cell_to_table(cell, false, false);
+    } else if (val == CellProcessor::SAVE_NODATA_CELL) {
+      build_table_memory = true;
+      add_cell_to_table(cell, true, false);
+    } else if (val == CellProcessor::SAVE_NODATA_NOGRAPH_CELL) {
+      build_table_memory = true;
+      add_cell_to_table(cell, true, true);
     } else if (val == CellProcessor::NO_WRITE_CELL) {
       ; // do nothing
     } else {
@@ -1264,9 +1274,6 @@ void CellTable::BuildKDTree() {
   for (size_t i = 0; i < CellCount(); i++) {
     points.push_back({ x_ptr->second->GetNumericElem(i), y_ptr->second->GetNumericElem(i)});
   }
-
-  if (m_verbose || true)
-    std::cerr << "...build the tree" << std::endl;
   
   m_kdtree = KDTree(points);
 
@@ -1530,7 +1537,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
 
     // this will be inclusive of this point
     std::vector<size_t> inds = m_kdtree.neighborhood_indices(pt, max_radius);
-
+    
     // loop the nodes connected to each cell
     for (const auto& n : inds) {
 

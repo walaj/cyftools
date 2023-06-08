@@ -136,7 +136,7 @@ public:
 
   void initialize_cols();
   
-  void add_cell_to_table(const Cell& cell);
+  void add_cell_to_table(const Cell& cell, bool nodata, bool nograph);
 
   void print_correlation_matrix(const std::vector<std::pair<std::string, const ColPtr>>& data,
 				const std::vector<std::vector<float>>& correlation_matrix, bool sort) const;
