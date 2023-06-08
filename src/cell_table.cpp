@@ -668,16 +668,12 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint flag, cy_uint d
   umappp::NeighborList<float> output(nobs);
 
   if (m_verbose)
-    std::cerr << "...building KNN (spatial) graph" << std::endl;
+    std::cerr << "...building KNN (spatial) graph with " <<
+      num_neighbors << " nearest neigbors and dist limit " << dist << std::endl;
 
   // store the final graph
   auto graph = std::make_shared<GraphColumn>();
   graph->resize(nobs);
-
-  // track number of cases where all N nearest neighbors are within the
-  // distance cutoff, implying that there are likely additional cells within
-  // the desired radius that are cutoff
-  size_t lost_cell = 0;
   
   // initialize the tree. Can choose from different algorithms, per knncolle library
   //knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());
@@ -697,30 +693,6 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint flag, cy_uint d
     
     CellNode node;
     
-    // remove less than distance
-    if (dist > 0) {
-      
-      size_t osize = neigh.size();
-      Neighbors neigh_trim;
-      for (const auto& nnn : neigh) {
-	if (nnn.second < dist)
-	  neigh_trim.push_back(nnn);
-      }
-      
-      // print a warning if we trimmed off too many neighbors
-      if (osize == neigh_trim.size()) {  
-#pragma omp critical
-	{
-	  lost_cell++;
-	  if (lost_cell % 500 == 0)
-	    std::cerr << "osize " << osize << " Lost cell " << AddCommas(lost_cell) << " of " << AddCommas(nobs) << std::endl;
-	}
-      }
-      
-      neigh = neigh_trim;
-
-    }
-
     // add the pheno flags
     std::vector<cy_uint> pflag_vec(neigh.size());
     for (size_t j = 0; j < neigh.size(); j++) {
@@ -745,7 +717,7 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint flag, cy_uint d
     }
     if (tumor_cell_count / static_cast<float>(node.size()) >= frac)
       static_cast<IntCol*>(cflag_ptr.get())->SetNumericElem(1, i);
-    
+
   }// end for
 
   
