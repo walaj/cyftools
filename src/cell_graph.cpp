@@ -11,6 +11,35 @@ CellNode::CellNode(const Neighbors& neighbors,
   
 }
 
+void CellNode::sort_ascending_distance() {
+  
+  // Check if neighborhood and m_flags have the same size
+  if (neighbors_.size() != m_flags.size()) {
+    throw std::runtime_error("neighborhood and m_flags must have the same size");
+  }
+
+  // Create a vector of indices
+  std::vector<size_t> indices(neighbors_.size());
+  for (size_t i = 0; i != indices.size(); ++i) {
+    indices[i] = i;
+  }
+  
+  // Sort the indices based on the values in the neighbors_ vector
+  std::sort(indices.begin(), indices.end(),
+	    [this](size_t i1, size_t i2) {
+	      return neighbors_[i1].second < neighbors_[i2].second;
+	    }
+	    );
+  
+  // Use the sorted indices to reorder the neighbors_ and m_flags vectors
+  std::vector<umappp::Neighbor<float>> temp_neighbors_ = neighbors_;
+  std::vector<cy_uint> temp_m_flags = m_flags;
+  for (size_t i = 0; i != indices.size(); ++i) {
+    neighbors_[i] = temp_neighbors_[indices[i]];
+    m_flags[i] = temp_m_flags[indices[i]];
+  }
+  
+}
 
 CellNode::CellNode(const std::vector<uint32_t>& ids,
 		   const std::vector<uint32_t>& dist,

@@ -57,7 +57,8 @@ void CellTable::HDF5Write(const std::string& file) const {
   std::vector<const char*> obs;
   obs_strings.push_back("x");
   obs_strings.push_back("y");
-  obs_strings.push_back("flag");
+  obs_strings.push_back("cflag");
+  obs_strings.push_back("pflag");  
   for (const auto& t : m_header.GetMetaTags()) {
     obs_strings.push_back(t.id);
     if (m_table.find(t.id) == m_table.end())
@@ -203,7 +204,8 @@ void CellTable::HDF5Write(const std::string& file) const {
 std::ostream& operator<<(std::ostream& os, const CellTable& table) {
 
   os << "CellID -- " << table.m_table.at("id")->toString() << std::endl;
-  os << "Flag -- "   << table.m_table.at("flag")->toString() << std::endl;
+  os << "Pheno Flag -- "   << table.m_table.at("pflag")->toString() << std::endl;
+  os << "Cell Flag -- "   << table.m_table.at("cflag")->toString() << std::endl;  
   os << "X -- "      << table.m_table.at("x")->toString() << std::endl;
   os << "Y -- "      << table.m_table.at("y")->toString() << std::endl;      
   
@@ -620,7 +622,131 @@ void CellTable::SubsetROI(const std::vector<Polygon> &polygons) {
     }
   }
 }
- 
+
+void CellTable::TumorCall(int num_neighbors, float frac, cy_uint flag, cy_uint dist) {
+
+  // number of cells
+  int nobs = CellCount();
+  
+  if (m_verbose)
+    std::cerr << "...finding K nearest-neighbors (spatial) on " << AddCommas(nobs) << " cells" << std::endl;
+  
+  // column major the coordinate data
+  std::vector<float> concatenated_data;
+  
+  const int ndim = 2;
+  
+  auto x_ptr = m_table.at("x");
+  auto y_ptr = m_table.at("y");
+  auto pflag_ptr = m_table.at("pflag");
+  auto cflag_ptr = m_table.at("cflag");
+  
+  const auto& x_data = std::dynamic_pointer_cast<FloatCol>(x_ptr)->getData(); // just a ptr, not a copy
+  if (m_verbose) 
+    std::cerr << "...adding " << AddCommas(x_data.size()) << " points on x" << std::endl;
+  concatenated_data.insert(concatenated_data.end(), x_data.begin(), x_data.end());
+  
+  const auto& y_data = std::dynamic_pointer_cast<FloatCol>(y_ptr)->getData();
+  if (m_verbose) 
+    std::cerr << "...adding " << AddCommas(y_data.size()) << " points on y" << std::endl;
+   concatenated_data.insert(concatenated_data.end(), y_data.begin(), y_data.end());
+   
+   // convert to row major?
+   column_to_row_major(concatenated_data, nobs, ndim);
+   
+   // get the cell id colums
+   //auto id_ptr = GetIDColumn();
+   auto id_ptr = m_table.at("id");
+   
+   if (m_verbose)
+     std::cerr << "...setting up KNN graph (spatial) on " << AddCommas(nobs) << " points" << std::endl;
+   
+  umappp::NeighborList<float> output(nobs);
+
+  if (m_verbose)
+    std::cerr << "...building KNN (spatial) graph" << std::endl;
+
+  // store the final graph
+  auto graph = std::make_shared<GraphColumn>();
+  graph->resize(nobs);
+
+  // track number of cases where all N nearest neighbors are within the
+  // distance cutoff, implying that there are likely additional cells within
+  // the desired radius that are cutoff
+  size_t lost_cell = 0;
+  
+  // initialize the tree. Can choose from different algorithms, per knncolle library
+  //knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());
+  //knncolle::AnnoyEuclidean<int, float> searcher(ndim, nobs, concatenated_data.data());
+  knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());  
+  
+  for (size_t i = 0; i < nobs; ++i) {
+    
+    // verbose printing
+    if (i % 50000 == 0 && m_verbose)
+      std::cerr << "...working on cell " <<
+	AddCommas(i) << " with thread " <<
+	omp_get_thread_num() << " K " << num_neighbors << " Dist: " << dist <<
+	std::endl;
+    
+    Neighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
+    
+    CellNode node;
+    
+    // remove less than distance
+    if (dist > 0) {
+      
+      size_t osize = neigh.size();
+      Neighbors neigh_trim;
+      for (const auto& nnn : neigh) {
+	if (nnn.second < dist)
+	  neigh_trim.push_back(nnn);
+      }
+      
+      // print a warning if we trimmed off too many neighbors
+      if (osize == neigh_trim.size()) {  
+#pragma omp critical
+	{
+	  lost_cell++;
+	  if (lost_cell % 500 == 0)
+	    std::cerr << "osize " << osize << " Lost cell " << AddCommas(lost_cell) << " of " << AddCommas(nobs) << std::endl;
+	}
+      }
+      
+      neigh = neigh_trim;
+
+    }
+
+    // add the pheno flags
+    std::vector<cy_uint> pflag_vec(neigh.size());
+    for (size_t j = 0; j < neigh.size(); j++) {
+      pflag_vec[j] = static_cast<IntCol*>(pflag_ptr.get())->GetNumericElem(neigh.at(j).first);
+    }
+
+    assert(pflag_vec.size() == neigh.size());
+    
+    // Now, set the node pointer to CellID rather than 0-based
+    for (auto& cc : neigh) {
+      cc.first = id_ptr->GetNumericElem(cc.first);
+    }
+    node = CellNode(neigh, pflag_vec);
+
+    // finally do tumor stuff
+    node.sort_ascending_distance();
+    float tumor_cell_count = 0;
+    for (size_t j = 0; j < node.size(); j++) {
+      CellFlag cellflag(node.m_flags.at(j));
+      if (cellflag.testAndOr(flag, 0))
+	tumor_cell_count++;
+    }
+    if (tumor_cell_count / static_cast<float>(node.size()) >= frac)
+      static_cast<IntCol*>(cflag_ptr.get())->SetNumericElem(1, i);
+    
+  }// end for
+
+  
+}
+
 void CellTable::KNN_spatial(int num_neighbors, int dist) {
   
   // number of cells
@@ -929,7 +1055,8 @@ void CellTable::initialize_cols() {
 
   // initialize cell id
   m_table["id"] = std::make_shared<IntCol>();
-  m_table["flag"] = std::make_shared<IntCol>();  
+  m_table["pflag"] = std::make_shared<IntCol>();
+  m_table["cflag"] = std::make_shared<IntCol>();    
   m_table["x"] = std::make_shared<FloatCol>();
   m_table["y"] = std::make_shared<FloatCol>();
 
@@ -1180,7 +1307,7 @@ int CellTable::RadialDensity(std::vector<cy_uint> inner, std::vector<cy_uint> ou
   }
 
   // get the flag column
-  shared_ptr<IntCol> fc = std::dynamic_pointer_cast<IntCol>(m_table["flag"]);
+  shared_ptr<IntCol> fc = std::dynamic_pointer_cast<IntCol>(m_table["pflag"]);
   assert(fc);
   assert(fc->size());
 
@@ -1333,7 +1460,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   }
 
   // get the flag column
-  shared_ptr<IntCol> fc = std::dynamic_pointer_cast<IntCol>(m_table["flag"]);
+  shared_ptr<IntCol> fc = std::dynamic_pointer_cast<IntCol>(m_table["pflag"]);
   assert(fc);
   assert(fc->size());
 

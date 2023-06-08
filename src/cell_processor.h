@@ -179,6 +179,30 @@ class PhenoProcessor : public CellProcessor {
 
 };
 
+// Tumor processor
+class TumorProcessor : public CellProcessor {
+  
+ public:
+  
+  void SetParams(int n, cy_uint flag, float frac) {
+    m_n = n;
+    m_flag = flag;
+    m_frac = frac;
+  }
+  
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+  
+ private:
+
+  int m_n;
+  cy_uint m_flag;
+  float m_frac;
+ 
+};
+
+
 // Count processor
 class CountProcessor : public CellProcessor {
   

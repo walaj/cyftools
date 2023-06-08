@@ -70,8 +70,9 @@ class CellNode {
     }
   }
 
+  void sort_ascending_distance();
   
- private:
+  //private:
   Neighbors neighbors_;
 
   // vector of flags of neighbors. Must be length 0

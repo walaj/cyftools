@@ -94,6 +94,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  cereal     - Create a .cys format file from a CSV\n"
 "\n";
 
+static int tumorfunc(int argc, char** argv);
 static int ldafunc(int argc, char** argv);
 static int averagefunc(int argc, char** argv);
 static int cleanfunc(int argc, char** argv);
@@ -172,6 +173,8 @@ int main(int argc, char **argv) {
     return(histogramfunc(argc, argv));
   } else if (opt::module == "log10") {
     return(log10func(argc, argv));
+  } else if (opt::module == "tumor") {
+    return(tumorfunc(argc, argv));
   } else if (opt::module == "cut") {
     val = cutfunc(argc, argv);
   } else if (opt::module == "cereal") {
@@ -599,6 +602,53 @@ static int averagefunc(int argc, char** argv) {
   
   return 0;
 
+}
+
+static int tumorfunc(int argc, char** argv) {
+
+  int n = 20;
+  float frac = 0.75;
+  int flag = 0;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'k' : arg >> n; break;
+    case 'f' : arg >> frac; break;
+    case 'd' : arg >> flag; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+  
+    const char *USAGE_MESSAGE =
+      "Usage: cysift tumor [csvfile]\n"
+      "  Set the flag on whether a cell is in the tumor region\n"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -k [20]               Number of neighbors\n"
+      "    -f [0.75]             Fraction of neighbors\n"
+      "    -d                    Flag on for tumor (or)\n"
+      "    -v, --verbose         Increase output to stderr\n"      
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  build_table();
+
+  // no table to work with
+  if (!table.size())
+    return 1;
+  
+  table.SetupOutputWriter(opt::outfile);
+
+  table.TumorCall(n, frac, flag, 600);
+
+  table.OutputTable();
+
+  return 0;
+
   
 }
 
@@ -656,6 +706,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "histogram" || opt::module == "log10" ||
 	 opt::module == "crop"  || opt::module == "knn" ||
 	 opt::module == "count" || opt::module == "clean" ||
+	 opt::module == "tumor" || 
 	 opt::module == "cat" || opt::module == "cereal" || 
 	 opt::module == "correlate" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||

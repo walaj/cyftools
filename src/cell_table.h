@@ -101,13 +101,15 @@ public:
   void OutputTable() const;
 
   int RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
-		      std::vector<cy_uint> logor, std::vector<cy_uint> logand,
+			     std::vector<cy_uint> logor, std::vector<cy_uint> logand,
 		      std::vector<std::string> label);
 
   
   void SetupOutputWriter(const std::string& file);
 
   void HDF5Write(const std::string& file) const;
+
+  void TumorCall(int num_neighbors, float frac, cy_uint flag, cy_uint dist);
   
  private:
   

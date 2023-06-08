@@ -431,6 +431,33 @@ int ROIProcessor::ProcessLine(Cell& cell) {
   
 }
 
+int TumorProcessor::ProcessHeader(CellHeader& header) {
+  
+  m_header = header;
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+
+  // just in time output, so as not to write an empty file if the input crashes
+  // set the output to file or stdout
+  this->SetupOutputStream(); 
+  
+  m_header.SortTags();
+
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+
+}
+
+int TumorProcessor::ProcessLine(Cell& cell) {
+
+  // make a copy of the cell for output
+  Cell cell_new = cell;
+
+  assert(cell.m_spatial_ids.size() == cell.m_spatial_flags.size());
+  assert(cell.m_spatial_ids.size() == cell.m_spatial_dist.size());
+  
+}
+
 int PhenoProcessor::ProcessHeader(CellHeader& header) {
 
   m_header = header;
