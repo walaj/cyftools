@@ -14,7 +14,7 @@ LDA = -I$(HOME)/git/supervised-lda/include
 HD5 = -I$(HOME)/software/hdf5-1.14.1/include
 KDTREE = -I$(HOME)/git/KDTree
 
-LDALIB = -L $(HOME)/git/supervised-lda/lib -lldaplusplus -Wl,-rpath,/Users/jeremiahwala/git/supervised-lda/lib
+LDALIB = -L $(HOME)/git/supervised-lda/lib -lldaplusplus -Wl,-rpath,$(HOME)/git/supervised-lda/lib
 HD5LIB = -L $(HOME)/software/hdf5-1.14.1/lib -lhdf5_cpp -lhdf5
 KDLIB = -L $(HOME)/git/KDTree/lib -lKDTree -Wl,-rpath,$(HOME)/git/KDTree/lib
 
