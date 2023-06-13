@@ -98,7 +98,7 @@ public:
 
   int StreamTable(CellProcessor& proc, const std::string& file);
 
-  void OutputTable() const;
+  void OutputTable();
 
   int RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
 			     std::vector<cy_uint> logor, std::vector<cy_uint> logand,

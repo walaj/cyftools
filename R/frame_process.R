@@ -4,8 +4,8 @@ options(scipen=999)
 
 DEBUG=FALSE
 CELL_COUNT <- 10
-radcols=c("CD31_200r","CD45_200r","CD68_200r","CD4_200r","FOXP3_200r","CD8_200r","CD20_200r","PD_L1_200r","CD3_200r","CD163_200r","Ecad_200r","PD1_200r","PanCK_200r","SMA_200r")
-frame_size <- 400
+radcols=c("CD31_100r","CD45_100r","CD68_100r","CD4_100r","FOXP3_100r","CD8_100r","CD20_100r","PD_L1_100r","CD3_100r","CD163_100r","Ecad_100r","PD1_100r","PanCK_100r","SMA_100r")
+frame_size <- 300
 
 # get command line arguments
 args <- commandArgs(trailingOnly = TRUE)
@@ -48,7 +48,7 @@ setnames(dth, c("V1","V2"),c("tag","id"))
 # data read
 cat("...reading data\n")
 dt  <- fread(cmd=paste("cysift view", cysfile),header=FALSE)
-setnames(dt, paste0("V",seq(ncol(dt))), c("cellid","flag","x","y",dth$id))
+setnames(dt, paste0("V",seq(ncol(dt))), c("cellid","cell_flag","pheno_flag","x","y",dth$id))
 #radcols <- dth$id[seq(from=which(dth$id=="Orientation")+1, to=ncol(dt)-4)]
 dt_rad <- dt[rowSums(dt != 0) > 0]
 

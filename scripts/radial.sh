@@ -22,5 +22,5 @@ else
     #echo "... running: gunzip -c $input_file | cysift radialdens - - -f ${RAD} | cysift clean - -G $output_file    "
     #gunzip -c $input_file | cysift radialdens - - -f ${RAD} | cysift clean - -G $output_file
     echo "... running: cysift radialdens $input_file -f ${RAD} $output_file"
-    cysift radialdens $input_file -f ${RAD} $output_file
+    cysift radialdens $input_file -f ${RAD} $output_file -v
 fi

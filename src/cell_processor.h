@@ -228,10 +228,15 @@ class SelectProcessor : public CellProcessor {
   
  public:
 
-  void SetParams(cy_uint logor, cy_uint logand, bool lognot) {
-    m_or = logor;
-    m_and = logand;
-    m_not = lognot;
+  void SetParams(cy_uint plogor, cy_uint plogand, bool plognot,
+		 cy_uint clogor, cy_uint clogand, bool clognot) {
+    m_por   = plogor;
+    m_pand  = plogand;
+    m_pnot  = plognot;
+    m_cor  = clogor;
+    m_cand = clogand;
+    m_cnot = clognot;
+    
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -241,13 +246,16 @@ class SelectProcessor : public CellProcessor {
  private:
 
   // or flags
-  cy_uint m_or;
-
+  cy_uint m_por;
+  cy_uint m_cor;
+  
   // and flags
-  cy_uint m_and;
+  cy_uint m_pand;
+  cy_uint m_cand;  
 
   // should we NOT the output
-  bool m_not;
+  bool m_pnot;
+  bool m_cnot;  
   
 };
 

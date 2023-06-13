@@ -83,15 +83,22 @@ void AverageProcessor::EmitCell() const {
 int SelectProcessor::ProcessLine(Cell& cell) {
 
   // get the flag value from the line
-  CellFlag flag(cell.m_pheno_flag);
+  CellFlag pflag(cell.m_pheno_flag);
+  CellFlag cflag(cell.m_cell_flag);  
   
   // test it and print line if so
-  bool flags_met = flag.testAndOr(m_or, m_and);
+  bool pflags_met = pflag.testAndOr(m_por, m_pand);
+  bool cflags_met = cflag.testAndOr(m_cor, m_cand);  
 
+  //std::cerr << "m_por " << m_por << " m_pand " << m_pand << " pflag " << pflag << " test " << pflags_met << " m_pnot " << m_pnot << std::endl;
+  //std::cerr << "m_cor " << m_cor << " m_cand " << m_cand << " cflag " << cflag << " test " << cflags_met << " m_cnot " << m_cnot << std::endl;  
+  
   // if flags met, print the cell
-  if (flags_met != m_not)
+  if ( (pflags_met != m_pnot) && (cflags_met != m_cnot)) {
+    //std::cerr << " writing cell " << std::endl;
     return CellProcessor::WRITE_CELL;
-
+  }
+  
   return CellProcessor::NO_WRITE_CELL; // don't write if not selected
 }
 

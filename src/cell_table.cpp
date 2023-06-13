@@ -372,9 +372,11 @@ void CellTable::SetupOutputWriter(const std::string& file) {
   
 }
 
-void CellTable::OutputTable() const {
+void CellTable::OutputTable() {
 
   assert(m_archive);
+
+  m_header.SortTags();
   
   // archive the header
   (*m_archive)(m_header);

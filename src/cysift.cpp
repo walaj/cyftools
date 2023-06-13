@@ -53,7 +53,7 @@ static CellTable table;
 
 static void build_table();
 
-static const char* shortopts = "jhHNyvmMGAr:t:a:d:g:b:c:s:k:n:r:w:l:x:X:o:R:f:";
+static const char* shortopts = "jhHNyvmMGPr:t:a:A:O:d:g:b:c:s:k:n:r:w:l:x:X:o:R:f:";
 static const struct option longopts[] = {
   { "verbose",                    no_argument, NULL, 'v' },
   { "threads",                    required_argument, NULL, 't' },
@@ -357,7 +357,7 @@ static int cleanfunc(int argc, char** argv) {
     case 'm' : clean_markers = true; break;
     case 'M' : clean_meta = true; break;
     case 'G' : clean_graph = true; break;
-    case 'A' : clean_graph = true; clean_markers = true; clean_meta = true; break;      
+    case 'P' : clean_graph = true; clean_markers = true; clean_meta = true; break;      
     default: die = true;
     }
   }
@@ -370,7 +370,7 @@ static int cleanfunc(int argc, char** argv) {
       "    <file>: filepath or a '-' to stream to stdin\n"
       "    -m,          Remove all marker data\n"
       "    -M,          Remove all meta data\n"
-      "    -G,          Remove all graph data\n"      
+      "    -P,          Remove all graph data\n"      
       "    -A,          Remove all data\n"      
       "    -v, --verbose             Increase output to stderr\n";
     std::cerr << USAGE_MESSAGE;
@@ -1069,17 +1069,24 @@ static int spatialfunc(int argc, char** argv) {
 
 static int selectfunc(int argc, char** argv) {
 
-  cy_uint logor = 0;
-  cy_uint logand = 0;
-  bool lognot = false;
+  cy_uint plogor = 0;
+  cy_uint plogand = 0;
+  bool plognot = false;
+
+  cy_uint clogor = 0;
+  cy_uint clogand = 0;
+  bool clognot = false;
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'o' : arg >> logor; break;
-    case 'a' : arg >> logand; break;
-    case 'N' : lognot = true; break;      
+    case 'o' : arg >> plogor; break;
+    case 'a' : arg >> plogand; break;
+    case 'N' : plognot = true; break;
+    case 'O' : arg >> clogor; break;
+    case 'A' : arg >> clogand; break;
+    case 'M' : clognot = true; break;      
     default: die = true;
     }
   }
@@ -1090,9 +1097,12 @@ static int selectfunc(int argc, char** argv) {
       "Usage: cysift select [csvfile]\n"
       "  Select cells by phenotype flag\n"
       "    csvfile: filepath or a '-' to stream to stdin\n"
-      "    -o                    Logical OR flags\n"
-      "    -a                    Logical AND flags\n"
-      "    -N                    Not flag\n"
+      "    -o                    Cell phenotype: Logical OR flags\n"
+      "    -a                    Cell phenotype: Logical AND flags\n"
+      "    -N                    Cell phenotype: Not flag\n"
+      "    -O                    Cell flag: Logical OR flags\n"
+      "    -A                    Cell flag: Logical AND flags\n"
+      "    -M                    Cell flag: Not flag\n"
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -1102,7 +1112,7 @@ static int selectfunc(int argc, char** argv) {
   // setup the selector processor
   SelectProcessor select;
   select.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  select.SetParams(logor, logand, lognot);
+  select.SetParams(plogor, plogand, plognot, clogor, clogand, clognot);
 
   // process
   table.StreamTable(select, opt::infile);
