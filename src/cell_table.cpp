@@ -799,6 +799,7 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
   for (size_t i = 0; i < nobs; ++i) {
 
     // verbose printing
+
     if (i % 50000 == 0 && m_verbose)
       std::cerr << "...working on cell " <<
 	AddCommas(i) << " with thread " <<
@@ -806,6 +807,7 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
 	std::endl;
     
     Neighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
+
 
     CellNode node;
 
@@ -912,11 +914,8 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
   AddColumn(gtag, graph);
 }
 
-void CellTable::KNN_marker(int num_neighbors) {
+void CellTable::UMAP(int num_neighbors) {
 
-  return;
-
-  /*
   // get the number of markers
   int ndim = 0;
   for (const auto& t : m_header.GetDataTags())
@@ -927,10 +926,10 @@ void CellTable::KNN_marker(int num_neighbors) {
   int nobs = CellCount();
   
   if (m_verbose)
-    std::cerr << "...finding K nearest-neighbors on " << AddCommas(nobs) << " cells" << std::endl;  
+    std::cerr << "...finding K nearest-neighbors (marker) on " << AddCommas(nobs) << " cells" << std::endl;  
   
   // column major the marker data
-  std::vector<double> concatenated_data;
+  std::vector<float> concatenated_data;
 
   // concatenate the data
   for (const auto& t : m_header.GetDataTags()) {
@@ -946,60 +945,117 @@ void CellTable::KNN_marker(int num_neighbors) {
       assert(numeric_column_ptr);
       
       // Check if the column is a NumericColumn
-      //if (auto numeric_column_ptr = std::dynamic_pointer_cast<FloatCol>(column_ptr)) {
       const auto& data = numeric_column_ptr->getData();
       concatenated_data.insert(concatenated_data.end(), data.begin(), data.end());
-      //     }
     }
   }
   
   // convert to row major?
   column_to_row_major(concatenated_data, nobs, ndim);
 
-  // get the cell id colums
-  auto id_ptr = m_table.at("id");  
-  //auto id_ptr = GetIDColumn();
-  
+  /*
+  std::vector<double> concatenated_data2(concatenated_data.size());
+  for (size_t i = 0; i < concatenated_data.size(); i++)
+    concatenated_data2[i] = concatenated_data[i];
+
+  std::vector<double> embedding2(nobs * 2);
+  umappp::Umap<double> x2;
+  x2.set_seed(42);
+  x2.set_num_neighbors(10);
+  x2.set_initialize(umappp::InitMethod::RANDOM);  
+  if (m_threads > 1)
+    x2.set_parallel_optimization(true);
+  x2.set_num_threads(m_threads);
+  //knncolle::VpTreeEuclidean<> searcher2(ndim, nobs, concatenated_data2.data());
+  knncolle::Kmknn<knncolle::distances::Euclidean, int, double> searcher2(ndim, nobs, concatenated_data2.data());
+  umappp::NeighborList<double> output2(nobs);
+  for (size_t i = 0; i < nobs; i++)
+    output2[i] = searcher2.find_nearest_neighbors(i, 15);
+  auto status2 = x2.initialize(std::move(output2), 2, embedding2.data());
+  status2.run(0);
+  */
+    
   if (m_verbose)
-    std::cerr << "...setting up KNN graph on " << AddCommas(concatenated_data.size()) << " points" << std::endl;
-
-  umappp::NeighborList<double> output(nobs);
-
+    std::cerr << "...setting up KNN graph on " << AddCommas(nobs) << " points (" <<
+      ndim << "-dimensional)" << std::endl;
+  
   if (m_verbose)
     std::cerr << "...building KNN (marker) graph" << std::endl;
-
-  auto graph = std::make_shared<GraphColumn>();
-  graph->resize(nobs);
-
-  // initialize the tree. Can choose from different algorithms, per knncolle library
-  knncolle::VpTreeEuclidean<int, double> searcher(ndim, nobs, concatenated_data.data());
-  //knncolle::AnnoyEuclidean<int, double> searcher(ndim, nobs, concatenated_data.data());  
   
-  #pragma omp parallel for num_threads(m_threads)
+  // initialize the tree. Can choose from different algorithms, per knncolle library
+  //knncolle::VpTreeEuclidean<int, double> searcher(ndim, nobs, concatenated_data.data());
+  //knncolle::AnnoyEuclidean<int, double> searcher(ndim, nobs, concatenated_data.data());  
+  knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher2(ndim, nobs, concatenated_data.data());
+
+  umappp::NeighborList<float> nlist;
+  nlist.resize(nobs);
+  
+#pragma omp parallel for num_threads(m_threads)
   for (size_t i = 0; i < nobs; ++i) {
     if (i % 50000 == 0 && m_verbose)
       std::cerr << "...working on cell " <<
 	AddCommas(i) << " with thread " <<
 	omp_get_thread_num() << " K " << num_neighbors << std::endl;
-
-
-    Neighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
-
-    // set the node pointer to CellID rather than 0-based
-    for (auto& cc : neigh) {
-      cc.first = id_ptr->GetNumericElem(cc.first);
-    }
+    
+    Neighbors neigh = searcher2.find_nearest_neighbors(i, num_neighbors);
     
 #pragma omp critical
     {
-      graph->SetValueAt(i, CellNode(neigh));
+      nlist[i] = neigh;
     }
   }
 
+  //debug
+  // size_t i = 0;
+  // for (const auto& nn : nlist) {
+  //   std::cerr << " i " << i << std::endl;
+  //   i++;
+  //   for (const auto& mm: nn) {
+  //     std::cerr << " neighbor " << mm.first << " - Distance " << mm.second << std::endl;
+  //   }
+  //   std::cerr << std::endl;
+  // }
+
+  // run umap
+  umappp::Umap<float> umapr;
+  umapr.set_initialize(umappp::InitMethod::RANDOM);
+  if (m_threads > 1)
+    umapr.set_parallel_optimization(true);
+  umapr.set_num_threads(m_threads);
+  umapr.set_seed(42);
+  std::vector<float> embedding(nobs*2);
+  
+  if (m_verbose)
+    std::cerr << "...initializing UMAP " << std::endl;
+  
+  auto status = umapr.initialize(std::move(nlist), 2, embedding.data());
+  
+  if (m_verbose)
+    std::cerr << "...running UMAP" << std::endl;
+  status.run(); 
+
+  if (m_verbose)
+    std::cerr << "...done with umap" << std::endl;
+  
+  // transfer to Column
+  std::shared_ptr<FloatCol> comp1 = make_shared<FloatCol>(); 
+  std::shared_ptr<FloatCol> comp2 = make_shared<FloatCol>();
+
+  comp1->resize(nobs); 
+  comp2->resize(nobs); 
+
+  for (size_t i = 0; i < nobs; i++) {
+    comp1->SetNumericElem(embedding[i*2    ], i);
+    comp2->SetNumericElem(embedding[i*2 + 1], i);
+  }
+
   //
-  Tag gtag(Tag::GA_TAG, "knn", "NN:" + std::to_string(num_neighbors));  
-  AddColumn(gtag, graph);
-  */
+  Tag gtag1(Tag::CA_TAG, "knn1", "NN:" + std::to_string(num_neighbors));  
+  AddColumn(gtag1, comp1);
+
+  Tag gtag2(Tag::CA_TAG, "knn2", "NN:" + std::to_string(num_neighbors));  
+  AddColumn(gtag2, comp2);
+
 }
 
 void CellTable::print_correlation_matrix(const std::vector<std::pair<std::string, const ColPtr>>& data,
@@ -1310,8 +1366,7 @@ int CellTable::RadialDensity(std::vector<cy_uint> inner, std::vector<cy_uint> ou
   
   
   // store the densities
-  std::vector<std::shared_ptr<FloatCol>> dc(inner.size());
-  for(auto& ptr : dc) {
+  std::vector<std::shared_ptr<FloatCol>> dc(inner.size()); for(auto& ptr : dc) {
     ptr = std::make_shared<FloatCol>();
     ptr->resize(gc->size());
   }
@@ -1606,5 +1661,4 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
 
   return 0;
 }
-
 

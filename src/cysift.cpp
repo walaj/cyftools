@@ -85,7 +85,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  log10      - Apply a base-10 logarithm transformation to the data\n"
 "  correlate  - Calculate the correlation between variables\n"
 "  info       - Display information about the dataset"
-"  knn        - Construct the marker space KNN graph\n"
+"  umap       - Construct the marker space UMAP\n"
 "  spatial    - Construct the spatial KNN graph\n"
 "  tumor      - Set the tumor flag\n"
 "  select     - Select by cell phenotype flags\n"
@@ -114,7 +114,7 @@ static int cropfunc(int argc, char** argv);
 static int subsamplefunc(int argc, char** argv);
 static int log10func(int argc, char** argv);
 static int cutfunc(int argc, char** argv);
-static int knnfunc(int argc, char** argv);
+static int umapfunc(int argc, char** argv);
 static int radiusfunc(int argc, char** argv);
 static int selectfunc(int argc, char** argv);
 static int spatialfunc(int argc, char** argv); 
@@ -187,8 +187,8 @@ int main(int argc, char **argv) {
     return(viewfunc(argc, argv));
   } else if (opt::module == "cat") {
     return (catfunc(argc, argv));
-  } else if (opt::module == "knn") {
-    val = knnfunc(argc, argv);
+  } else if (opt::module == "umap") {
+    val = umapfunc(argc, argv);
   } else if (opt::module == "spatial") {
     val = spatialfunc(argc, argv);    
   } else if (opt::module == "select") {
@@ -267,9 +267,9 @@ static void build_table() {
 }
 */
 
-static int knnfunc(int argc, char** argv) {
+static int umapfunc(int argc, char** argv) {
 
-  int n = 10;
+  int n = 15;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -283,11 +283,11 @@ static int knnfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift knn [csvfile]\n"
-      "  Construct the KNN graph (in marker space)\n"
+      "Usage: cysift umap [csvfile]\n"
+      "  Construct the UMAP (in marker space)\n"
       "    csvfile: filepath or a '-' to stream to stdin\n"
-      "    -k [10]                   Number of neighbors\n"
-      "    -t [1]                   Number of threads\n"      
+      "    -k [15]                   Number of neighbors\n"
+      "    -t [1]                    Number of threads\n"      
       "    -v, --verbose             Increase output to stderr\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -299,11 +299,13 @@ static int knnfunc(int argc, char** argv) {
   // since we don't use pre-existing Graph or Flags for this
   build_table();
 
-  // build the KNN graph in marker-space
-  table.KNN_marker(n);
+  table.SetupOutputWriter(opt::outfile);
+  
+  // build the umap in marker-space
+  table.UMAP(n);
 
   // print it
-  table.PrintTable(opt::header);
+  table.OutputTable();
   
   return 0;
 }
@@ -704,7 +706,7 @@ static void parseRunOptions(int argc, char** argv) {
   if (! (opt::module == "debug" || opt::module == "subsample" ||
 	 opt::module == "plot"  || opt::module == "roi" ||
 	 opt::module == "histogram" || opt::module == "log10" ||
-	 opt::module == "crop"  || opt::module == "knn" ||
+	 opt::module == "crop"  || opt::module == "umap" ||
 	 opt::module == "count" || opt::module == "clean" ||
 	 opt::module == "tumor" || 
 	 opt::module == "cat" || opt::module == "cereal" || 
