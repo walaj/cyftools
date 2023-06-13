@@ -75,7 +75,7 @@ public:
   void PrintPearson(bool csv, bool sort) const;
 
   // graph ops
-  void KNN_marker(int num_neighbors);
+  void UMAP(int num_neighbors);
 
   void KNN_spatial(int num_neighbors, int dist);  
 
