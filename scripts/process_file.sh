@@ -35,6 +35,9 @@ for infile in *.csv; do
 	#check_file_exists "${base}.header.csv"
 	#~/git/cysift/scripts/cerealed.sh "${base}.header.csv" "${base}.cys" 2>/dev/null
 
+	check_file_exists "${base}.cys"
+	sbatch ~/git/cysift/scripts/chain.sh "${base}.cys" "{base}.chain.cys" "${base}.phenotype.csv"
+	
 	#check_file_exists "${base}.cys"
 	#~/git/cysift/scripts/phenotype.sh "${base}.cys" "${base}.phenotype.cys" "${base}.phenotype.csv"
 
@@ -50,8 +53,8 @@ for infile in *.csv; do
 	#check_file_exists "${base}.tumor.cys"
 	#cysift select -o 131072 -O 1 ${base}.tumor.cys ${base}.tselect.cys
 	
-	   check_file_exists "${base}.tselect.cys"
-	   /home/jaw34/git/cysift/scripts/average.sh "${base}.tselect.cys" "${base}.avg.cys"
+	   #check_file_exists "${base}.tselect.cys"
+	   #/home/jaw34/git/cysift/scripts/average.sh "${base}.tselect.cys" "${base}.avg.cys"
 	
 	   #check_file_exists "${base}.tselect.cys"
 	   #sbatch /home/jaw34/git/cysift/scripts/frame.sh "${base}.tselect.cys" "${base}.tframe.csv"

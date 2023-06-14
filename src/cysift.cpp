@@ -610,14 +610,17 @@ static int tumorfunc(int argc, char** argv) {
 
   int n = 20;
   float frac = 0.75;
-  int flag = 0;
+  cy_uint orflag = 0;
+  cy_uint andflag = 0;  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
+    case 't' : arg >> opt::threads; break;
     case 'k' : arg >> n; break;
     case 'f' : arg >> frac; break;
-    case 'd' : arg >> flag; break;
+    case 'o' : arg >> orflag; break;
+    case 'a' : arg >> andflag; break;      
     default: die = true;
     }
   }
@@ -630,7 +633,8 @@ static int tumorfunc(int argc, char** argv) {
       "    csvfile: filepath or a '-' to stream to stdin\n"
       "    -k [20]               Number of neighbors\n"
       "    -f [0.75]             Fraction of neighbors\n"
-      "    -d                    Flag on for tumor (or)\n"
+      "    -o                    Flag OR for tumor\n"
+      "    -a                    Flag AND for tumor\n"      
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -645,7 +649,7 @@ static int tumorfunc(int argc, char** argv) {
   
   table.SetupOutputWriter(opt::outfile);
 
-  table.TumorCall(n, frac, flag, 600);
+  table.TumorCall(n, frac, orflag, andflag, 600);
 
   table.OutputTable();
 

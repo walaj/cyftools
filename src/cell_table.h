@@ -109,7 +109,8 @@ public:
 
   void HDF5Write(const std::string& file) const;
 
-  void TumorCall(int num_neighbors, float frac, cy_uint flag, cy_uint dist);
+  void TumorCall(int num_neighbors, float frac,
+		 cy_uint orflag, cy_uint andflag, cy_uint dist);
   
  private:
   

@@ -629,7 +629,8 @@ void CellTable::SubsetROI(const std::vector<Polygon> &polygons) {
   }
 }
 
-void CellTable::TumorCall(int num_neighbors, float frac, cy_uint flag, cy_uint dist) {
+void CellTable::TumorCall(int num_neighbors, float frac,
+			  cy_uint orflag, cy_uint andflag, cy_uint dist) {
 
   // number of cells
   int nobs = CellCount();
@@ -660,12 +661,8 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint flag, cy_uint d
    // convert to row major?
    column_to_row_major(concatenated_data, nobs, ndim);
    
-   // get the cell id colums
-   //auto id_ptr = GetIDColumn();
-   auto id_ptr = m_table.at("id");
-   
    if (m_verbose)
-     std::cerr << "...setting up KNN graph (spatial) on " << AddCommas(nobs) << " points" << std::endl;
+     std::cerr << "...setting up KNN graph (spatial) for tumor calling on " << AddCommas(nobs) << " points" << std::endl;
    
   umappp::NeighborList<float> output(nobs);
 
@@ -673,15 +670,16 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint flag, cy_uint d
     std::cerr << "...building KNN (spatial) graph with " <<
       num_neighbors << " nearest neigbors and dist limit " << dist << std::endl;
 
-  // store the final graph
-  auto graph = std::make_shared<GraphColumn>();
-  graph->resize(nobs);
-  
   // initialize the tree. Can choose from different algorithms, per knncolle library
   //knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());
   //knncolle::AnnoyEuclidean<int, float> searcher(ndim, nobs, concatenated_data.data());
   knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());  
+
+  if (m_verbose)
+    std::cerr << " threads " << m_threads <<
+      " OR flag " << orflag << " AND flag " << andflag << std::endl;
   
+#pragma omp parallel for num_threads(m_threads)
   for (size_t i = 0; i < nobs; ++i) {
     
     // verbose printing
@@ -702,11 +700,8 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint flag, cy_uint d
     }
 
     assert(pflag_vec.size() == neigh.size());
-    
-    // Now, set the node pointer to CellID rather than 0-based
-    for (auto& cc : neigh) {
-      cc.first = id_ptr->GetNumericElem(cc.first);
-    }
+
+    // make the node
     node = CellNode(neigh, pflag_vec);
 
     // finally do tumor stuff
@@ -714,15 +709,13 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint flag, cy_uint d
     float tumor_cell_count = 0;
     for (size_t j = 0; j < node.size(); j++) {
       CellFlag cellflag(node.m_flags.at(j));
-      if (cellflag.testAndOr(flag, 0))
+      if (cellflag.testAndOr(orflag, andflag))
 	tumor_cell_count++;
     }
     if (tumor_cell_count / static_cast<float>(node.size()) >= frac)
       static_cast<IntCol*>(cflag_ptr.get())->SetNumericElem(1, i);
-
+    
   }// end for
-
-  
 }
 
 void CellTable::KNN_spatial(int num_neighbors, int dist) {
@@ -1050,10 +1043,10 @@ void CellTable::UMAP(int num_neighbors) {
   }
 
   //
-  Tag gtag1(Tag::CA_TAG, "knn1", "NN:" + std::to_string(num_neighbors));  
+  Tag gtag1(Tag::CA_TAG, "umap1", "NN:" + std::to_string(num_neighbors));  
   AddColumn(gtag1, comp1);
 
-  Tag gtag2(Tag::CA_TAG, "knn2", "NN:" + std::to_string(num_neighbors));  
+  Tag gtag2(Tag::CA_TAG, "umap2", "NN:" + std::to_string(num_neighbors));  
   AddColumn(gtag2, comp2);
 
 }
@@ -1552,9 +1545,20 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   for (const auto& r : outer)
     if (max_radius < r)
       max_radius = r;
+
+  // pre-compute the bools
+  std::vector<std::vector<int>> flag_result(inner.size(), std::vector<int>(fc->size(), 0));
+  for (size_t i = 0; i < fc->size(); i++) {
+    CellFlag mflag(fc->GetNumericElem(i));
+    for (size_t j = 0; j < inner.size(); j++) {
+      if ( (!logor[j] && !logand[j]) || mflag.testAndOr(logor[j], logand[j])) {
+	flag_result[j][i] = 1; 
+      }
+    }
+  }
   
-  // loop the cells
-  #pragma omp parallel for num_threads(m_threads)
+    // loop the cells
+#pragma omp parallel for num_threads(m_threads)
   for (size_t i = 0; i < fc->size(); i++) {
     
     // initialize the counts for each radial condition
@@ -1566,27 +1570,24 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
 
     // this will be inclusive of this point
     std::vector<size_t> inds = m_kdtree.neighborhood_indices(pt, max_radius);
-    
+
     // loop the nodes connected to each cell
     for (const auto& n : inds) {
 
       float x2 = x_ptr->second->GetNumericElem(n);
       float y2 = y_ptr->second->GetNumericElem(n);
-      float dist = euclidean_distance(x1, y1, x2, y2);
+      float dx = x2 - x1;
+      float dy = y2 - y1;
+      float dist = std::sqrt(dx*dx + dy*dy);
+      //float dist = euclidean_distance(x1, y1, x2, y2);
       
       // test if the connected cell meets the flag criteria
       // n.first is cell_id of connected cell to this cell
       for (size_t j = 0; j < inner.size(); j++) {
- 
-	// both are 0, so take all cells OR it meets flag criteria
-	CellFlag mflag(fc->GetNumericElem(n));
-	if ( (!logor[j] && !logand[j]) || mflag.testAndOr(logor[j], logand[j])) {
-	  
-	  // then increment cell count if cell in bounds
-	  cell_count[j] += dist >= inner[j] && dist <= outer[j];
-	  //	  std::cerr << "INNER " << inner[j] << " OUTER " << outer[j] << " IST " << dist << " count " << cell_count[j] << std::endl;
-	  
-	}
+	//std::cerr << "inner " << inner[j] << " outer " << outer[j] << std::endl;
+	//std::cerr << flag_result[j][n] << " logor " << logor[j] << " logand " << logand[j] << " flag " << fc->GetNumericElem(n) << std::endl;
+	if (flag_result[j][n])
+	  cell_count[j] += ((dist >= inner[j]) && (dist <= outer[j]));
       }
     }
     
@@ -1636,7 +1637,8 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     (*m_archive)(cell);
     */
     if (m_verbose && i % 5000 == 0) {
-      std::cerr << "...radial density: looping on " << AddCommas(i) << " and found densities ";
+      std::cerr << "...radial density: computing on cell " << AddCommas(i) << " and thread " << omp_get_thread_num() <<
+	" and found densities ";
       for (size_t j = 0; j < dc.size(); j++) {
 	std::cerr << dc.at(j)->GetNumericElem(i) << " ";
 	if (j > 5)
