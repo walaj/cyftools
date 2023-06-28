@@ -12,11 +12,14 @@ ANNOY = -I$(HOME)/git/annoy
 CEREAL = -I$(HOME)/software/cereal-1.3.2/include
 LDA = -I$(HOME)/git/supervised-lda/include
 HD5 = -I$(HOME)/software/hdf5-1.14.1/include
+TIFF = -I$(HOME)/software/libtiff-git/include
 KDTREE = -I$(HOME)/git/KDTree
 
 LDALIB = -L $(HOME)/git/supervised-lda/lib -lldaplusplus -Wl,-rpath,$(HOME)/git/supervised-lda/lib
 HD5LIB = -L $(HOME)/software/hdf5-1.14.1/lib -lhdf5_cpp -lhdf5
 KDLIB = -L $(HOME)/git/KDTree/lib -lKDTree -Wl,-rpath,$(HOME)/git/KDTree/lib
+JPEG = -L/opt/homebrew/opt/jpeg/lib -L/opt/homebrew/Cellar/libpng/1.6.39/lib
+TIFFLD = ${JPEG} -llzma $(HOME)/software/libtiff-git/lib/libtiff.a -ljpeg -lz -lpng
 
 # cysift specific parameter
 #USE64BIT=-DUSE_64_BIT
@@ -39,12 +42,12 @@ else
     OPENMP = -fopenmp
 endif
 
-CFLAGS = -O2 -g -std=c++17 $(USE64BIT) $(OPENMP) -I. -I.. $(NETCDF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(EIGEN) $(KMEANS) $(OMP) $(CEREAL) -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY $(LDA) $(HD5) $(KDTREE)
-LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB) $(KDLIB)
+CFLAGS = -O2 -g -std=c++17 $(USE64BIT) $(OPENMP) -I. -I.. $(TIFF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(EIGEN) $(KMEANS) $(OMP) $(CEREAL) -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY $(LDA) $(HD5) $(KDTREE)
+LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB) $(KDLIB) ${TIFFLD}
 #LDFLAGS = $(OMPL) -L /Users/jeremiahwala/git/supervised-lda/lib -lldaplusplus -Wl,-rpath=/Users/jeremiahwala/git/supervised-lda/lib
 
 # Specify the source files
-SRCS = cysift.cpp cell_table.cpp polygon.cpp cell_header.cpp cell_graph.cpp cell_flag.cpp cell_utils.cpp cell_processor.cpp cell_row.cpp cell_lda.cpp
+SRCS = cysift.cpp cell_table.cpp polygon.cpp cell_header.cpp cell_graph.cpp cell_flag.cpp cell_utils.cpp cell_processor.cpp cell_row.cpp cell_lda.cpp tiff_reader.cpp tiff_writer.cpp tiff_header.cpp tiff_utils.cpp tiff_ifd.cpp tiff_image.cpp tiff_cp.cpp
 
 # Specify the object files
 OBJS = $(SRCS:.cpp=.o)

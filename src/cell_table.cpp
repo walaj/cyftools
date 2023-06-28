@@ -4,6 +4,7 @@
 #include "cell_utils.h"
 #include "cell_table.h"
 #include "cell_graph.h"
+#include "tiff_writer.h"
 
 #include <H5Cpp.h>
 
@@ -15,6 +16,27 @@ static size_t debugr = 0;
 std::vector<Cell> cell_buffer;
 #pragma omp threadprivate(cell_buffer)
 #endif
+
+typedef std::pair<cy_uint, cy_uint> point;
+struct point_hash {
+    inline std::size_t operator()(const point & v) const {
+        return v.first*1000000+v.second;
+    }
+};
+
+// Function to count the number of points within a box centered at (x, y).
+int count_points(const std::unordered_set<point, point_hash>& points_set, int x, int y, int w) {
+    int half_w = w / 2;
+    int count = 0;
+    for (int i = x - half_w; i <= x + half_w; i++) {
+        for (int j = y - half_w; j <= y + half_w; j++) {
+            if (points_set.count({i, j})) {
+                count++;
+            }
+        }
+    }
+    return count;
+}
 
 const CellHeader& CellTable::GetHeader() const {
   return m_header;
@@ -370,6 +392,66 @@ void CellTable::SetupOutputWriter(const std::string& file) {
     m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(*m_os);
   }
   
+}
+
+void CellTable::Convolve(TiffWriter& otif, int boxwidth, float microns_per_pixel) {
+  
+  int xwidth, ywidth;
+  TIFFGetField(otif.get(), TIFFTAG_IMAGEWIDTH, &xwidth);
+  TIFFGetField(otif.get(), TIFFTAG_IMAGELENGTH, &ywidth);  
+  
+  TiffImage tif(xwidth, ywidth, 16);
+  
+  // Store points in an unordered set for fast lookup.
+  FloatColPtr x_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("x"));
+  FloatColPtr y_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("y"));  
+
+  if (m_verbose)
+    std::cerr << "...generating the integral sum image. Cell table has " << AddCommas(x_ptr->size()) << " cells" << std::endl;
+  vector<vector<int>> dp(xwidth+1, vector<int>(ywidth+1, 0));  
+  for (size_t i = 0; i < x_ptr->size(); i++) {
+    int xp = static_cast<int>(x_ptr->GetNumericElem(i) / microns_per_pixel);
+    int yp = static_cast<int>(y_ptr->GetNumericElem(i) / microns_per_pixel);
+    if (xp > xwidth) {
+      std::cerr << "calculated pixel xpos " << xp << " out of bounds of image width " << xwidth << " with microns_per_pixel " << microns_per_pixel << std::endl;
+      assert(false);
+    }
+    if (yp > ywidth) {
+      std::cerr << "calculated pixel ypos " << yp << " out of bounds of image width " << ywidth << " with microns_per_piyel " << microns_per_pixel << std::endl;
+      assert(false);
+    }
+    
+    dp[xp+1][yp+1] = 1;    
+  }
+
+  // Create a prefix sum matrix
+  for (int i = 1; i <= xwidth; i++) {
+    for (int j = 1; j <= ywidth; j++) {
+      dp[i][j] += dp[i-1][j] + dp[i][j-1] - dp[i-1][j-1];
+    }
+  }
+
+  // perform the convolution
+  int bw2 = boxwidth / 2;
+#pragma omp parallel for num_threads(m_threads)
+  for (int i = 0; i < xwidth; i++) {
+    if (m_verbose && i % 10000 == 0)
+      std::cerr << "...convolving on image row " << AddCommas(i) << " of " << AddCommas(xwidth) << std::endl;
+    for (int j = 0; j < ywidth; j++) {
+      int x1 = max(i - bw2, 0);
+      int y1 = max(j - bw2, 0);
+      int x2 = min(i + bw2, xwidth-1);
+      int y2 = min(j + bw2, ywidth-1);
+      int count = dp[x2+1][y2+1] - dp[x1][y2+1] - dp[x2+1][y1] + dp[x1][y1];
+      if (count > 65536)
+	std::cerr << " warning count overflow of 16 bit range: " << count << std::endl;
+      tif.SetPixel(i, j, PIXEL_GRAY, static_cast<uint16_t>(count));
+    }
+  }
+  
+  otif.Write(tif);
+
+  return;
 }
 
 void CellTable::OutputTable() {

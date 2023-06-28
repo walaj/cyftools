@@ -9,6 +9,8 @@
 #include <regex>
 
 #include "cell_row.h"
+#include "tiff_reader.h"
+#include "tiff_writer.h"
 
 static std::string cmd_input;
 static bool die = false;
@@ -53,7 +55,7 @@ static CellTable table;
 
 static void build_table();
 
-static const char* shortopts = "jhHNyvmMGPr:t:a:A:O:d:g:b:c:s:k:n:r:w:l:x:X:o:R:f:";
+static const char* shortopts = "jhHNyvmMGPr:t:a:i:A:O:d:g:b:c:s:k:n:r:w:l:x:X:o:R:f:";
 static const struct option longopts[] = {
   { "verbose",                    no_argument, NULL, 'v' },
   { "threads",                    required_argument, NULL, 't' },
@@ -90,10 +92,12 @@ static const char *RUN_USAGE_MESSAGE =
 "  tumor      - Set the tumor flag\n"
 "  select     - Select by cell phenotype flags\n"
 "  pheno      - Phenotype cells to set the flag\n"
+"  convolve   - Density convolution to produce TIFF\n"
 "  radialdens - Calculate density of cells within a radius\n"
 "  cereal     - Create a .cys format file from a CSV\n"
 "\n";
 
+static int convolvefunc(int argc, char** argv);
 static int tumorfunc(int argc, char** argv);
 static int ldafunc(int argc, char** argv);
 static int averagefunc(int argc, char** argv);
@@ -193,6 +197,8 @@ int main(int argc, char **argv) {
     val = spatialfunc(argc, argv);    
   } else if (opt::module == "select") {
     val = selectfunc(argc, argv);
+  } else if (opt::module == "convolve") {
+    val = convolvefunc(argc, argv);    
   } else if (opt::module == "pheno") {
     val = phenofunc(argc, argv);
   } else if (opt::module == "count") {
@@ -266,6 +272,76 @@ static void build_table() {
   return 0;
 }
 */
+
+static int convolvefunc(int argc, char** argv) {
+
+  int width = 200;
+  std::string intiff;
+  float microns_per_pixel = 0;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'i' : arg >> intiff; break;
+    case 'd' : arg >> microns_per_pixel; break;
+    case 't' : arg >> opt::threads; break;      
+    case 'v' : opt::verbose = true; break;
+    case 'w' : arg >> width; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv) || microns_per_pixel <= 0) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift convolve [csvfile]\n"
+      "  Perform a convolution to produce a TIFF\n"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -i                        Input TIFF file to set params for output\n"
+      "    -d                        Number of microns per pixel (e.g. 0.325). Required\n"
+      "    -w [200]                  Width of the convolution box (in pixels)\n"
+      "    -t [1]                    Number of threads\n"      
+      "    -v, --verbose             Increase output to stderr\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // build the table
+  // but don't have to convert columns
+  // since we don't use pre-existing Graph or Flags for this
+  build_table();
+
+  // check we were able to read the table
+  if (table.CellCount() == 0) {
+    std::cerr << "Ending with no cells? Error in upstream operation?" << std::endl;
+    std::cerr << "no tiff created" << std::endl;
+    return 0;
+  }
+  
+  // open the TIFFs
+  TiffReader itif(intiff.c_str());
+  int inwidth, inheight;
+  TIFFGetField(itif.get(), TIFFTAG_IMAGEWIDTH,  &inwidth);
+  TIFFGetField(itif.get(), TIFFTAG_IMAGELENGTH, &inheight);
+
+  // set the output tiff
+  TiffWriter otif(opt::outfile.c_str());
+
+  TIFFSetField(otif.get(), TIFFTAG_IMAGEWIDTH, inwidth); 
+  TIFFSetField(otif.get(), TIFFTAG_IMAGELENGTH, inheight);
+
+  TIFFSetField(otif.get(), TIFFTAG_SAMPLESPERPIXEL, 1);
+  TIFFSetField(otif.get(), TIFFTAG_BITSPERSAMPLE, 16);
+  TIFFSetField(otif.get(), TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+  TIFFSetField(otif.get(), TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+  TIFFSetField(otif.get(), TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+  
+  // build the umap in marker-space
+  table.Convolve(otif, width, microns_per_pixel);
+
+  return 0;
+  
+}
 
 static int umapfunc(int argc, char** argv) {
 
@@ -654,7 +730,6 @@ static int tumorfunc(int argc, char** argv) {
   table.OutputTable();
 
   return 0;
-
   
 }
 
@@ -712,7 +787,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "histogram" || opt::module == "log10" ||
 	 opt::module == "crop"  || opt::module == "umap" ||
 	 opt::module == "count" || opt::module == "clean" ||
-	 opt::module == "tumor" || 
+	 opt::module == "tumor" || opt::module == "convolve" || 
 	 opt::module == "cat" || opt::module == "cereal" || 
 	 opt::module == "correlate" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||

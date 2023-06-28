@@ -8,6 +8,8 @@
 #include "cell_processor.h"
 #include "cysift.h"
 
+#include "tiff_writer.h"
+
 #include <cereal/types/vector.hpp>
 #include <cereal/archives/portable_binary.hpp>
 
@@ -74,6 +76,9 @@ public:
 
   void PrintPearson(bool csv, bool sort) const;
 
+  // image ops
+  void Convolve(TiffWriter& otoif, int boxwidth, float microns_per_pixel);
+  
   // graph ops
   void UMAP(int num_neighbors);
 
