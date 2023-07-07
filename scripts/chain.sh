@@ -35,24 +35,25 @@ else
     echo "...running: cysift chain on ${base}"
     cysift pheno ${V} $input_file -t $pheno_file - |\
 	cysift tumor ${V} - - -o 131072 -f 0.50 -k 25 -t ${T} |\
-	cysift radialdens ${V} - - -t ${T} -f ${RAD} > ${base}.ptr.cys
+	cysift radialdens ${V} - - -t ${T} -f ${RAD} |\
+        cysift delaunay - ${base}.ptrd.cys -l 20
 
-    check_file_exists ${base}.ptr.cys
+    # check_file_exists ${base}.ptrd.cys
     
-    echo "...running: cysift chain tumor on ${base}"    
-    cysift log10 ${base}.ptr.cys - |\
-	cysift select ${V} - - -O 1 |\
-	cysift umap - ${V} ${base}.tumor.cys -t ${T}
-    echo "...running: cysift chain 2 on $base"
-    cysift select ${V} ${base}.ptr.cys - -o 2048 -O 1 |\
-	cysift log10 - - |\
-	cysift umap - ${V} ${base}.PDL1.cys -t ${T}
-    echo "...running: cysift chain 3 on $base"    
-    cysift select ${V} ${base}.ptr.cys - -a 133120 -O 1 |\
-	cysift log10 - - |\
-	cysift umap - ${V} ${base}.PDL1_PanCK.cys -t ${T}
-    echo "...running: cysift chain 4 on $base"    
-    cysift select ${V} - - -O 1 -a 2064 |\
-	cysift log10 - - |\
-	cysift umap - ${V} ${base}.PDL1_CD68.cys -t ${T}
+    # echo "...running: cysift chain tumor on ${base}"    
+    # cysift log10 ${base}.ptrd.cys - |\
+    # 	cysift select ${V} - - -O 1 |\
+    # 	cysift umap - ${V} ${base}.tumor.cys -t ${T}
+    # echo "...running: cysift chain 2 on $base"
+    # cysift select ${V} ${base}.ptrd.cys - -o 2048 -O 1 |\
+    # 	cysift log10 - - |\
+    # 	cysift umap - ${V} ${base}.PDL1.cys -t ${T}
+    # echo "...running: cysift chain 3 on $base"    
+    # cysift select ${V} ${base}.ptrd.cys - -a 133120 -O 1 |\
+    # 	cysift log10 - - |\
+    # 	cysift umap - ${V} ${base}.PDL1_PanCK.cys -t ${T}
+    # echo "...running: cysift chain 4 on $base"    
+    # cysift select ${V} ${base}.ptrd.cys - -O 1 -a 2064 |\
+    # 	cysift log10 - - |\
+    # 	cysift umap - ${V} ${base}.PDL1_CD68.cys -t ${T}
 fi

@@ -14,9 +14,9 @@ function check_file_exists {
     fi
 }
 
-for infile in *.csv; do
+for infile in *phenotype.csv; do
 
-    if [[ $(echo "$infile" | grep -o "\." | wc -l) -eq 1 ]]; then
+    #if [[ $(echo "$infile" | grep -o "\." | wc -l) -eq 1 ]]; then
 
 	base="${infile%%.*}"
 	
@@ -33,9 +33,9 @@ for infile in *.csv; do
 	#~/git/cysift/scripts/header.sh "${base}.rar.csv" "${base}.header.csv"
 
 	#check_file_exists "${base}.header.csv"
-	#~/git/cysift/scripts/cerealed.sh "${base}.header.csv" "${base}.cys" 2>/dev/null
+	~/git/cysift/scripts/cerealed.sh "${base}.header.csv" "${base}.cys" 2>/dev/null
 
-	check_file_exists "${base}.cys"
+	#check_file_exists "${base}.cys"
 	sbatch ~/git/cysift/scripts/chain.sh "${base}.cys" "{base}.chain.cys" "${base}.phenotype.csv"
 	
 	#check_file_exists "${base}.cys"
@@ -59,6 +59,6 @@ for infile in *.csv; do
 	   #check_file_exists "${base}.tselect.cys"
 	   #sbatch /home/jaw34/git/cysift/scripts/frame.sh "${base}.tselect.cys" "${base}.tframe.csv"
 	
-    fi
+#    fi
     
 done

@@ -20,8 +20,11 @@ typedef K::Point_2 Point;
 #include <H5Cpp.h>
 
 #include <delaunator.hpp>
+
+#ifdef HAVE_MLPACK
 #include <mlpack/methods/gmm/gmm.hpp>
 #include <mlpack/core.hpp>
+#endif
 
 // hash table structures for Delaunay and Voronoi (to keep from duplicating lines)
 struct pair_hash {
@@ -653,6 +656,8 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
       }
     }
   }
+
+  std::cerr << " getting adjacency list" << std::endl;
   
   // store the adjaceny list
   std::unordered_map<Point, std::vector<Point>> adjList;
@@ -660,15 +665,23 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
     adjList[line.first].push_back(line.second);
     adjList[line.second].push_back(line.first); // assuming undirected graph
   }
+
+  //debug
+  for (const auto& c : adjList) {
+    std::cerr << c.first << " -- " << c.second.size() << std::endl;
+  }
+  
+  std::cerr << " HERE0" << std::endl;
   
   // build the adjaceny map
   std::unordered_set<Point> visited;
   std::unordered_map<Point, int> pointToComponentId;
   int currentComponentId = 1;
-
+  
   // depth first seach lambda
   std::function<void(Point)> DFS;
   DFS = [&](Point currentPoint) {
+    std::cerr << "inserting " << currentPoint << std::endl;
     visited.insert(currentPoint);
     pointToComponentId[currentPoint] = currentComponentId;
     for (const auto& neighbor : adjList[currentPoint]) {
@@ -679,23 +692,30 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
   };
   
   // Run DFS from every point
+  std::cerr << "size " << adjList.size() << std::endl;
   for (const auto& point : adjList) {
+    std::cerr << " HERE0.1" << std::endl;
+    std::cerr << " visited? " << (visited.find(point.first) == visited.end()) << std::endl;
     if (visited.find(point.first) == visited.end()) {
       DFS(point.first);
       currentComponentId++;
     }
   } 
 
+  std::cerr << " setting up adjacency list" << std::endl;
+  
   // setup columns to store the delaunay components
   std::shared_ptr<IntCol> d_label = std::make_shared<IntCol>();
   std::shared_ptr<IntCol> d_size = std::make_shared<IntCol>();
   
+  std::cerr << " HERE2 " << std::endl;
+
   // count the number of nodes for each component
   std::unordered_map<int, size_t> dcount;
   for (const auto& c : pointToComponentId) {
     dcount[c.second]++;
   }
-  
+  std::cerr << " HERE3 " << std::endl;  
   // fill the data into the columns
   for (size_t i = 0; i < x_ptr->size(); i++) {
     Point p = {x_ptr->GetNumericElem(i),y_ptr->GetNumericElem(i)};
@@ -718,7 +738,7 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
       d_size->PushElem(dcount[idd->second]);
     }
   }
-  
+  std::cerr << " HERE4 " << std::endl;  
   // form the data tag
   Tag dtag_label(Tag::CA_TAG, "delaunay_component", "");
   AddColumn(dtag_label, d_label);
@@ -834,7 +854,7 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
     cairo_surface_destroy(surface);
   }
 
-  
+  std::cerr << " HERE5 " << std::endl;  
   return;
   
 }
@@ -2133,6 +2153,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
 
 void CellTable::GMM_EM() {
 
+#ifdef HAVE_MLPACK
   arma::mat dataset;
   mlpack::data::Load("data.csv", dataset, true);
 
@@ -2141,4 +2162,6 @@ void CellTable::GMM_EM() {
   
   // Train the model.
   gmm.Train(dataset);
+
+#endif
 }

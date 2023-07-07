@@ -1,5 +1,6 @@
 #include "tiff_ifd.h"
 #include "tiff_utils.h"
+#include "cell_utils.h"
 #include <cstring>
 #include <cassert>
 
