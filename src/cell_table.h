@@ -28,6 +28,10 @@ public:
   void StreamTableCSV(LineProcessor& proc, const std::string& file);
 
   size_t size() const { return m_table.size(); }
+
+  void sortxy(bool reverse);
+
+  void sort(const std::string& field, bool reverse);
   
   // add columns
   void AddColumn(const Tag& tag, ColPtr value);
@@ -84,6 +88,13 @@ public:
 
   void KNN_spatial(int num_neighbors, int dist);  
 
+  void Delaunay(const std::string& pdf_delaunay,
+		const std::string& pdf_voronoi,
+	        int limit);
+  
+  // ML ops
+  void GMM_EM();
+  
   // filtering
   void Subsample(int n, int s);
 

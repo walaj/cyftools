@@ -5,8 +5,25 @@
 #include "cell_row.h"
 
 int SelectProcessor::ProcessHeader(CellHeader& header) {
-
+  
   m_header = header;
+
+  // find which index the field to select is
+  size_t i = 0;
+  for (const auto& t : header.GetDataTags()) {
+    
+    // don't cut non-data tags
+    if (t.id == m_field) {
+      if (m_i >= 0) {
+	throw std::runtime_error("Only one field can be selected");
+      }
+      m_i = i;
+    }
+    i++;
+  }
+
+  if (!m_field.empty() && m_i < 0)
+    throw std::runtime_error("Unable to find field " + m_field);
 
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
 
@@ -82,6 +99,13 @@ void AverageProcessor::EmitCell() const {
 
 int SelectProcessor::ProcessLine(Cell& cell) {
 
+  bool write_cell = false;
+
+  ///////
+  // FLAGS
+  ///////
+  // NB: even if flags are all empty, default should be to trigger a "write_cell = true"
+  
   // get the flag value from the line
   CellFlag pflag(cell.m_pheno_flag);
   CellFlag cflag(cell.m_cell_flag);  
@@ -95,9 +119,35 @@ int SelectProcessor::ProcessLine(Cell& cell) {
   
   // if flags met, print the cell
   if ( (pflags_met != m_pnot) && (cflags_met != m_cnot)) {
+    write_cell = true;
     //std::cerr << " writing cell " << std::endl;
-    return CellProcessor::WRITE_CELL;
   }
+
+
+  ///////
+  // FIELD
+  /////// 
+  if (m_i >= 0) {
+    assert(m_i < cell.m_cols.size());
+    float value = cell.m_cols.at(m_i);
+
+    if (m_greater != dummy_float) {
+      write_cell = write_cell && value > m_greater;
+    } else if (m_less != dummy_float) {
+      write_cell = write_cell && value < m_less;
+    } else if (m_greater_equal != dummy_float) {
+      write_cell = write_cell && value >= m_greater_equal;
+    } else if (m_less_equal != dummy_float) {
+      write_cell = write_cell && value <= m_less_equal;
+    } else if (m_equal != dummy_float) {
+      write_cell = write_cell && value == m_equal;
+    } else {
+      assert(false);
+    }
+  }
+
+  if (write_cell)
+    return CellProcessor::WRITE_CELL;
   
   return CellProcessor::NO_WRITE_CELL; // don't write if not selected
 }
@@ -184,7 +234,7 @@ int RadialProcessor::ProcessLine(Cell& cell) {
     cell.m_cols.push_back(value);
   }
 
-  return 1;
+  return WRITE_CELL;
 }
 
 
@@ -194,18 +244,32 @@ int CountProcessor::ProcessHeader(CellHeader& header) {
 
 int CountProcessor::ProcessLine(Cell& cell) {
   m_count++;
-  return 0; // do nothing
+  return NO_WRITE_CELL; // do nothing
 }
 
 void CountProcessor::PrintCount() {
   std::cout << m_count << std::endl;
 }
 
+int HeadProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  m_header.SortTags();
+  
+  // just in time output
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+
+  return 0; 
+}
+
 int CutProcessor::ProcessHeader(CellHeader& header) {
 
   m_header = header;
-
-
 
   // find indicies of columns to remove
   size_t i = 0;
@@ -236,7 +300,7 @@ int CutProcessor::ProcessHeader(CellHeader& header) {
   assert(m_archive);
   (*m_archive)(m_header);
   
-  return 0;
+  return 0; 
 }
 
 int CutProcessor::ProcessLine(Cell& cell) {
@@ -254,8 +318,18 @@ int CutProcessor::ProcessLine(Cell& cell) {
   }
   cell.m_cols = m_cols_new;
   
-  return 1;
+  return WRITE_CELL;
 }
+
+int HeadProcessor::ProcessLine(Cell& cell) {
+
+  m_current_n++;
+  if (m_current_n <= m_n) {
+    return WRITE_CELL;
+  }
+  return NO_WRITE_CELL;
+}
+
 
 int LogProcessor::ProcessHeader(CellHeader& header) {
 
@@ -453,6 +527,7 @@ int TumorProcessor::ProcessHeader(CellHeader& header) {
   assert(m_archive);
   (*m_archive)(m_header);
 
+  return 0;
 }
 
 int TumorProcessor::ProcessLine(Cell& cell) {
@@ -462,6 +537,8 @@ int TumorProcessor::ProcessLine(Cell& cell) {
 
   assert(cell.m_spatial_ids.size() == cell.m_spatial_flags.size());
   assert(cell.m_spatial_ids.size() == cell.m_spatial_dist.size());
+
+  
   
 }
 

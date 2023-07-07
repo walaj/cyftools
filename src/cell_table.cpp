@@ -1,12 +1,48 @@
 #include <random>
 #include <cstdlib>
 
+#include "cairo/cairo.h"
+#include "cairo/cairo-pdf.h"
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/Delaunay_triangulation_2.h>
+#include <CGAL/Delaunay_triangulation_2.h>
+#include <CGAL/draw_triangulation_2.h>
+
+typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
+typedef CGAL::Delaunay_triangulation_2<K> DelaunayData;
+typedef K::Point_2 Point;
+
 #include "cell_utils.h"
 #include "cell_table.h"
 #include "cell_graph.h"
 #include "tiff_writer.h"
 
 #include <H5Cpp.h>
+
+#include <delaunator.hpp>
+#include <mlpack/methods/gmm/gmm.hpp>
+#include <mlpack/core.hpp>
+
+// hash table structures for Delaunay and Voronoi (to keep from duplicating lines)
+struct pair_hash {
+    template <class T1, class T2>
+    std::size_t operator () (const std::pair<T1,T2> &pair) const {
+        return std::hash<T1>()(pair.first) ^ std::hash<T2>()(pair.second);
+    }
+};
+
+struct Color {
+  int red;
+  int green;  
+  int blue;
+};
+
+struct line_eq {
+    bool operator() (const std::pair<Point, Point>& lhs, const std::pair<Point, Point>& rhs) const {
+        return (lhs.first == rhs.first && lhs.second == rhs.second) ||
+               (lhs.first == rhs.second && lhs.second == rhs.first);
+    }
+};
 
 #define CELL_BUFFER_LIMIT 1
 
@@ -405,7 +441,7 @@ void CellTable::Convolve(TiffWriter& otif, int boxwidth, float microns_per_pixel
   // Store points in an unordered set for fast lookup.
   FloatColPtr x_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("x"));
   FloatColPtr y_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("y"));  
-
+  
   if (m_verbose)
     std::cerr << "...generating the integral sum image. Cell table has " << AddCommas(x_ptr->size()) << " cells" << std::endl;
   vector<vector<int>> dp(xwidth+1, vector<int>(ywidth+1, 0));  
@@ -452,6 +488,355 @@ void CellTable::Convolve(TiffWriter& otif, int boxwidth, float microns_per_pixel
   otif.Write(tif);
 
   return;
+}
+
+void CellTable::sortxy(bool reverse) {
+
+  // fill the coordinate vector
+  FloatColPtr x_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("x"));
+  FloatColPtr y_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("y"));  
+  
+  std::vector<size_t> indices(x_ptr->size()); // index vector
+  std::iota(indices.begin(), indices.end(), 0); // fill with 0, 1, ..., n-1
+
+  if (m_verbose)
+    std::cerr << "...sorting " << AddCommas(CellCount()) << " cells" << std::endl;
+  
+  // sort indices based on comparing values in (x,y)
+  if (reverse) {
+    std::sort(indices.begin(), indices.end(),
+	      [&x_ptr, &y_ptr](size_t i1, size_t i2) {
+		return std::hypot(x_ptr->GetNumericElem(i1), y_ptr->GetNumericElem(i1)) > 
+		  std::hypot(x_ptr->GetNumericElem(i2), y_ptr->GetNumericElem(i2));
+	      });
+  } else {
+    std::sort(indices.begin(), indices.end(),
+	      [&x_ptr, &y_ptr](size_t i1, size_t i2) {
+		return std::hypot(x_ptr->GetNumericElem(i1), y_ptr->GetNumericElem(i1)) <
+		  std::hypot(x_ptr->GetNumericElem(i2), y_ptr->GetNumericElem(i2));
+	      });
+  }
+
+  if (m_verbose)
+    std::cerr << "...done sorting" << std::endl;
+  
+  // Now you can use this 'indices' vector to rearrange your 'another_column' vector
+  for (auto t : m_table) {
+     if (t.second->size())
+      t.second->Order(indices);
+   }
+  
+}
+
+void CellTable::sort(const std::string& field, bool reverse) {
+
+  auto it = m_table.find(field);
+  if (it == m_table.end()) {
+    std::cerr << "Warning: Sort field " << field << " not available" << std::endl;
+    return;
+  }
+
+  if (it->second->GetType() != ColumnType::INT && 
+      it->second->GetType() != ColumnType::FLOAT) {
+    std::cerr << "Warning: Currently only able to sort on numeric fields: " << field << std::endl;
+    return;
+  }
+    
+  // fill the coordinate vector
+  FloatColPtr c_ptr = dynamic_pointer_cast<FloatCol>(it->second);
+  
+  std::vector<size_t> indices(c_ptr->size()); // index vector
+  std::iota(indices.begin(), indices.end(), 0); // fill with 0, 1, ..., n-1
+
+  if (m_verbose)
+    std::cerr << "...sorting " << AddCommas(CellCount()) << " cells" << std::endl;
+  
+  // sort indices based on comparing values in (x,y)
+  if (reverse) {
+    std::sort(indices.begin(), indices.end(),
+	      [&c_ptr](size_t i1, size_t i2) {
+		return c_ptr->GetNumericElem(i1) > c_ptr->GetNumericElem(i2);
+	      });
+  } else {
+    std::sort(indices.begin(), indices.end(),
+	      [&c_ptr](size_t i1, size_t i2) {
+		return c_ptr->GetNumericElem(i1) < c_ptr->GetNumericElem(i2);
+	      });
+  }
+  
+  if (m_verbose)
+    std::cerr << "...done sorting" << std::endl;
+  
+  // Now you can use this 'indices' vector to rearrange your 'another_column' vector
+  for (auto t : m_table) {
+     if (t.second->size())
+      t.second->Order(indices);
+   }
+  
+}
+
+
+void CellTable::Delaunay(const std::string& pdf_delaunay,
+		const std::string& pdf_voronoi,
+	        int limit) {
+
+  // fill the coordinate vector
+  FloatColPtr x_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("x"));
+  FloatColPtr y_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("y"));  
+
+  float xmax = 0;
+  float ymax = 0;  
+  
+  size_t ncells = CellCount();
+  std::vector<double> coords(ncells * 2);
+  
+  for (size_t i = 0; i < ncells; i++) {
+    coords[i*2  ] = x_ptr->GetNumericElem(i);
+    coords[i*2+1] = y_ptr->GetNumericElem(i);
+    if (coords[i*2] > xmax)
+      xmax = coords[i*2];
+    if (coords[i*2+1] > ymax)
+      ymax = coords[i*2+1];
+  }
+
+  // construct the graph
+  if (m_verbose) 
+    std::cerr << "...constructing Delaunay triangulation on " << AddCommas(ncells) << " cells" << std::endl;
+  delaunator::Delaunator d(coords);
+
+  float micron_per_pixel = 0.325f;
+  int width  = xmax;
+  int height = ymax;
+
+  int limit_sq = limit <= 0 ? INT_MAX : limit * limit;
+  
+  // hash set to check if point already made
+  std::unordered_set<std::pair<Point, Point>, pair_hash, line_eq> lines;
+  lines.max_load_factor(0.25);
+  // reserve memory to avoid dynamic reallocation
+  lines.reserve(d.triangles.size() / 3);
+  
+  size_t skip_count = 0;
+  size_t draw_count = 0;
+  
+  // hash for each
+  
+  // Find which lines to keep, by de-duplicating and removing lines > size limit
+  for(size_t i = 0; i < d.triangles.size(); i+=3) {
+    
+    if (i/3 % 100000 == 0 && m_verbose)
+      std::cerr << "...drawing triangle " << AddCommas(i/3) << " of " << AddCommas(d.triangles.size() / 3) << " for " <<
+	AddCommas(ncells) << " cells" << std::endl;
+    
+    float x0 = static_cast<float>(d.coords[2 * d.triangles[i  ]]);
+    float y0 = static_cast<float>(d.coords[2 * d.triangles[i  ] + 1]);
+    float x1 = static_cast<float>(d.coords[2 * d.triangles[i+1]]);
+    float y1 = static_cast<float>(d.coords[2 * d.triangles[i+1] + 1]);
+    float x2 = static_cast<float>(d.coords[2 * d.triangles[i+2]]);
+    float y2 = static_cast<float>(d.coords[2 * d.triangles[i+2] + 1]);
+
+    std::array<std::pair<Point, Point>, 3> line_array = {
+      {std::make_pair(Point(x0, y0), Point(x1, y1)), 
+       std::make_pair(Point(x1, y1), Point(x2, y2)), 
+       std::make_pair(Point(x2, y2), Point(x0, y0))}
+    };
+
+    // deduplicate and remove Delaunay connections that are too short
+    for (auto& line : line_array) {
+      float dx = line.first.x() - line.second.x();
+      float dy = line.first.y() - line.second.y();
+      if (lines.find(line) == lines.end() && dx*dx + dy*dy <= limit_sq) {
+        lines.insert(line);
+        ++draw_count;
+      } else {
+        ++skip_count;
+      }
+    }
+  }
+  
+  // store the adjaceny list
+  std::unordered_map<Point, std::vector<Point>> adjList;
+  for (const auto& line : lines) {
+    adjList[line.first].push_back(line.second);
+    adjList[line.second].push_back(line.first); // assuming undirected graph
+  }
+  
+  // build the adjaceny map
+  std::unordered_set<Point> visited;
+  std::unordered_map<Point, int> pointToComponentId;
+  int currentComponentId = 1;
+
+  // depth first seach lambda
+  std::function<void(Point)> DFS;
+  DFS = [&](Point currentPoint) {
+    visited.insert(currentPoint);
+    pointToComponentId[currentPoint] = currentComponentId;
+    for (const auto& neighbor : adjList[currentPoint]) {
+      if (visited.find(neighbor) == visited.end()) {
+	DFS(neighbor);
+      }
+    }
+  };
+  
+  // Run DFS from every point
+  for (const auto& point : adjList) {
+    if (visited.find(point.first) == visited.end()) {
+      DFS(point.first);
+      currentComponentId++;
+    }
+  } 
+
+  // setup columns to store the delaunay components
+  std::shared_ptr<IntCol> d_label = std::make_shared<IntCol>();
+  std::shared_ptr<IntCol> d_size = std::make_shared<IntCol>();
+  
+  // count the number of nodes for each component
+  std::unordered_map<int, size_t> dcount;
+  for (const auto& c : pointToComponentId) {
+    dcount[c.second]++;
+  }
+  
+  // fill the data into the columns
+  for (size_t i = 0; i < x_ptr->size(); i++) {
+    Point p = {x_ptr->GetNumericElem(i),y_ptr->GetNumericElem(i)};
+    
+    // find the point in the component labels
+    auto idd = pointToComponentId.find(p);
+
+    // point not found, so delaunay edges already deleted
+    if (idd == pointToComponentId.end()) {
+      d_label->PushElem(0);
+      d_size->PushElem(1);
+
+    // point found
+    } else {
+      // set the label
+      d_label->PushElem(idd->second);
+      
+      // set the label count
+      assert(dcount.find(idd->second) != dcount.end());
+      d_size->PushElem(dcount[idd->second]);
+    }
+  }
+  
+  // form the data tag
+  Tag dtag_label(Tag::CA_TAG, "delaunay_component", "");
+  AddColumn(dtag_label, d_label);
+  Tag dtag_size(Tag::CA_TAG, "delaunay_count", "");
+  AddColumn(dtag_size, d_size);
+  
+  // draw the Delaunay PDF
+  if (!pdf_delaunay.empty()) {
+
+    if (m_verbose)
+      std::cerr << "...setting up for outputing Delaunay triangulation to PDF: " << pdf_delaunay << std::endl;
+    
+    cairo_surface_t *surface = cairo_pdf_surface_create(pdf_delaunay.c_str(), width, height);
+    cairo_t *cr = cairo_create(surface);
+    
+    // Set the color of the lines to black.
+    cairo_set_source_rgba(cr, 0, 0, 0, 1);
+    cairo_set_line_width(cr, 0.3);
+
+    // draw the actual lines
+    for (const auto& line : lines) {
+      cairo_move_to(cr, line.first.x(), line.first.y());
+      cairo_line_to(cr, line.second.x(), line.second.y());
+    }
+
+    cairo_stroke(cr); // Stroke all the lines
+    
+    cairo_new_path(cr); // Start a new path
+
+    // setup a color map
+    std::unordered_map<int, Color> color_map;
+    for (auto c : pointToComponentId) {
+      if (color_map.find(c.second) == color_map.end())
+	color_map[c.second] = {rand() % 256,
+			       rand() % 256,
+			       rand() % 256};
+    }
+
+    // draw the points (cells) colored by component
+    for (const auto& pair : pointToComponentId) {
+      const Point& point = pair.first;
+      int componentId = pair.second;
+      Color c = color_map[componentId];
+
+      cairo_set_source_rgb(cr, c.red/255.0, c.green/255.0, c.blue/255.0);
+      cairo_arc(cr, point.x(), point.y(), 1.0, 0.0, 2.0 * M_PI);
+      cairo_fill(cr);
+    }
+    
+    if (m_verbose) 
+      std::cerr << "...finalizing PDF of Delaunay triangulation on " << AddCommas(draw_count) <<
+	" unique lines, skipping " << AddCommas(skip_count) << " lines for having length < " << limit << std::endl;
+    
+    // Clean up
+    cairo_destroy(cr);
+    cairo_surface_destroy(surface);
+  }
+
+  ///////////////
+  // VORONOI
+  ///////////////
+  if (!pdf_voronoi.empty()) {
+
+    if (m_verbose)
+      std::cerr << "...setting up for outputing Voronoi diagram to PDF: " << pdf_voronoi << std::endl;
+    
+    std::vector<Point> points(ncells);
+    for (size_t i = 0; i < ncells; ++i) {
+      points[i] = Point(x_ptr->GetNumericElem(i), y_ptr->GetNumericElem(i));
+    }
+    
+    DelaunayData dt;
+    dt.insert(points.begin(), points.end());
+
+    // Create the Cairo surface and context
+    cairo_surface_t *surface = cairo_pdf_surface_create(pdf_voronoi.c_str(), width, height); 
+    cairo_t *cr = cairo_create(surface);
+
+    // draw the original points
+    for (const auto& p : points) {
+      cairo_set_source_rgba(cr, 0.1, 0.0, 0.0, 1.0); // Set color to red
+      cairo_arc(cr, p.x(), p.y(), 2.0, 0.0, 2.0 * M_PI);
+      cairo_fill(cr);
+    }
+
+    // Set the color of the lines to black.
+    cairo_set_source_rgba(cr, 0, 0, 0, 1);
+    cairo_set_line_width(cr, 0.1);
+    
+    // draw the Voronoi edges    
+    for (DelaunayData::Finite_edges_iterator eit = dt.finite_edges_begin(); eit != dt.finite_edges_end(); ++eit) {
+      
+      // The line segment between the circumcenters of the two triangles adjacent to each edge is an edge in the Voronoi diagram.
+      DelaunayData::Face_handle f1 = eit->first;
+      int adjacent_index = dt.mirror_index(f1, eit->second);
+      DelaunayData::Face_handle f2 = f1->neighbor(adjacent_index);
+      Point voronoi_edge_start = dt.circumcenter(f1);
+      Point voronoi_edge_end = dt.circumcenter(f2);
+      
+      // Draw the Voronoi edge
+      //cairo_move_to(cr, voronoi_edge_start.x(), voronoi_edge_start.y());
+      //cairo_line_to(cr, voronoi_edge_end.x(), voronoi_edge_end.y());
+    }
+
+    //cairo_stroke(cr);
+    
+    // Finish the PDF
+    if (m_verbose) 
+      std::cerr << "...finalizing PDF of Voronoi diagram" << std::endl;
+    
+    cairo_show_page(cr);
+    cairo_destroy(cr);
+    cairo_surface_destroy(surface);
+  }
+
+  
+  return;
+  
 }
 
 void CellTable::OutputTable() {
@@ -1746,3 +2131,14 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   return 0;
 }
 
+void CellTable::GMM_EM() {
+
+  arma::mat dataset;
+  mlpack::data::Load("data.csv", dataset, true);
+
+  // Initialize with the default arguments.
+  mlpack::GMM gmm(dataset.n_rows, 3); // 3 is the number of Gaussians in the model. Adjust as necessary.
+  
+  // Train the model.
+  gmm.Train(dataset);
+}

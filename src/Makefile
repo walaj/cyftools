@@ -14,8 +14,21 @@ LDA = -I$(HOME)/git/supervised-lda/include
 HD5 = -I$(HOME)/software/hdf5-1.14.1/include
 TIFF = -I$(HOME)/software/libtiff-git/include
 KDTREE = -I$(HOME)/git/KDTree
+CAIRO = -I/opt/homebrew/opt/cairo/include
+CGAL = -I/opt/homebrew/opt/cgal/include
+BOOST = -I/opt/homebrew/opt/boost/include
+
+#ML includes
+MLPACK = -I/opt/homebrew/Cellar/mlpack/4.2.0/include
+ARMADILLO = -I/opt/homebrew/Cellar/armadillo/12.4.1/include
+ENSMALLEN = -I/opt/homebrew/Cellar/ensmallen/2.19.1/include
+
+#ML libs
+#MLPACKL = -L/opt/homebrew/Cellar/mlpack/4.2.0/lib -Wl,-rpath
+ARMADILLOL = -L/opt/homebrew/Cellar/armadillo/12.4.1/lib -larmadillo -Wl,-rpath,/opt/homebrew/Cellar/armadillo/12.4.1/lib
 
 LDALIB = -L $(HOME)/git/supervised-lda/lib -lldaplusplus -Wl,-rpath,$(HOME)/git/supervised-lda/lib
+CAIROLIB = -L /opt/homebrew/opt/cairo/lib -lcairo
 HD5LIB = -L $(HOME)/software/hdf5-1.14.1/lib -lhdf5_cpp -lhdf5
 KDLIB = -L $(HOME)/git/KDTree/lib -lKDTree -Wl,-rpath,$(HOME)/git/KDTree/lib
 JPEG = -L/opt/homebrew/opt/jpeg/lib -L/opt/homebrew/Cellar/libpng/1.6.39/lib
@@ -42,8 +55,8 @@ else
     OPENMP = -fopenmp
 endif
 
-CFLAGS = -O2 -g -std=c++17 $(USE64BIT) $(OPENMP) -I. -I.. $(TIFF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(EIGEN) $(KMEANS) $(OMP) $(CEREAL) -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY $(LDA) $(HD5) $(KDTREE)
-LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB) $(KDLIB) ${TIFFLD}
+CFLAGS = -O2 -g -std=c++17 $(USE64BIT) $(OPENMP) -I. -I.. $(TIFF) $(KNN) $(UMAP) $(ARAND) $(IRLBA) $(EIGEN) $(KMEANS) $(OMP) $(CEREAL) -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY $(LDA) $(HD5) $(KDTREE) $(ENSMALLEN) $(ARMADILLO) $(MLPACK) $(CAIRO) $(CGAL) $(BOOST)
+LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB) $(KDLIB) ${TIFFLD} $(ARMADILLOL) $(CAIROLIB)
 #LDFLAGS = $(OMPL) -L /Users/jeremiahwala/git/supervised-lda/lib -lldaplusplus -Wl,-rpath=/Users/jeremiahwala/git/supervised-lda/lib
 
 # Specify the source files

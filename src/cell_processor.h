@@ -11,6 +11,8 @@
 #include <cereal/types/vector.hpp>
 #include <cereal/archives/portable_binary.hpp>
 
+const float dummy_float = 23.28323130082;
+
 class CellProcessor {
  public:
 
@@ -89,6 +91,25 @@ class LineProcessor {
   virtual int ProcessLine(const std::string& line) = 0;
 };
 
+
+class HeadProcessor : public CellProcessor {
+
+public:
+
+  void SetParams(size_t n) {
+    m_n = n;
+  }
+
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+  
+ private:
+  
+  size_t m_n = 10; // head limit
+  size_t m_current_n = 0; // current count
+  
+};
 
 // Cut processor
 class CutProcessor : public CellProcessor {
@@ -228,7 +249,7 @@ class SelectProcessor : public CellProcessor {
   
  public:
 
-  void SetParams(cy_uint plogor, cy_uint plogand, bool plognot,
+  void SetFlagParams(cy_uint plogor, cy_uint plogand, bool plognot,
 		 cy_uint clogor, cy_uint clogand, bool clognot) {
     m_por   = plogor;
     m_pand  = plogand;
@@ -237,6 +258,16 @@ class SelectProcessor : public CellProcessor {
     m_cand = clogand;
     m_cnot = clognot;
     
+  }
+
+  void SetFieldParams(const std::string field,
+		      float g, float l, float ge, float le, float et) {
+    m_field = field;
+    m_greater   = g;
+    m_less  = l;
+    m_greater_equal  = ge;
+    m_less_equal  = le;
+    m_equal = et;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -256,6 +287,16 @@ class SelectProcessor : public CellProcessor {
   // should we NOT the output
   bool m_pnot;
   bool m_cnot;  
+
+  // field selectors
+  std::string m_field;
+  float m_greater = dummy_float;
+  float m_less    = dummy_float;
+  float m_greater_equal = dummy_float;
+  float m_less_equal    = dummy_float;
+  float m_equal         = dummy_float;
+
+  int m_i = -1; // index of the field
   
 };
 

@@ -25,40 +25,42 @@ enum class ColumnType {
  */
 class Column {
 public:
-    virtual ~Column() = default;
+  virtual ~Column() = default;
+  
+  virtual std::shared_ptr<Column> clone() const = 0;
+  
+  virtual std::shared_ptr<Column> CopyToFloat() const = 0;    
+  
+  virtual size_t size() const = 0;
+  
+  virtual std::string toString() const = 0;
+  
+  virtual ColumnType GetType() const = 0;
+  
+  virtual void Log10() = 0;
+  
+  virtual float GetNumericElem(size_t i) const = 0;
+  
+  virtual std::string GetStringElem(size_t i) const = 0;
+  
+  virtual void SubsetColumn(const std::vector<size_t>& indices) = 0;
+  
+  virtual void PrintElem(size_t i) const = 0;
+  
+  virtual void SetPrecision(size_t n) = 0;
+  
+  virtual float Pearson(const Column& c) const = 0;
+  
+  virtual float Mean() const = 0;
+  virtual float Min() const = 0;
+  virtual float Max() const = 0;
 
-    virtual std::shared_ptr<Column> clone() const = 0;
+  virtual void Order(const std::vector<size_t> indicies) = 0;
 
-    virtual std::shared_ptr<Column> CopyToFloat() const = 0;    
-    
-    virtual size_t size() const = 0;
+  virtual void reserve(size_t n) = 0;
 
-    virtual std::string toString() const = 0;
-    
-    virtual ColumnType GetType() const = 0;
+  virtual void resize(size_t n) = 0;
 
-    virtual void Log10() = 0;
-
-    virtual void resize(size_t n) = 0;
-
-    virtual float GetNumericElem(size_t i) const = 0;
-
-    virtual std::string GetStringElem(size_t i) const = 0;
-    
-    virtual void SubsetColumn(const std::vector<size_t>& indices) = 0;
-
-    virtual void PrintElem(size_t i) const = 0;
-
-    virtual void SetPrecision(size_t n) = 0;
-
-    virtual float Pearson(const Column& c) const = 0;
-
-    virtual float Mean() const = 0;
-    virtual float Min() const = 0;
-    virtual float Max() const = 0;
-
-    virtual void reserve(size_t n) = 0;
-    
 };
 
 template <typename T>
@@ -96,15 +98,6 @@ class NumericColumn : public Column {
     return std::make_shared<NumericColumn<T>>(*this);
   }
 
-  void reserve(size_t n) override {
-    m_vec.clear();
-    m_vec.reserve(n);
-  }
-
-  void resize(size_t n) override {
-    m_vec.resize(n);
-  }
-  
   float GetNumericElem(size_t i) const override {
     if (i >= m_vec.size())
       throw std::out_of_range("Index out of range");
@@ -270,7 +263,24 @@ class NumericColumn : public Column {
     const std::vector<T>& getData() const {
       return m_vec;
     }
-    
+
+  void reserve(size_t n) override {
+    m_vec.clear();
+    m_vec.reserve(n);
+  }
+
+  void resize(size_t n) override {
+    m_vec.resize(n);
+  }
+
+  void Order(const std::vector<size_t> indicies) override {
+    std::vector<T> tmp_vec(this->size());
+    for (size_t i = 0; i < indicies.size(); i++) {
+      tmp_vec[i] = m_vec.at(indicies.at(i));
+    }
+    m_vec = tmp_vec;
+  }
+  
 protected:
     
     std::vector<T> m_vec;
@@ -366,7 +376,7 @@ public:
       throw std::runtime_error("Out of bounds in PrintElem");
     }
   }
-  
+
   void reserve(size_t n) override {
     m_vec.clear();
     m_vec.reserve(n);
@@ -374,6 +384,14 @@ public:
 
   void resize(size_t n) override {
     m_vec.resize(n);
+  }
+
+  void Order(const std::vector<size_t> indicies) override {
+    std::vector<std::string> tmp_vec(this->size());
+    for (size_t i = 0; i < indicies.size(); i++) {
+      tmp_vec[i] = m_vec.at(indicies.at(i));
+    }
+    m_vec = tmp_vec;
   }
 
   
@@ -484,6 +502,14 @@ class GraphColumn : public Column {
 
   void resize(size_t n) override {
     m_vec.resize(n);
+  }
+
+  void Order(const std::vector<size_t> indicies) override {
+    std::vector<CellNode> tmp_vec(this->size());
+    for (size_t i = 0; i < indicies.size(); i++) {
+      tmp_vec[i] = m_vec.at(indicies.at(i));
+    }
+    m_vec = tmp_vec;
   }
 
   
@@ -610,14 +636,22 @@ class FlagColumn : public Column {
       throw std::runtime_error("Out of bounds in PrintElem");
     }
   }
-  
-  void reserve(size_t n) override {
+
+    void reserve(size_t n) override {
     m_vec.clear();
     m_vec.reserve(n);
   }
 
   void resize(size_t n) override {
     m_vec.resize(n);
+  }
+
+  void Order(const std::vector<size_t> indicies) override {
+    std::vector<CellFlag> tmp_vec(this->size());
+    for (size_t i = 0; i < indicies.size(); i++) {
+      tmp_vec[i] = m_vec.at(indicies.at(i));
+    }
+    m_vec = tmp_vec;
   }
 
   

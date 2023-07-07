@@ -55,7 +55,7 @@ static CellTable table;
 
 static void build_table();
 
-static const char* shortopts = "jhHNyvmMGPr:t:a:i:A:O:d:g:b:c:s:k:n:r:w:l:x:X:o:R:f:";
+static const char* shortopts = "jhHNyvmMPr:e:g:G:t:a:i:A:O:d:b:c:s:k:n:r:w:l:L:x:X:o:R:f:D:V:";
 static const struct option longopts[] = {
   { "verbose",                    no_argument, NULL, 'v' },
   { "threads",                    required_argument, NULL, 't' },
@@ -67,7 +67,7 @@ static const struct option longopts[] = {
   { "crop",                       required_argument, NULL, 'c' },
   { "cut",                        required_argument, NULL, 'x' },
   { "strict-cut",                 required_argument, NULL, 'X' },    
-  { "sort",                       no_argument, NULL, 'y' },  
+  //{ "sort",                       no_argument, NULL, 'y' },  
   { "csv",                        no_argument, NULL, 'j'},
   { NULL, 0, NULL, 0 }
 };
@@ -77,16 +77,19 @@ static const char *RUN_USAGE_MESSAGE =
 "  view       - View the cell table\n"
 "  count      - Output number of cells in table\n"  
 "  cut        - Select only given markers and metas\n"
+"  head       - Keep the first lines of a file\n"
 "  clean      - Removes data to decrease disk size\n"
+"  delaunay   - Calculate the Delaunay triangulation\n"
 "  average    - Average all of the data columns\n"  
-"  cat        - Concatenate multiple samples\n"  
+  //"  cat        - Concatenate multiple samples\n"
+"  sort       - Sort the cells\n"
 "  subsample  - Subsample cells randomly\n"
-"  plot       - Generate an ASCII style plot\n"
+  //"  plot       - Generate an ASCII style plot\n"
 "  roi        - Trim cells to a region of interest within a given polygon\n"
-"  histogram  - Create a histogram of the data\n"
+  //"  histogram  - Create a histogram of the data\n"
 "  log10      - Apply a base-10 logarithm transformation to the data\n"
 "  correlate  - Calculate the correlation between variables\n"
-"  info       - Display information about the dataset"
+"  info       - Display information about the dataset\n"
 "  umap       - Construct the marker space UMAP\n"
 "  spatial    - Construct the spatial KNN graph\n"
 "  tumor      - Set the tumor flag\n"
@@ -97,7 +100,10 @@ static const char *RUN_USAGE_MESSAGE =
 "  cereal     - Create a .cys format file from a CSV\n"
 "\n";
 
+static int sortfunc(int argc, char** argv);
+static int headfunc(int argc, char** argv);
 static int convolvefunc(int argc, char** argv);
+static int delaunayfunc(int argc, char** argv);
 static int tumorfunc(int argc, char** argv);
 static int ldafunc(int argc, char** argv);
 static int averagefunc(int argc, char** argv);
@@ -198,7 +204,13 @@ int main(int argc, char **argv) {
   } else if (opt::module == "select") {
     val = selectfunc(argc, argv);
   } else if (opt::module == "convolve") {
-    val = convolvefunc(argc, argv);    
+    val = convolvefunc(argc, argv);
+  } else if (opt::module == "head") {
+    val = headfunc(argc, argv);
+  } else if (opt::module == "sort") {
+    val = sortfunc(argc, argv);
+  } else if (opt::module == "delaunay") {
+    val = delaunayfunc(argc, argv);
   } else if (opt::module == "pheno") {
     val = phenofunc(argc, argv);
   } else if (opt::module == "count") {
@@ -228,53 +240,8 @@ static void build_table() {
   table.SetCmd(cmd_input);
 }
 
-
-/* static int radiusfunc(int argc, char** argv) {
-
-  int radius = 20;
-  bool die = false;
-  
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
-    std::istringstream arg(optarg != NULL ? optarg : "");
-    switch (c) {
-    case 'r' : arg >> radius; break;
-    case 'v' : opt::verbose = true; break;
-    case 'h' : opt::header = true; break;
-    default: die = true;
-    }
-  }
-
-  optind++;
-  // Process any remaining no-flag options
-  while (optind < argc) {
-    if (opt::infile.empty()) {
-      opt::infile = argv[optind];
-    } 
-    optind++;
-  }
-  
-  // display help if no input
-  if (opt::infile.empty() || die) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift radius [csvfile] -r <dist>\n"
-      "  Select cells with centroids within spatial distance of r\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
-      "    -r [10]                   Radius to select out\n"
-      "    -v, --verbose             Increase output to stderr\n"
-      "\n";
-    std::cerr << USAGE_MESSAGE;
-    return 1;
-  }
-
-  read_table();
-
-  return 0;
-}
-*/
-
 static int convolvefunc(int argc, char** argv) {
-
+ 
   int width = 200;
   std::string intiff;
   float microns_per_pixel = 0;
@@ -434,7 +401,6 @@ static int cleanfunc(int argc, char** argv) {
     case 'v' : opt::verbose = true; break;
     case 'm' : clean_markers = true; break;
     case 'M' : clean_meta = true; break;
-    case 'G' : clean_graph = true; break;
     case 'P' : clean_graph = true; clean_markers = true; clean_meta = true; break;      
     default: die = true;
     }
@@ -788,9 +754,11 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "crop"  || opt::module == "umap" ||
 	 opt::module == "count" || opt::module == "clean" ||
 	 opt::module == "tumor" || opt::module == "convolve" || 
-	 opt::module == "cat" || opt::module == "cereal" || 
+	 opt::module == "cat" || opt::module == "cereal" ||
+	 opt::module == "sort" || 
 	 opt::module == "correlate" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
+	 opt::module == "delaunay" || opt::module == "head" || 
 	 opt::module == "average" || opt::module == "lda" || 
 	 opt::module == "spatial" || opt::module == "radialdens" || 
 	 opt::module == "select" || opt::module == "pheno")) {
@@ -968,6 +936,58 @@ static int plotfunc(int argc, char** argv) {
   return 0;
 }
 
+static int headfunc(int argc, char** argv) {
+
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'n' : arg >> opt::n; break;
+    default: die = true;
+    }
+  }
+
+  // Process any remaining no-flag options
+  if (die || in_out_process(argc, argv)) {
+
+    const char *USAGE_MESSAGE =
+      "Usage: cysift head [csvfile] <options>\n"
+      "  Keep only the first n cells\n"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -n, --numrows             Number of rows to keep\n"
+      "    -v, --verbose             Increase output to stderr"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // set table params
+  if (opt::verbose)
+    table.SetVerbose();
+
+  HeadProcessor headp;
+  headp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);  
+  headp.SetParams(opt::n);
+    
+  if (table.StreamTable(headp, opt::infile))
+    return 1; // non-zero status on StreamTable
+
+  
+  //build_table();
+  
+  // subsample
+  //table.Subsample(opt::n, opt::seed);
+
+  //table.SetupOutputWriter(opt::outfile);
+  
+  // print it
+  //table.OutputTable();
+  
+  return 0;
+  
+}
+
+
 static int subsamplefunc(int argc, char** argv) {
 
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1000,7 +1020,10 @@ static int subsamplefunc(int argc, char** argv) {
   // subsample
   table.Subsample(opt::n, opt::seed);
 
-  table.PrintTable(opt::header);
+  table.SetupOutputWriter(opt::outfile);
+  
+  // print it
+  table.OutputTable();
   
   return 0;
   
@@ -1157,6 +1180,14 @@ static int selectfunc(int argc, char** argv) {
   cy_uint clogor = 0;
   cy_uint clogand = 0;
   bool clognot = false;
+
+  // field select
+  std::string field;
+  float greater_than = dummy_float;
+  float less_than = dummy_float;
+  float equal_to = dummy_float;
+  float greater_than_or_equal = dummy_float;
+  float less_than_or_equal = dummy_float;
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -1167,23 +1198,50 @@ static int selectfunc(int argc, char** argv) {
     case 'N' : plognot = true; break;
     case 'O' : arg >> clogor; break;
     case 'A' : arg >> clogand; break;
-    case 'M' : clognot = true; break;      
+    case 'M' : clognot = true; break;
+    case 'f' : arg >> field; break;
+    case 'g' : arg >> greater_than; break;
+    case 'l' : arg >> less_than; break;
+    case 'G' : arg >> greater_than_or_equal; break;
+    case 'L' : arg >> less_than_or_equal; break;
+    case 'e' : arg >> equal_to; break;
     default: die = true;
     }
   }
 
+  size_t num_selected = greater_than != dummy_float +
+                        less_than != dummy_float +
+                        greater_than_or_equal != dummy_float +
+                        less_than_or_equal != dummy_float +
+                        equal_to != dummy_float;    
+  
+  // check logic of field operators
+  if ( num_selected > 1 || (num_selected != 1 && !field.empty())) {
+    std::cerr << "Select field and then one of >, <, >=, <=, or = (with flags)" << std::endl;
+    die = true;
+  }
+  
   if (die || in_out_process(argc, argv)) {
   
     const char *USAGE_MESSAGE =
       "Usage: cysift select [csvfile]\n"
       "  Select cells by phenotype flag\n"
       "    csvfile: filepath or a '-' to stream to stdin\n"
+      "  Flag selection\n"
       "    -o                    Cell phenotype: Logical OR flags\n"
       "    -a                    Cell phenotype: Logical AND flags\n"
       "    -N                    Cell phenotype: Not flag\n"
       "    -O                    Cell flag: Logical OR flags\n"
       "    -A                    Cell flag: Logical AND flags\n"
       "    -M                    Cell flag: Not flag\n"
+      "  Marker selection\n"
+      "    -f                    Marker / meta field to select on\n"
+      "    -g                    > - Greater than\n"
+      "    -g                    >= - Greater than or equal to \n"      
+      "    -l                    < - Less than\n"
+      "    -L                    <= - Less than or equal to\n"      
+      "    -e                    Equal to (can use with -g or -m for >= or <=)\n"
+      "  Options\n"
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -1193,8 +1251,9 @@ static int selectfunc(int argc, char** argv) {
   // setup the selector processor
   SelectProcessor select;
   select.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  select.SetParams(plogor, plogand, plognot, clogor, clogand, clognot);
-
+  select.SetFlagParams(plogor, plogand, plognot, clogor, clogand, clognot);
+  select.SetFieldParams(field, greater_than, less_than, greater_than_or_equal, less_than_or_equal, equal_to);
+			
   // process
   table.StreamTable(select, opt::infile);
   
@@ -1400,6 +1459,120 @@ static int cerealfunc(int argc, char** argv) {
   return 0;
 }
 
+static int delaunayfunc(int argc, char** argv) {
+
+  std::string delaunay;
+  std::string voronoi;
+  int limit = -1;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 't' : arg >> opt::threads; break;
+    case 'D' : arg >> delaunay; break;
+    case 'V' : arg >> voronoi; break;
+    case 'l' : arg >> limit; break;
+    case 'v' : opt::verbose = true; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift delaunay [csvfile]\n"
+      "  Perform a the Delaunay triangulation of a cell table\n"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -t [1]                    Number of threads\n"
+      "    -D                        Filename of PDF to output of Delaunay triangulation\n"
+      "    -V                        Filename of PDF to output of Voronoi diagram\n"
+      "    -l                        Size limit of an edge in the Delaunay triangulation\n"
+      "    -v, --verbose             Increase output to stderr\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // build the table
+  // but don't have to convert columns
+  // since we don't use pre-existing Graph or Flags for this
+  build_table();
+
+  // check we were able to read the table
+  if (table.CellCount() == 0) {
+    std::cerr << "Ending with no cells? Error in upstream operation?" << std::endl;
+    return 0;
+  }
+
+  table.SetupOutputWriter(opt::outfile);
+  
+  table.Delaunay(delaunay, voronoi, limit);
+  
+  table.OutputTable();
+  
+  return 0;
+  
+}
+
+static int sortfunc(int argc, char** argv) {
+
+  bool xy = false;
+  std::string field;
+  bool reverse = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'y' : xy = true; break;
+    case 'x' : arg >> field; break;
+    case 'j' : reverse = true; break;
+    case 'v' : opt::verbose = true; break;
+    default: die = true;
+    }
+  }
+
+  if ( !xy && field.empty() ) {
+    die = true;
+    std::cerr << "Must select only one of -y flag or -x <arg>\n" << std::endl;
+  }
+  
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift sort [cysfile]\n"
+      "  Sort cells\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
+      "    -y                    Flag to have cells sort by (x,y), in increasing distance from 0\n"
+      "    -x                    Field to sort on\n"
+      "    -j                    Reverse sort order\n"
+      "    -v, --verbose         Increase output to stderr\n"      
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  build_table();
+
+  // check we were able to read the table
+  if (table.CellCount() == 0) {
+    std::cerr << "Ending with no cells? Error in upstream operation?" << std::endl;
+    return 0;
+  }
+  
+  // setup output writer
+  table.SetupOutputWriter(opt::outfile);
+
+  if (xy)
+    table.sortxy(reverse);
+
+  if (!field.empty())
+    table.sort(field, reverse);
+  
+  // print it
+  table.OutputTable();
+
+  return 0;
+}
+
+
 static int countfunc(int argc, char** argv) {
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1465,3 +1638,4 @@ static bool in_only_process(int argc, char** argv) {
   return opt::infile.empty();
 
 }
+
