@@ -1,5 +1,6 @@
 #include <random>
 #include <cstdlib>
+#include <boost/functional/hash.hpp>
 
 #include "cairo/cairo.h"
 #include "cairo/cairo-pdf.h"
@@ -20,8 +21,40 @@ typedef K::Point_2 Point;
 #include <H5Cpp.h>
 
 #include <delaunator.hpp>
+
+#ifdef HAVE_MLPACK
 #include <mlpack/methods/gmm/gmm.hpp>
 #include <mlpack/core.hpp>
+#endif
+
+struct JPoint {
+  
+  float x;
+  float y;
+
+  JPoint(float mx, float my) : x(mx), y(my) {}
+  
+  //std::ostream& operator<<(std::ostream& os, const JPoint& p) {
+  //  os << p.x << "," << p.y;
+  //  return os;
+  //}
+  
+  bool operator==(const JPoint& other) const {
+    return x == other.x && y == other.y;
+  }
+  
+};
+
+namespace std {
+    template<> struct hash<JPoint> {
+        std::size_t operator()(const JPoint& p) const {
+            std::size_t seed = 0;
+            boost::hash_combine(seed, std::hash<float>{}(p.x));
+            boost::hash_combine(seed, std::hash<float>{}(p.y));
+            return seed;
+        }
+    };
+}
 
 // hash table structures for Delaunay and Voronoi (to keep from duplicating lines)
 struct pair_hash {
@@ -39,6 +72,13 @@ struct Color {
 
 struct line_eq {
     bool operator() (const std::pair<Point, Point>& lhs, const std::pair<Point, Point>& rhs) const {
+        return (lhs.first == rhs.first && lhs.second == rhs.second) ||
+               (lhs.first == rhs.second && lhs.second == rhs.first);
+    }
+};
+
+struct jline_eq {
+    bool operator() (const std::pair<JPoint, JPoint>& lhs, const std::pair<JPoint, JPoint>& rhs) const {
         return (lhs.first == rhs.first && lhs.second == rhs.second) ||
                (lhs.first == rhs.second && lhs.second == rhs.first);
     }
@@ -611,15 +651,14 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
   int limit_sq = limit <= 0 ? INT_MAX : limit * limit;
   
   // hash set to check if point already made
-  std::unordered_set<std::pair<Point, Point>, pair_hash, line_eq> lines;
-  lines.max_load_factor(0.25);
+  std::unordered_set<std::pair<JPoint, JPoint>, pair_hash, jline_eq> lines;
+  
   // reserve memory to avoid dynamic reallocation
+  //lines.max_load_factor(0.25);  
   lines.reserve(d.triangles.size() / 3);
   
   size_t skip_count = 0;
   size_t draw_count = 0;
-  
-  // hash for each
   
   // Find which lines to keep, by de-duplicating and removing lines > size limit
   for(size_t i = 0; i < d.triangles.size(); i+=3) {
@@ -635,16 +674,16 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
     float x2 = static_cast<float>(d.coords[2 * d.triangles[i+2]]);
     float y2 = static_cast<float>(d.coords[2 * d.triangles[i+2] + 1]);
 
-    std::array<std::pair<Point, Point>, 3> line_array = {
-      {std::make_pair(Point(x0, y0), Point(x1, y1)), 
-       std::make_pair(Point(x1, y1), Point(x2, y2)), 
-       std::make_pair(Point(x2, y2), Point(x0, y0))}
+    std::array<std::pair<JPoint, JPoint>, 3> line_array = {      
+      {std::make_pair(JPoint(x0, y0), JPoint(x1, y1)), 
+       std::make_pair(JPoint(x1, y1), JPoint(x2, y2)), 
+       std::make_pair(JPoint(x2, y2), JPoint(x0, y0))}
     };
 
     // deduplicate and remove Delaunay connections that are too short
     for (auto& line : line_array) {
-      float dx = line.first.x() - line.second.x();
-      float dy = line.first.y() - line.second.y();
+      float dx = line.first.x - line.second.x;
+      float dy = line.first.y - line.second.y;
       if (lines.find(line) == lines.end() && dx*dx + dy*dy <= limit_sq) {
         lines.insert(line);
         ++draw_count;
@@ -655,20 +694,20 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
   }
   
   // store the adjaceny list
-  std::unordered_map<Point, std::vector<Point>> adjList;
+  std::unordered_map<JPoint, std::vector<JPoint>> adjList;  
   for (const auto& line : lines) {
     adjList[line.first].push_back(line.second);
     adjList[line.second].push_back(line.first); // assuming undirected graph
   }
   
   // build the adjaceny map
-  std::unordered_set<Point> visited;
-  std::unordered_map<Point, int> pointToComponentId;
+  std::unordered_set<JPoint> visited;
+  std::unordered_map<JPoint, int> pointToComponentId;
   int currentComponentId = 1;
 
   // depth first seach lambda
-  std::function<void(Point)> DFS;
-  DFS = [&](Point currentPoint) {
+  std::function<void(JPoint)> DFS;
+  DFS = [&](JPoint currentPoint) {
     visited.insert(currentPoint);
     pointToComponentId[currentPoint] = currentComponentId;
     for (const auto& neighbor : adjList[currentPoint]) {
@@ -698,7 +737,8 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
   
   // fill the data into the columns
   for (size_t i = 0; i < x_ptr->size(); i++) {
-    Point p = {x_ptr->GetNumericElem(i),y_ptr->GetNumericElem(i)};
+    //Point p = {x_ptr->GetNumericElem(i),y_ptr->GetNumericElem(i)};
+    JPoint p = {x_ptr->GetNumericElem(i),y_ptr->GetNumericElem(i)};    
     
     // find the point in the component labels
     auto idd = pointToComponentId.find(p);
@@ -740,8 +780,11 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
 
     // draw the actual lines
     for (const auto& line : lines) {
-      cairo_move_to(cr, line.first.x(), line.first.y());
-      cairo_line_to(cr, line.second.x(), line.second.y());
+      //cairo_move_to(cr, line.first.x(), line.first.y());
+      //      cairo_line_to(cr, line.second.x(), line.second.y());
+      cairo_move_to(cr, line.first.x, line.first.y);
+      cairo_line_to(cr, line.second.x, line.second.y);
+      
     }
 
     cairo_stroke(cr); // Stroke all the lines
@@ -759,12 +802,12 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
 
     // draw the points (cells) colored by component
     for (const auto& pair : pointToComponentId) {
-      const Point& point = pair.first;
+      const JPoint& point = pair.first;
       int componentId = pair.second;
       Color c = color_map[componentId];
 
       cairo_set_source_rgb(cr, c.red/255.0, c.green/255.0, c.blue/255.0);
-      cairo_arc(cr, point.x(), point.y(), 1.0, 0.0, 2.0 * M_PI);
+      cairo_arc(cr, point.x, point.y, 1.0, 0.0, 2.0 * M_PI);
       cairo_fill(cr);
     }
     
@@ -2133,6 +2176,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
 
 void CellTable::GMM_EM() {
 
+#ifdef HAVE_MLPACK
   arma::mat dataset;
   mlpack::data::Load("data.csv", dataset, true);
 
@@ -2141,4 +2185,6 @@ void CellTable::GMM_EM() {
   
   // Train the model.
   gmm.Train(dataset);
+
+#endif 
 }
