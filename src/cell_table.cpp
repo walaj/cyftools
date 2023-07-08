@@ -34,7 +34,9 @@ struct JPoint {
 
   JPoint(float mx, float my) : x(mx), y(my) {}
   
-  //std::ostream& operator<<(std::ostream& os, const JPoint& p) {
+  std::string print() const { return std::to_string(x) + "," + std::to_string(y); }
+
+  //  std::ostream& operator<<(std::ostream& os, const JPoint& p) {
   //  os << p.x << "," << p.y;
   //  return os;
   //}
@@ -92,27 +94,6 @@ static size_t debugr = 0;
 std::vector<Cell> cell_buffer;
 #pragma omp threadprivate(cell_buffer)
 #endif
-
-typedef std::pair<cy_uint, cy_uint> point;
-struct point_hash {
-    inline std::size_t operator()(const point & v) const {
-        return v.first*1000000+v.second;
-    }
-};
-
-// Function to count the number of points within a box centered at (x, y).
-int count_points(const std::unordered_set<point, point_hash>& points_set, int x, int y, int w) {
-    int half_w = w / 2;
-    int count = 0;
-    for (int i = x - half_w; i <= x + half_w; i++) {
-        for (int j = y - half_w; j <= y + half_w; j++) {
-            if (points_set.count({i, j})) {
-                count++;
-            }
-        }
-    }
-    return count;
-}
 
 const CellHeader& CellTable::GetHeader() const {
   return m_header;
@@ -612,9 +593,7 @@ void CellTable::sort(const std::string& field, bool reverse) {
      if (t.second->size())
       t.second->Order(indices);
    }
-  
 }
-
 
 void CellTable::Delaunay(const std::string& pdf_delaunay,
 		const std::string& pdf_voronoi,
@@ -654,7 +633,6 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
   std::unordered_set<std::pair<JPoint, JPoint>, pair_hash, jline_eq> lines;
   
   // reserve memory to avoid dynamic reallocation
-  //lines.max_load_factor(0.25);  
   lines.reserve(d.triangles.size() / 3);
   
   size_t skip_count = 0;
@@ -704,26 +682,34 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
   std::unordered_set<JPoint> visited;
   std::unordered_map<JPoint, int> pointToComponentId;
   int currentComponentId = 1;
-
-  // depth first seach lambda
-  std::function<void(JPoint)> DFS;
-  DFS = [&](JPoint currentPoint) {
-    visited.insert(currentPoint);
-    pointToComponentId[currentPoint] = currentComponentId;
-    for (const auto& neighbor : adjList[currentPoint]) {
-      if (visited.find(neighbor) == visited.end()) {
-	DFS(neighbor);
+  
+  // Iterative DFS using a stack
+  std::stack<JPoint> stack;
+  for (const auto& point : adjList) {
+    if (visited.find(point.first) == visited.end()) {
+      stack.push(point.first);
+      while (!stack.empty()) {
+	JPoint currentPoint = stack.top();
+	stack.pop();
+	if (visited.find(currentPoint) == visited.end()) {
+	  visited.insert(currentPoint);
+	  pointToComponentId[currentPoint] = currentComponentId;
+	  for (const auto& neighbor : adjList[currentPoint]) {
+	    stack.push(neighbor);
+	  }
+	}
       }
+      currentComponentId++;
     }
-  };
+  }
   
   // Run DFS from every point
-  for (const auto& point : adjList) {
+  /*  for (const auto& point : adjList) {
     if (visited.find(point.first) == visited.end()) {
       DFS(point.first);
       currentComponentId++;
     }
-  } 
+    } */
 
   // setup columns to store the delaunay components
   std::shared_ptr<IntCol> d_label = std::make_shared<IntCol>();
