@@ -10,7 +10,10 @@
 input_file=$1
 output_file=$2
 
-module load R
+# load module on HMS sever
+if [[ ! -d "/Users/" ]]; then
+  module load R
+fi
 
 if ! command -v Rscript &> /dev/null
 then
@@ -24,5 +27,5 @@ if [[ ! -f "$input_file" ]]; then
     exit 1
 else
     echo "...running: Rscript /home/jaw34/git/cysift/R/frame_process.R ${input_file} ${output_file}" 
-    Rscript /home/jaw34/git/cysift/R/frame_process.R ${input_file} ${output_file}
+    Rscript ${HOME}/git/cysift/R/frame_process.R ${input_file} ${output_file}
 fi

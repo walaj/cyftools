@@ -53,6 +53,8 @@ std::string exclude_elements(const std::string_view& str, const std::unordered_s
 
 float euclidean_distance(float x1, float y1, float x2, float y2);
 
+bool check_readable(const std::string& filename);
+
 float euclidean_distance_squared(float x1, float y1, float x2, float y2);
 
 float manhattan_distance(float x1, float y1, float x2, float y2);

@@ -12,17 +12,50 @@ CellLDA::CellLDA(size_t nt, size_t nc) {
   n_classes = nc;
 }
 
-void CellLDA::run() {
+void CellLDA::run(CellTable& tab) {
 
   n_topics = 10;
   n_classes = 10;
   n_docs = 1000;
-  size_t n_words = 100;
+  //size_t n_words = 100;
+
+  std::vector<std::string> marker_cols = {
+    "CD31_200r",
+    "CD45_200r",
+    "CD68_200r",
+    "CD4_200r",
+    "FOXP3_200r",
+    "CD8_200r",
+    "FOXP3_200r",
+    "CD8_200r",
+    "CD45RO_200r",
+    "CD20_200r",
+    "PD_L1_200r",
+    "CD3_200r",
+    "CD163_200r",
+    "Ecad_200r",
+    "PD1_200r",
+    "Ki67_200r",
+    "PanCK_200r",
+    "SMA_200r"};
+    
+  n_words = marker_cols.size();
+  n_docs = m_table.at(marker_cols.at(0))->size();
+
+  // Create an Eigen matrix to hold the document data
+  Eigen::MatrixXi X(n_words, n_docs);
   
-  // Create 1000 random documents
-  X = (Eigen::ArrayXXd::Random(n_words, n_docs).abs() * 20).matrix().cast<int>();
-  y = (Eigen::ArrayXd::Random(n_docs).abs() * n_classes).matrix().cast<int>();
- 
+  // Fill the matrix with your data
+  for (const auto& s : marker_cols) {
+    auto it = tab.find(s);
+    assert(it != tab.end());
+    for (int j = 0; j < n_docs; j++) {
+      X(i, j) = static_cast<int>(it->second.GetNumericElem(j));
+    }
+  }
+
+  std::cerr << "...created documents" << std::endl;
+  
   // all the parameters below are the default and can be omitted
   ldaplusplus::LDA<double> lda = ldaplusplus::LDABuilder<double>()
     .set_fast_supervised_e_step(
@@ -48,6 +81,8 @@ void CellLDA::run() {
     .initialize_eta_zeros(n_topics) // initialize the supervised parameters
     .set_iterations(15);
 
+  std::cerr << "...lda plus plus ran" << std::endl;
+  
   // add a listener to calculate and print the likelihood for every iteration
   // and a progress for every 128 documents (for every minibatch)
   double likelihood = 0;
@@ -58,9 +93,9 @@ void CellLDA::run() {
 					     // an expectation has finished for a document
 					     if (ev->id() == "ExpectationProgressEvent") {
 					       count++; // seen another document
-					       if (count % 128 == 0) {
+					       /*if (count % 128 == 0) {
 						 std::cout << count << std::endl;
-					       }
+						 }*/
 					       
 					       // aggregate the likelihood if computed for this document
 					       auto expev =

@@ -81,14 +81,14 @@ static const char *RUN_USAGE_MESSAGE =
 "  clean      - Removes data to decrease disk size\n"
 "  delaunay   - Calculate the Delaunay triangulation\n"
 "  average    - Average all of the data columns\n"  
-  //"  cat        - Concatenate multiple samples\n"
+"  cat        - Concatenate multiple samples\n"
 "  sort       - Sort the cells\n"
 "  subsample  - Subsample cells randomly\n"
   //"  plot       - Generate an ASCII style plot\n"
 "  roi        - Trim cells to a region of interest within a given polygon\n"
   //"  histogram  - Create a histogram of the data\n"
 "  log10      - Apply a base-10 logarithm transformation to the data\n"
-"  correlate  - Calculate the correlation between variables\n"
+  //"  correlate  - Calculate the correlation between variables\n"
 "  info       - Display information about the dataset\n"
 "  umap       - Construct the marker space UMAP\n"
 "  spatial    - Construct the spatial KNN graph\n"
@@ -379,12 +379,7 @@ static int ldafunc(int argc, char** argv) {
   buildp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   table.StreamTable(buildp, opt::infile);
 
-  //
-  std::cerr << "...writing" << std::endl;
-  table.HDF5Write("output.h5");
-  
-  //CellLDA lda_topic;
-  //lda_topic.run();
+  table.LDA();
   
   return 0;
   
@@ -441,7 +436,6 @@ static int catfunc(int argc, char** argv) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 's' : arg >> samples; break;
     default: die = true;
     }
   }
@@ -467,14 +461,13 @@ static int catfunc(int argc, char** argv) {
       "  Concatenate together multiple cell tables\n"
       "    csvfile: filepaths of cell tables\n"
       "    -v, --verbose             Increase output to stderr\n"
-      "    -s                        Sample numbers, to be in same number as inputs and comma-sep\n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
   // parse the sample numbers
-  std::vector<int> sample_nums;
+  /*std::vector<int> sample_nums;
   std::unordered_set<std::string> tokens;
   std::stringstream ss(samples);
   std::string token;
@@ -484,10 +477,21 @@ static int catfunc(int argc, char** argv) {
 
   if (sample_nums.size() != opt::infile_vec.size() && sample_nums.size()) {
     throw std::runtime_error("Sample number csv line should have same number of tokens as number of input files");
-  }
+    }*/
   
   size_t offset = 0;
 
+  // force output to stdout
+  opt::outfile = "-";
+
+  // check files are readable at least
+  for (const auto& v : opt::infile_vec) {
+    if (!check_readable(v)) {
+      std::cerr << "Error: " << v << " not readable/exists" << std::endl;
+      return 1;
+    }
+  }
+  
   CatProcessor catp;
   catp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   catp.SetParams(offset, 0);
@@ -506,11 +510,7 @@ static int catfunc(int argc, char** argv) {
     
     // update the offset and sample num
     catp.SetOffset(offset);
-
-    if (sample_nums.size())
-      catp.SetSample(sample_nums.at(sample_num));
-    else
-      catp.SetSample(sample_num);
+    catp.SetSample(sample_num);
 
     // stream in the lines
     this_table.StreamTable(catp, opt::infile_vec.at(sample_num));
@@ -1173,6 +1173,8 @@ static int spatialfunc(int argc, char** argv) {
 
 static int selectfunc(int argc, char** argv) {
 
+
+  // flag selection
   cy_uint plogor = 0;
   cy_uint plogand = 0;
   bool plognot = false;
@@ -1181,14 +1183,16 @@ static int selectfunc(int argc, char** argv) {
   cy_uint clogand = 0;
   bool clognot = false;
 
-  // field select
-  std::string field;
-  float greater_than = dummy_float;
-  float less_than = dummy_float;
-  float equal_to = dummy_float;
-  float greater_than_or_equal = dummy_float;
-  float less_than_or_equal = dummy_float;
+
+  // field selection
+  bool or_toggle = false;
+  std::string sholder;
+  float holder;
   
+  SelectOpVec num_vec;
+  SelectOpMap criteria;
+  std::vector<std::string> field_vec;
+
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -1199,26 +1203,41 @@ static int selectfunc(int argc, char** argv) {
     case 'O' : arg >> clogor; break;
     case 'A' : arg >> clogand; break;
     case 'M' : clognot = true; break;
-    case 'f' : arg >> field; break;
-    case 'g' : arg >> greater_than; break;
-    case 'l' : arg >> less_than; break;
-    case 'G' : arg >> greater_than_or_equal; break;
-    case 'L' : arg >> less_than_or_equal; break;
-    case 'e' : arg >> equal_to; break;
+    case 'f' : arg >> sholder; field_vec.push_back(sholder); break;
+    case 'g' : arg >> holder; num_vec.push_back({optype::GREATER_THAN, holder}); break;
+    case 'l' : arg >> holder; num_vec.push_back({optype::LESS_THAN, holder}); break;
+    case 'G' : arg >> holder; num_vec.push_back({optype::GREATER_THAN_OR_EQUAL, holder}); break;
+    case 'L' : arg >> holder; num_vec.push_back({optype::LESS_THAN_OR_EQUAL, holder}); break;
+    case 'e' : arg >> holder; num_vec.push_back({optype::EQUAL_TO, holder}); break;
+    case 'j' : or_toggle = true; break;
     default: die = true;
     }
   }
 
-  size_t num_selected = greater_than != dummy_float +
-                        less_than != dummy_float +
-                        greater_than_or_equal != dummy_float +
-                        less_than_or_equal != dummy_float +
-                        equal_to != dummy_float;    
-  
-  // check logic of field operators
-  if ( num_selected > 1 || (num_selected != 1 && !field.empty())) {
-    std::cerr << "Select field and then one of >, <, >=, <=, or = (with flags)" << std::endl;
-    die = true;
+
+  if (field_vec.size() > 1) {
+
+    // make sure fields and criteria line up
+    if (num_vec.size() != field_vec.size()) {
+      std::cerr << "Must specify same number of fields (or just 1 field) as criteria" << std::endl;
+      die = true;
+    } else {
+      for (size_t i = 0; i < num_vec.size(); i++) {
+	criteria[field_vec.at(i)].push_back(num_vec.at(i));
+      }
+    }
+    
+  } else if (field_vec.size() == 1) {
+
+    if (num_vec.size() == 0) {
+      std::cerr << "Must specify a numeric criteria" << std::endl;
+      die = true;
+    } else {
+      for (const auto& c : num_vec) {
+	criteria[field_vec.at(0)].push_back(c);
+      }
+    }
+    
   }
   
   if (die || in_out_process(argc, argv)) {
@@ -1237,10 +1256,11 @@ static int selectfunc(int argc, char** argv) {
       "  Marker selection\n"
       "    -f                    Marker / meta field to select on\n"
       "    -g                    > - Greater than\n"
-      "    -g                    >= - Greater than or equal to \n"      
+      "    -G                    >= - Greater than or equal to \n"      
       "    -l                    < - Less than\n"
       "    -L                    <= - Less than or equal to\n"      
       "    -e                    Equal to (can use with -g or -m for >= or <=)\n"
+      "    -j                    Or the operations (default is and)\n"
       "  Options\n"
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
@@ -1251,8 +1271,8 @@ static int selectfunc(int argc, char** argv) {
   // setup the selector processor
   SelectProcessor select;
   select.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  select.SetFlagParams(plogor, plogand, plognot, clogor, clogand, clognot);
-  select.SetFieldParams(field, greater_than, less_than, greater_than_or_equal, less_than_or_equal, equal_to);
+  select.SetFlagParams(plogor, plogand, plognot, clogor, clogand, clognot); 
+  select.SetFieldParams(criteria, or_toggle);
 			
   // process
   table.StreamTable(select, opt::infile);
@@ -1425,6 +1445,9 @@ static int radialdensfunc(int argc, char** argv) {
 }
 
 int debugfunc(int argc, char** argv) {
+
+  
+  
   return 1;
 
 }
@@ -1596,6 +1619,7 @@ static int countfunc(int argc, char** argv) {
   }
 
   CountProcessor countp;
+  countp.SetCommonParams(opt::outfile, cmd_input, opt::verbose); // really shouldn't need any of these
 
   if (table.StreamTable(countp, opt::infile)) 
     return 1; // non-zero status on StreamTable

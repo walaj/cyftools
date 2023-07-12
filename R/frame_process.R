@@ -3,9 +3,9 @@ library(data.table)
 options(scipen=999)
 
 DEBUG=FALSE
-CELL_COUNT <- 10
-radcols=c("CD31_100r","CD45_100r","CD68_100r","CD4_100r","FOXP3_100r","CD8_100r","CD20_100r","PD_L1_100r","CD3_100r","CD163_100r","Ecad_100r","PD1_100r","PanCK_100r","SMA_100r")
-frame_size <- 300
+CELL_COUNT <- 100
+radcols=c("CD31_200r","CD45_200r","CD68_200r","CD4_200r","FOXP3_200r","CD8_200r","CD20_200r","PD_L1_200r","CD3_200r","CD163_200r","Ecad_200r","PD1_200r","PanCK_200r","SMA_200r")
+frame_size <- 400
 
 # get command line arguments
 args <- commandArgs(trailingOnly = TRUE)
@@ -15,7 +15,7 @@ cysfile <- args[1]
 split_str <- strsplit(basename(cysfile), split = "\\.")
 sample <- split_str[[1]][1]
 
-if (DEBUG) cysfile <- "~/Sorger/orion/orion_1_40/LSP10353.rad.cys"
+if (DEBUG) cysfile <- "~/Sorger/orion/orion_1_74/LSP10353.ptrd.cys"
 
 # check if command line arguments are provided
 if (length(args) < 2) {
@@ -33,23 +33,38 @@ if (!dir.exists(output_directory) || !file.access(output_directory, 2) == 0) {
   stop(paste("Output directory does not exist or is not writable:", output_directory))
 }
 
+if (grepl("$cys",cysfile)) {
+    cysfile_header = cysfile
+} else {
+    cysfile_header <- sub("\\.csv$", ".cys", cysfile)
+}
+
+
 ##########
 ### DATA READ
 ##########
 
-# header read
-dth <- fread(cmd=paste("cysift view -H", cysfile, "| grep '^@\\(MA\\|CA\\)'"), header=FALSE)
+                                       # header read
+
+
+dth <- fread(cmd=paste("cysift view -H", cysfile_header, "| grep '^@\\(MA\\|CA\\)'"), header=FALSE)
 dth[, V1 := gsub("^@","",V1)]
 dth[, V2 := gsub("^ID:","",V2)]
 dth[, V3 := NULL]
 dth[, V4 := NULL]
 setnames(dth, c("V1","V2"),c("tag","id"))
 
-# data read
+                                        # data read
+
+ix <- c(seq(5), which(dth$id %in% radcols))
 cat("...reading data\n")
-dt  <- fread(cmd=paste("cysift view", cysfile),header=FALSE)
-setnames(dt, paste0("V",seq(ncol(dt))), c("cellid","cell_flag","pheno_flag","x","y",dth$id))
-#radcols <- dth$id[seq(from=which(dth$id=="Orientation")+1, to=ncol(dt)-4)]
+if (grepl("$cys",cysfile)) {
+    dt  <- fread(cmd=paste("cysift view",cysfile),header=FALSE)    
+} else {
+    dt <- fread(cysfile, header=FALSE, select=ix)
+}
+
+setnames(dt, colnames(dt), c("cellid","cell_flag","pheno_flag","x","y",radcols))
 dt_rad <- dt[rowSums(dt != 0) > 0]
 
 ##########

@@ -236,3 +236,16 @@ float euclidean_distance_squared(float x1, float y1, float x2, float y2) {
     return std::sqrt(dx*dx + dy*dy);
 }
 
+bool check_readable(const std::string& filename) {
+
+  std::ifstream file(filename);
+
+  bool answer = file.is_open();
+  
+  // Close the file if it was opened
+  if (file) {
+    file.close();
+  }
+
+  return answer;
+}

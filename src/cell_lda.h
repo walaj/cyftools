@@ -1,7 +1,10 @@
 #pragma once
 
+
 #include <Eigen/Core>
 #include <ldaplusplus/LDABuilder.hpp>
+#include "cell_table.h"
+
 
 class CellLDA {
 
@@ -15,9 +18,9 @@ class CellLDA {
   Eigen::VectorXi y;
 
   size_t n_topics;
-  size_t n_classes;
   size_t n_docs;
+  size_t n_words;
   
-  void run();
+  void run(CellTable& tab);
   
 };

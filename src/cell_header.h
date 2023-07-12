@@ -24,9 +24,21 @@ class Tag {
   
   Tag() = default;
   
- Tag(uint8_t type, const std::string& mid, const std::string& mdata) :
-   type(type), id(mid), data(mdata), i(-1) {}
+  Tag(uint8_t type, const std::string& mid, const std::string& mdata) :
+    type(type), id(mid), data(mdata), i(-1) {}
 
+  std::string PrintType() const {
+    std::string typen;
+    switch(type) {
+    case MA_TAG: typen = "Marker tag type"; break;
+    case CA_TAG: typen = "Meta tag type"; break;
+    case GA_TAG: typen = "Graph tag type"; break;
+    case PG_TAG: typen = "Program tag type"; break;
+    default: typen = "UNKNOWN TAG TYPE"; 
+    }
+    return (typen);
+  }
+  
   Tag(uint8_t type, const std::string& mid, const std::string& mdata, int mi) :
     type(type), id(mid), data(mdata), i(mi) {}
   
@@ -59,6 +71,8 @@ class CellHeader {
   std::vector<Tag> GetAllTags() const { return tags; }
 
   size_t size() const { return tags.size(); }
+
+  bool isConcatenatable(const CellHeader& header) const;
   
   void SortTags();
   

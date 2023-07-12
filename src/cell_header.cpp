@@ -78,6 +78,35 @@ void CellHeader::Cut(const std::unordered_set<size_t> to_remove) {
   tags = new_tags;
 }
 
+bool CellHeader::isConcatenatable(const CellHeader& header) const {
+
+  std::vector<Tag> this_tags = GetDataTags();
+  std::vector<Tag> h_tags    = GetDataTags();
+
+  if (h_tags.size() != this_tags.size()) {
+    std::cerr << "Warning: Headers not concatentable. Have MA/CA (data) sizes of: " << this_tags.size() <<
+      " and " << h_tags.size() << std::endl;
+    return false;
+  }
+					 
+  
+  for (size_t i = 0; i < this_tags.size(); i++) {
+
+    const Tag& tt = this_tags.at(i);
+    const Tag& ht = h_tags.at(i);
+    
+    if (tt.id != ht.id || ht.type != tt.type) {
+      std::cerr << "Warning: Headers not concatenatable. Have different tags in the " << i <<
+	" position - " << tt.id << " and " << ht.id << " with types " <<
+	tt.PrintType() << " and " << ht.PrintType() << std::endl;
+      return false;
+    }
+  }
+
+  return true;
+  
+}
+
 void CellHeader::addTag(const Tag& tag) {
   
   // ADD: check tag type is valid
@@ -88,6 +117,13 @@ void CellHeader::addTag(const Tag& tag) {
   // add the index if not already added
   if ( (tag.type == Tag::CA_TAG || tag.type == Tag::MA_TAG) && tag.i == -1 )
     thistag.i = GetDataTags().size();
+
+  for (const auto& t : GetAllTags()) {
+    if (t.id == tag.id && tag.type == t.type && t.type != Tag::PG_TAG) {
+      std::cerr << "Warning: Tag " << t.id << " already in header" << std::endl;
+      return;
+    }
+  }
   
   // add tags to data_tags that store
   // float values in the column

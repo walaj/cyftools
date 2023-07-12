@@ -11,19 +11,18 @@ int SelectProcessor::ProcessHeader(CellHeader& header) {
   // find which index the field to select is
   size_t i = 0;
   for (const auto& t : header.GetDataTags()) {
-    
-    // don't cut non-data tags
-    if (t.id == m_field) {
-      if (m_i >= 0) {
-	throw std::runtime_error("Only one field can be selected");
-      }
-      m_i = i;
+
+    auto it = m_criteria.find(t.id);
+
+    // convert the string -> SelectOp map to a int -> SelectOp map
+    if (it != m_criteria.end()) {
+      m_criteria_int[i] = it->second;
     }
     i++;
   }
 
-  if (!m_field.empty() && m_i < 0)
-    throw std::runtime_error("Unable to find field " + m_field);
+  if (m_criteria.size() != m_criteria_int.size())
+    throw std::runtime_error("Unable to find all requested fields in the header");
 
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
 
@@ -123,30 +122,40 @@ int SelectProcessor::ProcessLine(Cell& cell) {
     //std::cerr << " writing cell " << std::endl;
   }
 
-
   ///////
   // FIELD
-  /////// 
-  if (m_i >= 0) {
-    assert(m_i < cell.m_cols.size());
-    float value = cell.m_cols.at(m_i);
+  ///////
+  bool flag_write_cell = write_cell;
+  write_cell = m_or_toggle ? false : write_cell; // if or toggle is on, then ignore flag criteria and set true
+  
+  for (const auto& c : m_criteria_int) {
+    
+    assert(c.first < cell.m_cols.size());
+    float value = cell.m_cols.at(c.first);
+    
+    for (const auto& cc : c.second) { // loop the vector of {optype, float}
 
-    if (m_greater != dummy_float) {
-      write_cell = write_cell && value > m_greater;
-    } else if (m_less != dummy_float) {
-      write_cell = write_cell && value < m_less;
-    } else if (m_greater_equal != dummy_float) {
-      write_cell = write_cell && value >= m_greater_equal;
-    } else if (m_less_equal != dummy_float) {
-      write_cell = write_cell && value <= m_less_equal;
-    } else if (m_equal != dummy_float) {
-      write_cell = write_cell && value == m_equal;
-    } else {
-      assert(false);
+      /*      std::cerr << "m_or_toggle " << m_or_toggle <<
+	" criteria int " << c.first << " optype equal? " <<
+	(cc.first == optype::EQUAL_TO) << " numeric " << cc.second <<
+	" value " << value << " write_cell before " << write_cell << std::endl;
+      */
+	
+      switch (cc.first) { // switching on the optype
+      case optype::GREATER_THAN: write_cell          = write_cell = m_or_toggle ? (write_cell || (value >  cc.second)) : (write_cell && (value >  cc.second));  break;
+      case optype::LESS_THAN: write_cell             = write_cell = m_or_toggle ? (write_cell || (value <  cc.second)) : (write_cell && (value <  cc.second));  break;
+      case optype::GREATER_THAN_OR_EQUAL: write_cell = write_cell = m_or_toggle ? (write_cell || (value >= cc.second)) : (write_cell && (value >= cc.second));  break;
+      case optype::LESS_THAN_OR_EQUAL: write_cell    = write_cell = m_or_toggle ? (write_cell || (value <= cc.second)) : (write_cell && (value <= cc.second));  break;
+      case optype::EQUAL_TO: write_cell              = write_cell = m_or_toggle ? (write_cell || (value == cc.second)) : (write_cell && (value == cc.second));  break;
+      default: assert(false);
+      }
+
+      //std::cerr << " write_cell after " << write_cell << std::endl;
     }
+    
   }
-
-  if (write_cell)
+  
+  if (flag_write_cell && write_cell)
     return CellProcessor::WRITE_CELL;
   
   return CellProcessor::NO_WRITE_CELL; // don't write if not selected
@@ -639,28 +648,20 @@ int ViewProcessor::ProcessLine(Cell& cell) {
 }
 
 int CatProcessor::ProcessLine(Cell& line) {
-  //int CatProcessor::ProcessLine(const std::string& line) {
 
-  //std::cerr << " processingl ine " << line << std::endl;
-  //std::cerr << " graph indicies " << m_graph_indicies.size() << std::endl;
-  /*  
-  // get the cell id
-  size_t o_cell_id = get_nth_element_as_integer(line, m_cellid_index);
-
-  // update the new cell id and max
-  size_t n_cell_id = m_offset + o_cell_id;
+  // update the cell id
+  size_t n_cell_id = m_offset + line.m_id; 
   if (n_cell_id > m_max_cellid)
     m_max_cellid = n_cell_id;
-
+  line.m_id = n_cell_id;
   
-  //  std::cerr << "old cell id: " << o_cell_id << " new " << n_cell_id <<
-  // " offset " << m_offset << " max " << this->GetMaxCellID() << std::endl;
-
-  // get the tokens
-  std::vector<std::string> tokens = tokenize_comma_delimited(line);
-
+  if (line.m_spatial_ids.size() && !m_error_emitted) {
+    std::cerr << "Warning: Graph concatenation not supported" << std::endl;
+    m_error_emitted = true;
+  }
+  
   // update the graph ids
-  for (const auto& i : m_graph_indicies) {
+  /*  for (const auto& i : m_graph_indicies) {
     const std::string& graph_line = tokens.at(i);
 
     // parse the node and rest the cell-ids with the offset
@@ -668,8 +669,7 @@ int CatProcessor::ProcessLine(Cell& line) {
     node.OffsetNodes(m_offset);
 
     tokens[i] = node.toString(false); // false is for "integerize"
-  }
-  */
+    }*/
   
   /*
   // update the cell id
@@ -682,78 +682,44 @@ int CatProcessor::ProcessLine(Cell& line) {
   std::cout << tokens_to_comma_string(tokens) << std::endl;
 
   */
-  return 1;
+  return WRITE_CELL;
 }
 
 int CatProcessor::ProcessHeader(CellHeader& header) {
-  
-  /*
+
   // if we already have the master header, just compare for error checking
   if (m_master_set) {
 
-    // loop both master header and new header
-    // but allow for master to have extra sample column
-    std::vector<std::string> header_cols = header.GetColOrder();
-    std::vector<std::string> master_cols = m_master_header.GetColOrder();
-    
-    // remove "sample" from master_cols
-    master_cols.erase(std::remove_if(master_cols.begin(), master_cols.end(),
-				     [](const std::string& s) { return s == "sample"; }), master_cols.end());
-    
-    if (!std::equal(header_cols.begin(), header_cols.end(), master_cols.begin(), master_cols.end())) {
-      throw std::runtime_error("Error: All headers have to have the same number of columns in same order");
+    // check compatibilty. The checker will emit the error message
+    if (!m_header.isConcatenatable(header)) {
+      assert(false);
     }
-
-    return 0;
-  }
-  
-  // find which one the cell id is
-  size_t ii = 0;
-  for (const auto& t : header.GetColTags()) {
-
-    // get the ID tag
-    if (t.isIDTag()) {
-
-      // check that there is only one ID tag
-      if (m_cellid_index != static_cast<size_t>(-1))
-	throw std::runtime_error("Error: Cell ID already found - does your header have two?");
-      m_cellid_index = ii;
-    }
-
-    // set graph tags
-    if (t.isGraphTag())
-      m_graph_indicies.push_back(ii);
     
-    ii++;
-  }
-  
-  // throw error if not found
-  if (m_cellid_index == static_cast<size_t>(-1)) {
-    throw std::runtime_error("Error: no cell id found. ID tag in header required");
-  }
-
-  // save a copy of the first header to be the master header
-  if (!m_master_header.size()) {
-    m_master_header = header;
+  } else {
+    
+    m_header = header;
     m_master_set = true;
-  }
+    m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
 
+    // just in time output, so as not to write an empty file if the input crashes
+    // set the output to file or stdout
+    this->SetupOutputStream();
+    
+    m_header.SortTags();
+    
+    // write the header
+    (*m_archive)(m_header);
+    
+  }
+  
   // add the sample tag if not already there
-  if (!m_master_header.hasTag("sample")) {
+  /*  if (!m_header.hasTag("sample")) {
     Tag sample_tag("CA","sample");
-    m_master_header.addTag(sample_tag);
+    m_header.addTag(sample_tag);
+  } else {
+    std::cerr << "Warning: Header already has sample tag, overwriting" << std::endl;
+    }*/
 
-  }
-
-  // add the command tag
-  Tag cmd_tag("CN", "cysift cat");
-  m_master_header.addTag(cmd_tag);
-  
-  // print the header
-  if (m_print_header && m_master_set)
-    m_master_header.Print();
-  */
-  
   return 0;
 }
 

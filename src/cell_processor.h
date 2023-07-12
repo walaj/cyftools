@@ -11,6 +11,20 @@
 #include <cereal/types/vector.hpp>
 #include <cereal/archives/portable_binary.hpp>
 
+// operation type for SelectProcessor
+enum optype {
+  GREATER_THAN,
+  LESS_THAN,
+  EQUAL_TO,
+  GREATER_THAN_OR_EQUAL,
+  LESS_THAN_OR_EQUAL
+};
+
+typedef std::pair<optype, float> SelectOp;
+typedef std::vector<SelectOp> SelectOpVec;
+typedef std::unordered_map<std::string, SelectOpVec> SelectOpMap;
+typedef std::unordered_map<int, SelectOpVec> SelectOpNumMap;
+
 const float dummy_float = 23.28323130082;
 
 class CellProcessor {
@@ -55,8 +69,6 @@ class CellProcessor {
     m_output_file = output_file;
     m_cmd = cmd;
     m_verbose = verbose;
-
-    
   }
   
 protected:
@@ -260,14 +272,9 @@ class SelectProcessor : public CellProcessor {
     
   }
 
-  void SetFieldParams(const std::string field,
-		      float g, float l, float ge, float le, float et) {
-    m_field = field;
-    m_greater   = g;
-    m_less  = l;
-    m_greater_equal  = ge;
-    m_less_equal  = le;
-    m_equal = et;
+  void SetFieldParams(const SelectOpMap criteria, bool or_toggle) {
+    m_criteria = criteria;
+    m_or_toggle = or_toggle;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -289,15 +296,9 @@ class SelectProcessor : public CellProcessor {
   bool m_cnot;  
 
   // field selectors
-  std::string m_field;
-  float m_greater = dummy_float;
-  float m_less    = dummy_float;
-  float m_greater_equal = dummy_float;
-  float m_less_equal    = dummy_float;
-  float m_equal         = dummy_float;
-
-  int m_i = -1; // index of the field
-  
+  SelectOpMap m_criteria;
+  SelectOpNumMap m_criteria_int;  
+  bool m_or_toggle = false;
 };
 
 
@@ -413,6 +414,8 @@ private:
   
   size_t m_offset;
   size_t m_sample;
+
+  bool m_error_emitted = false; // print error just once per file
   
   // the header to compare with (and print if needed)
   CellHeader m_master_header;

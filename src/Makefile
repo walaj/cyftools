@@ -10,7 +10,7 @@ EIGEN = -I$(HOME)/software/eigen-3.4.0
 KMEANS = -I$(HOME)/git/CppKmeans/include
 ANNOY = -I$(HOME)/git/annoy
 CEREAL = -I$(HOME)/software/cereal-1.3.2/include
-LDA = -I$(HOME)/git/supervised-lda/include
+LDA = -I$(HOME)/git/supervised-lda/include -DHAVE_LDAPLUSPLUS
 HD5 = -I$(HOME)/software/hdf5-1.14.1/include
 TIFF = -I$(HOME)/software/libtiff-git/include
 KDTREE = -I$(HOME)/git/KDTree
@@ -71,7 +71,7 @@ CFLAGS = -O2 -g -std=c++17 $(USE64BIT) $(OPENMP) -I. -I.. $(TIFF) $(KNN) $(UMAP)
 LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB) $(KDLIB) ${TIFFLD} $(ARMADILLOL) $(CAIROLIB) $(CGALLIB)
 
 # Specify the source files
-SRCS = cysift.cpp cell_table.cpp polygon.cpp cell_header.cpp cell_graph.cpp cell_flag.cpp cell_utils.cpp cell_processor.cpp cell_row.cpp cell_lda.cpp tiff_reader.cpp tiff_writer.cpp tiff_header.cpp tiff_utils.cpp tiff_ifd.cpp tiff_image.cpp tiff_cp.cpp
+SRCS = cysift.cpp cell_table.cpp polygon.cpp cell_header.cpp cell_graph.cpp cell_flag.cpp cell_utils.cpp cell_processor.cpp cell_row.cpp tiff_reader.cpp tiff_writer.cpp tiff_header.cpp tiff_utils.cpp tiff_ifd.cpp tiff_image.cpp tiff_cp.cpp
 
 # Specify the object files
 OBJS = $(SRCS:.cpp=.o)
