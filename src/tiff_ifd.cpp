@@ -1,3 +1,4 @@
+#ifdef HAVE_TIFFLIB
 #include "tiff_ifd.h"
 #include "tiff_utils.h"
 #include "cell_utils.h"
@@ -426,6 +427,4 @@ void* TiffIFD::__lined_read() {
   return data;
 }
 
-
-
-
+#endif

@@ -202,6 +202,7 @@ void get_two_elements_as_floats(const std::string_view& str, size_t n, size_t m,
     }
 }
 
+#ifdef HAVE_HDF5
 void write_hdf5_dataframe_attributes(H5::Group& group) {
 
   H5::DataSpace scalar_dataspace(H5S_SCALAR);
@@ -223,6 +224,7 @@ void write_hdf5_dataframe_attributes(H5::Group& group) {
   attr.write(strdatatype, &temp_cstr3);
   
 }
+#endif
 
 float euclidean_distance(float x1, float y1, float x2, float y2) {
     float dx = x2 - x1;

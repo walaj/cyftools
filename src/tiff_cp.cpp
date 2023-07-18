@@ -1,3 +1,4 @@
+#ifdef HAVE_TIFFLIB
 #include "tiff_cp.h"
 #include <string.h>
 #include <sstream>
@@ -472,3 +473,4 @@ std::string tiffprint(TIFF* tif) {
   return ss.str();
 
 }
+#endif

@@ -1,3 +1,4 @@
+#ifdef HAVE_TIFFLIB
 #include "tiff_reader.h"
 
 void TiffReader::print_means() {
@@ -78,3 +79,4 @@ uint32_t TiffReader::height() const {
 
 }
 
+#endif

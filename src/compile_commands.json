@@ -1,0 +1,12 @@
+[
+    {
+        "directory": "/Users/jeremiahwala/git/cysift/src",
+        "command": "g++ -O2 -g -std=c++17 -Xpreprocessor -fopenmp -I. -I.. -I/Users/jeremiahwala/software/libtiff-git/include -I/Users/jeremiahwala/git/knncolle/include -I/Users/jeremiahwala/git/umappp/include -I/Users/jeremiahwala/git/umappp/include -I/Users/jeremiahwala/software/eigen-3.4.0 -I/Users/jeremiahwala/git/knncolle/include -I/opt/homebrew/opt/libomp/include -I/Users/jeremiahwala/software/cereal-1.3.2/include -I/Users/jeremiahwala/git/supervised-lda/include -I/Users/jeremiahwala/software/hdf5-1.14.1/include -I/Users/jeremiahwala/git/KDTree -I/opt/homebrew/opt/cairo/include -I/opt/homebrew/opt/cgal/include -I/opt/homebrew/opt/boost/include -c -o cysift.o cysift.cpp",
+        "file": "cysift.cpp"
+    },
+    {
+        "directory": "/Users/jeremiahwala/git/cysift/src",
+        "command": "g++ -O2 -g -std=c++17 -Xpreprocessor -fopenmp -I/Users/jeremiahwala/git/cysift/src -DHAVE_LDAPLUSPLUS -DHAVE_BOOST -DHAVE_CAIRO -DHAVE_UMAPPP -DHAVE_HDF5 -I/Users/jeremiahwala/software/libtiff-git/include -I/Users/jeremiahwala/git/knncolle/include -I/Users/jeremiahwala/git/umappp/include -I/Users/jeremiahwala/git/umappp/include -I/Users/jeremiahwala/software/eigen-3.4.0 -I/Users/jeremiahwala/git/knncolle/include -I/opt/homebrew/opt/libomp/include -I/Users/jeremiahwala/software/cereal-1.3.2/include -I/Users/jeremiahwala/git/supervised-lda/include -I/Users/jeremiahwala/software/hdf5-1.14.1/include -I/Users/jeremiahwala/git/KDTree -I/opt/homebrew/opt/cairo/include -I/opt/homebrew/opt/cgal/include -I/opt/homebrew/opt/boost/include -I/Users/jeremiahwala/git/CppIrlba/include -I/Users/jeremiahwala/git/CppKmeans/include -I/Users/jeremiahwala/git/annoy  -I/Users/jeremiahwala/git/hnswlib -c -o cell_table.o cell_table.cpp",
+        "file": "cell_table.cpp"
+    }
+]

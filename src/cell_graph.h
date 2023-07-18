@@ -1,19 +1,14 @@
 #ifndef CELL_GRAPH_H
 #define CELL_GRAPH_H
 
-#include "umappp/Umap.hpp"
-#include "umappp/NeighborList.hpp"
-#include "umappp/combine_neighbor_sets.hpp"
-#include "umappp/find_ab.hpp"
-#include "umappp/neighbor_similarities.hpp"
-#include "umappp/optimize_layout.hpp"
-#include "umappp/spectral_init.hpp"
-#include "knncolle/knncolle.hpp"
+#include <utility>
+#include <vector>
+#include <string>
+#include <sstream>
 #include "cysift.h"
 
-//using Neighbors = std::vector<umappp::Neighbor<float>>;
-using Neighbors    = std::vector<umappp::Neighbor<float>>;
-using NeighborsInt = std::vector<std::pair<int, int>>;
+using JNeighbor =   std::pair<int, float>;
+using JNeighbors =  std::vector<JNeighbor>; 
 
 class CellNode {
  public:
@@ -26,16 +21,16 @@ class CellNode {
 	   const std::vector<uint32_t>& dist,
 	   const std::vector<cy_uint>& flags);
 
-  explicit CellNode(const Neighbors& neighbors) {};
+  explicit CellNode(const JNeighbors& neighbors) {};
 
-  explicit CellNode(const Neighbors& neighbors,
+  explicit CellNode(const JNeighbors& neighbors,
 		    const std::vector<cy_uint>& flags);
   
   void OffsetNodes(size_t offset);
   
-  const Neighbors& get_neighbors() const { return neighbors_; }
+  const JNeighbors& get_neighbors() const { return neighbors_; }
   
-  void set_neighbors(const Neighbors& neighbors) { neighbors_ = neighbors; }
+  void set_neighbors(const JNeighbors& neighbors) { neighbors_ = neighbors; }
 
   std::string toString() const;
 
@@ -73,7 +68,7 @@ class CellNode {
   void sort_ascending_distance();
   
   //private:
-  Neighbors neighbors_;
+  JNeighbors neighbors_;
 
   // vector of flags of neighbors. Must be length 0
   // or same length as neighbors

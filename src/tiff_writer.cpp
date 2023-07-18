@@ -1,3 +1,4 @@
+#ifdef HAVE_TIFFLIB
 #include "tiff_writer.h"
 
 int TiffWriter::SetTag(uint32_t tag, ...) {
@@ -265,3 +266,4 @@ uint8_t TiffWriter::GetMode() const {
   return 0;
   
 }
+#endif

@@ -1,3 +1,4 @@
+#ifdef HAVE_TIFFLIB
 #include "tiff_image.h"
 #include "tiff_utils.h"
 #include <cassert>
@@ -367,3 +368,4 @@ TiffImage::TiffImage(uint32_t width, uint32_t height, uint8_t mode) {
 
   __alloc();
 }
+#endif

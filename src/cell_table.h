@@ -1,101 +1,210 @@
 #pragma once
-#include <functional>
 
-#include "csv.h"
 #include "cell_column.h"
-#include "polygon.h"
 #include "cell_header.h"
 #include "cell_processor.h"
 #include "cysift.h"
 
-#include "tiff_writer.h"
-
 #include <cereal/types/vector.hpp>
 #include <cereal/archives/portable_binary.hpp>
+#include <cereal/archives/json.hpp>
 
+// forward declarations
+class Polygon;
+
+#ifdef HAVE_TIFFLIB
+#include "tiff_writer.h"
+#endif
+
+#ifdef HAVE_LDAPLUSPLUS
+#include <Eigen/Core>
+#include <ldaplusplus/LDABuilder.hpp>
+#include <ldaplusplus/LDA.hpp>
+#include <ldaplusplus/LDABuilder.hpp>
+#include <ldaplusplus/NumpyFormat.hpp>
+#include <ldaplusplus/events/ProgressEvents.hpp>
+#endif
+
+#ifdef HAVE_KDTREE
 #include "KDTree.hpp"
+
+#endif
+
+struct LDAModel {
+
+#ifdef HAVE_LDAPLUSPLUS
+  
+  std::vector<double> alpha;
+  
+  std::vector<std::vector<double>> beta;
+
+  std::vector<std::string> markers_to_run;
+
+  std::string cmd;
+  
+  // Default constructor
+  LDAModel() {}
+  
+  LDAModel(const Eigen::VectorXd& alpha_eigen,
+	   const Eigen::MatrixXd& beta_eigen,
+	   const std::vector<std::string>& markers);
+
+  // Method to output a ModelParameters object
+  template<typename Scalar = double>
+  ldaplusplus::parameters::ModelParameters<Scalar> toModelParameters() const {
+    // First, convert the alpha vector to an Eigen vector
+    Eigen::Matrix<Scalar, Eigen::Dynamic, 1> alpha_eigen(alpha.size());
+    for (size_t i = 0; i < alpha.size(); ++i) {
+      alpha_eigen(i) = static_cast<Scalar>(alpha[i]);
+    }
+    
+    // Next, convert the beta vector of vectors to an Eigen matrix
+    if (beta.empty()) {
+      throw std::runtime_error("Beta cannot be empty");
+    }
+    Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> beta_eigen(beta.size(), beta[0].size());
+    for (size_t i = 0; i < beta.size(); ++i) {
+      if (beta[i].size() != beta[0].size()) {
+	throw std::runtime_error("All inner vectors in beta must have the same size");
+      }
+      for (size_t j = 0; j < beta[i].size(); ++j) {
+	beta_eigen(i, j) = static_cast<Scalar>(beta[i][j]);
+      }
+    }
+    
+    // Finally, construct a ModelParameters object from the Eigen vector and matrix
+    ldaplusplus::parameters::ModelParameters<Scalar> params(std::move(alpha_eigen), std::move(beta_eigen));
+    
+    return params;
+  }
+  
+  template<class Archive>
+  void serialize(Archive & ar) {
+     ar(cereal::make_nvp("alpha", alpha), 
+	cereal::make_nvp("beta", beta), 
+	cereal::make_nvp("markers", markers_to_run),
+	cereal::make_nvp("cmd", cmd));
+  }
+
+  // make sure its initialized
+  bool initialized() const {
+    return alpha.size() > 0;
+  }
+
+  // json archive
+  void JSONArchive(const std::string& output) const {
+    std::ofstream os(output);
+    cereal::JSONOutputArchive oarchive(os);
+    oarchive(cereal::make_nvp("LDAModel", *this));    
+    return;
+  }
+  
+#endif  
+};
+
+
 
 class CellTable {
   
 public:
+
+  //////
+  // Constructors
+  //////
+  CellTable(const std::string& cmd, size_t threads = 1)
+    : m_cmd(cmd), m_threads(threads) {}
   
   CellTable() {}
 
-  //  CellTable(CellRowFunc func);
+  //////
+  // Getters/setters
+  //////
+  void setCmd(const std::string& cmd); 
+  void setThreads(size_t threads) { m_threads = threads; }
+  void setVerbose(bool verbose) { m_verbose = verbose; }
+  const CellHeader& getHeader() const { return m_header; }
 
+  //////
+  // Table IO
+  //////
   void BuildTable(const std::string& file);
 
   void StreamTableCSV(LineProcessor& proc, const std::string& file);
 
+  int StreamTable(CellProcessor& proc, const std::string& file);
+  
+  void SetupOutputWriter(const std::string& file);
+
+  void OutputTable();
+  
+  void HDF5Write(const std::string& file) const;
+
+
+  
+  //////
+  // Basic table operations
+  //////
   size_t size() const { return m_table.size(); }
 
   void sortxy(bool reverse);
 
   void sort(const std::string& field, bool reverse);
   
-  // add columns
   void AddColumn(const Tag& tag, ColPtr value);
 
-  // set params
-  void SetPrecision(size_t n);
-  
-  void SetVerbose() { m_verbose = true; }
+  bool HasColumn(const std::string& col) const;
 
-  void SetCmd(const std::string cmd);
-  
-  void SetThreads(size_t threads) { m_threads = threads; }
-
-  void SetPrintHeader() { m_print_header = true; }
-
-  void SetHeaderOnly() { m_header_only = true; }
-  
-  IntColPtr GetIDColumn() const;
-
-  void BuildKDTree();
-  
   friend std::ostream& operator<<(std::ostream& os, const CellTable& table);
-  
+
   bool ContainsColumn(const std::string& name) const;
 
   size_t CellCount() const;
 
-  int RadialDensity(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
-		    std::vector<cy_uint> logor, std::vector<cy_uint> logand,
-		    std::vector<std::string> label);
-
-  const CellHeader& GetHeader() const;
-  
-  // display
   void PlotASCII(int width, int height) const;
   
-  // IO
-  void PrintHeader() const;
+  //////
+  // Spatial ops
+  //////
+  void BuildKDTree();
 
-  void PrintTable(bool header) const;
-
-  void ConvertColumns();
-  
-  // numeric operations
-  void Log10();
-
-  void PrintPearson(bool csv, bool sort) const;
-
-  // image ops
-  void Convolve(TiffWriter& otoif, int boxwidth, float microns_per_pixel);
-  
-  // graph ops
   void UMAP(int num_neighbors);
-
+  
+  void UMAPPlot(const std::string& file, int width, int height) const;
+  
   void KNN_spatial(int num_neighbors, int dist);  
 
   void Delaunay(const std::string& pdf_delaunay,
 		const std::string& pdf_voronoi,
 	        int limit);
+
+  int RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
+		      std::vector<cy_uint> logor, std::vector<cy_uint> logand,
+		      std::vector<std::string> label);
+  
+  void TumorCall(int num_neighbors, float frac,
+		 cy_uint orflag, cy_uint andflag, cy_uint dist);
+  
+
+  //////
+  // Numeric ops
+  //////
+  void Log10();
+
+  void PrintPearson(bool csv, bool sort) const;
+
+  //////
+  // Image ops
+  //////
+#ifdef HAVE_TIFFLIB
+  void Convolve(TiffWriter& otoif, int boxwidth, float microns_per_pixel);
+#endif
   
   // ML ops
   void GMM_EM();
   
-  // filtering
+  //////
+  // Subsetting / filtering ops
+  //////
   void Subsample(int n, int s);
 
   void Crop(float xlo, float xhi, float ylo, float yhi);
@@ -108,45 +217,50 @@ public:
 
   void select(cy_uint on, cy_uint off);
 
+  //////
+  // Phenotyping ops
+  //////
   PhenoMap phenoread(const std::string& filename) const;
   
   void phenotype(const std::unordered_map<std::string, std::pair<float,float>>& thresh);
 
-  int StreamTable(CellProcessor& proc, const std::string& file);
+  //////
+  // Latent Dirichlet Allocation ops
+  //////
+  void LDA_load_model(const std::string& model_file);
 
-  void OutputTable();
+  void LDA_write_model(const std::string& model_out) const;
+  
+  void LDA_create_model(const std::vector<std::string>& marker_cols,
+			size_t n_topics,
+			size_t n_iterations);
 
-  int RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
-			     std::vector<cy_uint> logor, std::vector<cy_uint> logand,
-		      std::vector<std::string> label);
-
-  void SetupOutputWriter(const std::string& file);
-
-  void HDF5Write(const std::string& file) const;
-
-  void TumorCall(int num_neighbors, float frac,
-		 cy_uint orflag, cy_uint andflag, cy_uint dist);
-
-  void LDA();
+  void LDA_score_cells(const std::string& pdffile); 
   
  private:
-  
+
   unordered_map<string, ColPtr> m_table;
 
+  // the cysift command
+  std::string m_cmd;
+
+  // IO
   std::unique_ptr<std::ofstream> m_os;
   std::unique_ptr<cereal::PortableBinaryOutputArchive> m_archive;
 
   CellHeader m_header;
 
+  LDAModel m_ldamodel;
+
+#ifdef HAVE_KDTREE
   KDTree m_kdtree;
+#endif
   
   // for verbose
   size_t m_count = 0;
   
   // params
   bool m_verbose = false;
-  bool m_header_only = false;
-  bool m_print_header = false;
   size_t m_threads = 1;
   
   // internal member functions
@@ -158,58 +272,7 @@ public:
 
   void print_correlation_matrix(const std::vector<std::pair<std::string, const ColPtr>>& data,
 				const std::vector<std::vector<float>>& correlation_matrix, bool sort) const;
-
+  
 #endif    
 };
 
-struct RadialSelector {
-
-  explicit RadialSelector(const std::string& line) {
-
-    std::vector<std::string> tokens = split(line, ',');
-    
-    if (tokens.size() != 5) {
-      throw std::runtime_error("There must be exactly 5 tokens: " + line);
-    }
-
-    int_data.resize(4);
-    for (int i = 0; i < 4; i++) {
-      try {
-	int_data[i] = std::stoi(tokens[i]);
-      } catch (const std::invalid_argument &e) {
-	throw std::runtime_error("The first 4 tokens must be integers.");
-      }
-    }
-
-    label = tokens[4];
-    
-  }
-
-  // split tokens
-  std::vector<std::string> split(const std::string &input, char delimiter) {
-    std::vector<std::string> tokens;
-    std::istringstream stream(input);
-    std::string token;
-    
-    while (std::getline(stream, token, delimiter)) {
-      tokens.push_back(token);
-    }
-    
-    return tokens;
-  }
-
-  friend std::ostream& operator<<(std::ostream& os, const RadialSelector& rs) {
-    for (size_t i = 0; i < rs.int_data.size(); ++i) {
-      os << rs.int_data[i];
-      if (i < rs.int_data.size() - 1) {
-	os << ",";
-      }
-    }
-    os << "," << rs.label;
-    return os;
-  }
-  
-  std::vector<cy_uint> int_data;
-  std::string label;
-  
-};

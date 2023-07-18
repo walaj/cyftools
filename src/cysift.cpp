@@ -1,7 +1,6 @@
 #include "cell_column.h"
 #include "cell_table.h"
 #include "cell_processor.h"
-#include "cell_lda.h"
 
 #include <unistd.h> // or #include <getopt.h> on Windows systems
 #include <getopt.h>
@@ -9,8 +8,11 @@
 #include <regex>
 
 #include "cell_row.h"
+
+#ifdef HAVE_TIFFLIB
 #include "tiff_reader.h"
 #include "tiff_writer.h"
+#endif
 
 static std::string cmd_input;
 static bool die = false;
@@ -37,13 +39,6 @@ namespace opt {
 
   static bool sort = false;
 }
-
-#define DEBUG(x) std::cerr << #x << " = " << (x) << std::endl
-
-#define TVERB(msg) \
-  if (opt::verbose) {		   \
-    std::cerr << msg << std::endl; \
- }
 
 // process in and outfile cmd arguments
 static bool in_out_process(int argc, char** argv);
@@ -98,6 +93,8 @@ static const char *RUN_USAGE_MESSAGE =
 "  convolve   - Density convolution to produce TIFF\n"
 "  radialdens - Calculate density of cells within a radius\n"
 "  cereal     - Create a .cys format file from a CSV\n"
+"  ldacreate  - Create a Latent Dirichlet model\n"
+"  ldarun     - Run a Latent Dirichlet model\n"    
 "\n";
 
 static int sortfunc(int argc, char** argv);
@@ -105,7 +102,8 @@ static int headfunc(int argc, char** argv);
 static int convolvefunc(int argc, char** argv);
 static int delaunayfunc(int argc, char** argv);
 static int tumorfunc(int argc, char** argv);
-static int ldafunc(int argc, char** argv);
+static int ldacreatefunc(int argc, char** argv);
+static int ldarunfunc(int argc, char** argv);
 static int averagefunc(int argc, char** argv);
 static int cleanfunc(int argc, char** argv);
 static int countfunc(int argc, char** argv);
@@ -163,8 +161,10 @@ int main(int argc, char **argv) {
   // get the module
   if (opt::module == "debug") {
     val = debugfunc(argc, argv);
-  } else if (opt::module == "lda") {
-    val = ldafunc(argc, argv);
+  } else if (opt::module == "ldacreate") {
+    val = ldacreatefunc(argc, argv);
+  } else if (opt::module == "ldarun") {
+    val = ldarunfunc(argc, argv);    
   } else if (opt::module == "clean") {
     val = cleanfunc(argc, argv);
   } else if (opt::module == "radialdens") {
@@ -226,18 +226,15 @@ int main(int argc, char **argv) {
 static void build_table() {
 
   // set table params
-  if (opt::verbose)
-    table.SetVerbose();
-  
-  if (opt::threads > 1)
-    table.SetThreads(opt::threads);
+  table.setVerbose(opt::verbose);
+  table.setThreads(opt::threads);
 
   // stream into memory
   BuildProcessor buildp;
   buildp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   table.StreamTable(buildp, opt::infile);
   
-  table.SetCmd(cmd_input);
+  table.setCmd(cmd_input);
 }
 
 static int convolvefunc(int argc, char** argv) {
@@ -284,7 +281,8 @@ static int convolvefunc(int argc, char** argv) {
     std::cerr << "no tiff created" << std::endl;
     return 0;
   }
-  
+
+#ifdef HAVE_TIFFLIB  
   // open the TIFFs
   TiffReader itif(intiff.c_str());
   int inwidth, inheight;
@@ -305,7 +303,10 @@ static int convolvefunc(int argc, char** argv) {
   
   // build the umap in marker-space
   table.Convolve(otif, width, microns_per_pixel);
-
+#else
+  std::cerr << "Unable to proceed, need to include and link libtiff and have preprocessor directory -DHAVE_TIFFLIB" << std::endl;
+#endif
+  
   return 0;
   
 }
@@ -313,12 +314,19 @@ static int convolvefunc(int argc, char** argv) {
 static int umapfunc(int argc, char** argv) {
 
   int n = 15;
+  int width = 1000;
+  int height = 1000;
+  std::string pdf_file;
+  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 't' : arg >> opt::threads; break;
+    case 'D' : arg >> pdf_file; break;      
     case 'k' : arg >> n; break;
+    case 'w' : arg >> width; break;
+    case 'l' : arg >> height; break;
     default: die = true;
     }
   }
@@ -330,7 +338,10 @@ static int umapfunc(int argc, char** argv) {
       "  Construct the UMAP (in marker space)\n"
       "    csvfile: filepath or a '-' to stream to stdin\n"
       "    -k [15]                   Number of neighbors\n"
-      "    -t [1]                    Number of threads\n"      
+      "    -t [1]                    Number of threads\n"
+      "    -D <file>                 Optional output to PDF\n"
+      "    -w [1000]                 Width of the PDF\n"
+      "    -l [1000]                 Length of the PDF\n"
       "    -v, --verbose             Increase output to stderr\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -345,45 +356,174 @@ static int umapfunc(int argc, char** argv) {
   table.SetupOutputWriter(opt::outfile);
   
   // build the umap in marker-space
-  table.UMAP(n);
+  if (!pdf_file.empty() && table.HasColumn("umap1")) {
+    std::cerr << "...umap already exists. Skipping build and outputing PDF." << std::endl;
+    std::cerr << "...if you want to rebuild UMAP, call without -D flag and then try again" << std::endl;
+  } else if (!table.HasColumn("umap1")) {
+    table.UMAP(n);
+  } else {
+    std::cerr << "Warning: Overwriting prior umap" << std::endl;
+    table.UMAP(n);    
+  }
 
-  // print it
-  table.OutputTable();
+  // pdf
+  if (!pdf_file.empty()) {
+    if (opt::verbose)
+      std::cerr << "...outputting UMAP pdf" << std::endl;
+    table.UMAPPlot(pdf_file, width, height); 
+  } else {
+    
+    // print it
+    table.OutputTable();
+  }
   
   return 0;
 }
 
-static int ldafunc(int argc, char** argv) {
-
+static int ldacreatefunc(int argc, char** argv) {
+  
+#ifdef HAVE_LDAPLUSPLUS
+  std::string model_out, fields;
+  int n_topics = 10;
+  int n_iterations = 10;
+  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
+    case 'o' : arg >> model_out; break;
+
+      //    case 'm' : arg >> model_in; break;
+    case 'n' : arg >> n_topics; break;
+    case 'r' : arg >> fields; break;
+    case 'i' : arg >> n_iterations; break;
+    case 't' : arg >> opt::threads; break;      
     default: die = true;
     }
+  }
+
+  if (model_out.empty()) {
+    die = true;
+    std::cerr << "Error: Must specify model output file with -o" << std::endl;
+  }
+
+  if (fields.empty()) {
+    die = true;
+    std::cerr << "Error: Must specify columns to score" << std::endl;
+  }
+  
+  if (die || in_only_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift ldacreate [csvfile]\n"
+      "  Create a topic-model learning using Latent Dirichlet Allocation\n"
+      "    <file>: filepath or a '-' to stream to stdin\n"
+      "    -r                        Comma-separated list of inputs to LDA model\n"
+      "    -o                        Output model file\n"
+      //      "    -m                        Input model (won't re-run LDA)\n"            
+      "    -n                        Number of topics [10]\n"
+      "    -i                        Max number of iterations [10]\n"
+      "    -t [1]                    Number of threads\n"      
+      "    -v, --verbose             Increase output to stderr\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // parse the markers
+  std::set<std::string> tokens;
+  std::stringstream ss(fields);
+  std::string token;
+  while (std::getline(ss, token, ',')) {
+    tokens.insert(token);
+  }
+  
+  // stream into memory
+  build_table();
+
+  // error check the markers
+  std::vector<std::string> markers;
+  for (const auto& s : tokens) {
+
+    if (!table.ContainsColumn(s)) {
+      std::cerr << "Error: Requested column " << s << " not in table" << std::endl;
+      return 1;
+    }
+    
+    if (opt::verbose)
+      std::cerr << "...lda - column " << s << std::endl;
+    markers.push_back(s);
+  }
+
+  // create the model 
+  table.LDA_create_model(markers,
+			 n_topics,
+			 n_iterations);
+
+  // write the model
+  table.LDA_write_model(model_out);
+  
+  return 0;
+
+#else
+  std::cerr << "Error: Unable to run LDA without including ldaplusplus header library to build." << std::endl;
+  return 1;
+#endif
+
+}
+
+static int ldarunfunc(int argc, char** argv) {
+
+#ifdef HAVE_LDAPLUSPLUS
+  
+  std::string model_in, pdf; 
+  
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'i' : arg >> model_in; break;
+    case 'D' : arg >> pdf; break;
+    default: die = true;
+    }
+  }
+
+  if (model_in.empty()) {
+    die = true;
+    std::cerr << "Error: Must specify model input file with -m" << std::endl;
   }
 
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift lda [csvfile]\n"
-      "  Perform topic-model learning using Latent Dirichlet Allocation\n"
+      "Usage: cysift ldarun [csvfile]\n"
+      "  Score cells using a pre-computed topic-model learning using Latent Dirichlet Allocation\n"
       "    <file>: filepath or a '-' to stream to stdin\n"
+      "    -i                        Input model (won't re-run LDA)\n"
+      "    -D                        Output a PDF plot of the topics\n"
       "    -v, --verbose             Increase output to stderr\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
   // stream into memory
-  BuildProcessor buildp;
-  buildp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  table.StreamTable(buildp, opt::infile);
+  build_table();
+  
+  // loading the model
+  table.LDA_load_model(model_in);
 
-  table.LDA();
+  // score the scells
+  table.LDA_score_cells(pdf);
   
   return 0;
+
+#else
+  std::cerr << "Error: Unable to run LDA without including ldaplusplus header library to build." << std::endl;
+  return 1;
+#endif
   
 }
+
+
 
 static int cleanfunc(int argc, char** argv) {
 
@@ -502,8 +642,7 @@ static int catfunc(int argc, char** argv) {
     CellTable this_table;
     
     // set table params
-    if (opt::verbose)
-      this_table.SetVerbose();
+    this_table.setVerbose(opt::verbose);
 
     if (opt::verbose)
       std::cerr << "...reading and concatenating " << opt::infile_vec.at(sample_num) << std::endl;
@@ -593,8 +732,7 @@ static int cutfunc(int argc, char** argv) {
   }
 
   // set table params
-  if (opt::verbose)
-    table.SetVerbose();
+  table.setVerbose(opt::verbose);
 
   // setup the cut processor
   CutProcessor cutp;
@@ -632,8 +770,7 @@ static int averagefunc(int argc, char** argv) {
   }
 
   // set table params
-  if (opt::verbose)
-    table.SetVerbose();
+  table.setVerbose(opt::verbose);
 
   AverageProcessor avgp;
   avgp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);  
@@ -723,8 +860,7 @@ static int log10func(int argc, char** argv)  {
   }
 
   // set table params
-  if (opt::verbose)
-    table.SetVerbose();
+  table.setVerbose(opt::verbose);
 
   LogProcessor logp;
   logp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);  
@@ -759,7 +895,8 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "correlate" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
 	 opt::module == "delaunay" || opt::module == "head" || 
-	 opt::module == "average" || opt::module == "lda" || 
+	 opt::module == "average" || opt::module == "ldacreate" ||
+	 opt::module == "ldarun" || 
 	 opt::module == "spatial" || opt::module == "radialdens" || 
 	 opt::module == "select" || opt::module == "pheno")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
@@ -852,8 +989,7 @@ static int viewfunc(int argc, char** argv) {
   }
 
   // set table params
-  if (opt::verbose)
-    table.SetVerbose();
+  table.setVerbose(opt::verbose);
   
   ViewProcessor viewp;
   viewp.SetParams(opt::header, opt::header_only, precision);
@@ -962,8 +1098,7 @@ static int headfunc(int argc, char** argv) {
   }
 
   // set table params
-  if (opt::verbose)
-    table.SetVerbose();
+  table.setVerbose(opt::verbose);
 
   HeadProcessor headp;
   headp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);  
@@ -990,12 +1125,14 @@ static int headfunc(int argc, char** argv) {
 
 static int subsamplefunc(int argc, char** argv) {
 
+  float rate = 0;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'n' : arg >> opt::n; break;
-    case 's' : arg >> opt::seed; break;      
+    case 's' : arg >> opt::seed; break;
+    case 'r' : arg >> rate; break;
     default: die = true;
     }
   }
@@ -1007,24 +1144,38 @@ static int subsamplefunc(int argc, char** argv) {
       "Usage: cysift subsample [csvfile] <options>\n"
       "  Subsamples a cell quantification table, randomly.\n"
       "    csvfile: filepath or a '-' to stream to stdin\n"
-      "    -n, --numrows             Number of rows to subsample\n"
-      "    -s, --seed         [1337] Seed for random subsampling\n"
+      "    -n, --numrows             Number of rows to subsample. Reads full file into memory!\n"
+      "    -r                        Subsample at given rate (0,1]. Overrides -n. Streams without memory load, but doesn't guarentee given n outcome\n"
+      "    -s, --seed           [42] Seed for random subsampling\n"
       "    -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
-  build_table();
-  
-  // subsample
-  table.Subsample(opt::n, opt::seed);
+  // build the table
+  if (rate <= 0) {
 
-  table.SetupOutputWriter(opt::outfile);
+    std::cerr << "...reading table into memory. If not desired, use -r instead (no guarentee on N but no memory overhead)" << std::endl;
+    
+    build_table();
   
-  // print it
-  table.OutputTable();
-  
+    // subsample
+    table.Subsample(opt::n, opt::seed);
+    
+    table.SetupOutputWriter(opt::outfile);
+    
+    // print it
+    table.OutputTable();
+    
+  } else {
+
+    SubsampleProcessor subs;
+    subs.SetCommonParams(opt::outfile, cmd_input, opt::verbose);      
+    subs.SetParams(rate, opt::seed);
+    table.StreamTable(subs, opt::infile);
+    
+  }
   return 0;
   
 }
@@ -1165,8 +1316,6 @@ static int spatialfunc(int argc, char** argv) {
   table.SetupOutputWriter(opt::outfile);
 
   table.KNN_spatial(n, d);
-
-  //table.PrintTable(opt::header);
 
   return 0;
 }
@@ -1634,14 +1783,20 @@ static bool in_out_process(int argc, char** argv) {
   
   optind++;
   // Process any remaining no-flag options
+  size_t count = 0;
   while (optind < argc) {
     if (opt::infile.empty()) {
       opt::infile = argv[optind];
     } else if (opt::outfile.empty()) {
-      opt::outfile = argv[optind];      
+      opt::outfile = argv[optind];
     }
+    count++;
     optind++;
   }
+
+  // there should be only 2 non-flag input
+  if (count > 2)
+    return true;
   
   return opt::infile.empty() || opt::outfile.empty();
 
@@ -1652,12 +1807,18 @@ static bool in_only_process(int argc, char** argv) {
   
   optind++;
   // Process any remaining no-flag options
+  size_t count = 0;
   while (optind < argc) {
     if (opt::infile.empty()) {
       opt::infile = argv[optind];
     }
+    count++;
     optind++;
   }
+
+  // there should be only 1 non-flag input
+  if (count > 1)
+    return true;
   
   return opt::infile.empty();
 

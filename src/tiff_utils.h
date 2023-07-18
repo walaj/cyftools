@@ -1,6 +1,7 @@
 #ifndef TIFF_UTILS_H
 #define TIFF_UTILS_H
 
+#ifdef HAVE_TIFFLIB
 #include <cmath>
 #include <vector>
 #include <string>
@@ -95,4 +96,5 @@ void inline PrintMap(const std::unordered_map<std::string, std::vector<float>>& 
     }
 }
 
+#endif
 #endif

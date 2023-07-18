@@ -18,7 +18,9 @@
 #include "cell_column.h"
 #include "cell_row.h"
 
+#ifdef HAVE_HDF5
 #include <H5Cpp.h>
+#endif
 
 /** Format an integer to include commas
  * @param data Number to format
@@ -59,8 +61,9 @@ float euclidean_distance_squared(float x1, float y1, float x2, float y2);
 
 float manhattan_distance(float x1, float y1, float x2, float y2);
 
+#ifdef HAVE_HDF5
 void write_hdf5_dataframe_attributes(H5::Group& group);
-
+#endif
 enum class ColumnType;
 std::string columnTypeToString(ColumnType type);
 

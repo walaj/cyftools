@@ -1,12 +1,13 @@
 #pragma once
 
-// DataProcessor.h
-#include <string>
 #include "cell_header.h"
 #include "cell_row.h"
-#include "polygon.h"
 #include "cysift.h"
+#include "polygon.h"
+
+#include <string>
 #include <cassert>
+#include <random>
 
 #include <cereal/types/vector.hpp>
 #include <cereal/archives/portable_binary.hpp>
@@ -35,7 +36,7 @@ class CellProcessor {
   static const int SAVE_CELL = 2;
   static const int SAVE_NODATA_CELL = 3;
   static const int SAVE_NODATA_NOGRAPH_CELL = 4;  
-  static const int WRITE_HEADER = 0;
+  static const int HEADER_NO_ACTION = 0;
   static const int ONLY_WRITE_HEADER = 1;
   static const int SAVE_HEADER = 2;
   
@@ -385,6 +386,33 @@ class BuildProcessor : public CellProcessor {
 
 };
 
+
+class SubsampleProcessor : public CellProcessor {
+
+public:
+
+  void SetParams(float rate, int seed) {
+    m_rate = rate;
+    m_seed = seed;
+  }
+
+  int ProcessHeader(CellHeader& header) override;
+
+  int ProcessLine(Cell& cell) override;
+
+private:
+
+  float m_rate = 0;
+
+  size_t m_count = 0;
+  size_t m_kept = 0;
+  
+  int m_seed = 42;
+  std::mt19937 m_gen; // Standard mersenne_twister_engine seeded with rd()
+  std::uniform_real_distribution<> m_dis; 
+  
+  
+};
 
 class CatProcessor : public CellProcessor { 
 

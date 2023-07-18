@@ -1,4 +1,5 @@
 #include "cell_processor.h"
+#include "polygon.h"
 #include "cell_utils.h"
 #include "cell_flag.h"
 
@@ -35,7 +36,7 @@ int SelectProcessor::ProcessHeader(CellHeader& header) {
   assert(m_archive);
   (*m_archive)(m_header);
   
-  return 0;
+  return HEADER_NO_ACTION;
 }
 
 int AverageProcessor::ProcessHeader(CellHeader& header) {
@@ -65,7 +66,7 @@ int AverageProcessor::ProcessHeader(CellHeader& header) {
   assert(m_archive);
   (*m_archive)(m_header);
   
-  return 0;
+  return HEADER_NO_ACTION;
 }
 
 int AverageProcessor::ProcessLine(Cell& cell) {
@@ -94,6 +95,56 @@ void AverageProcessor::EmitCell() const {
 
   // write the one cell
   OutputLine(cell);
+}
+
+int SubsampleProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+
+  if (m_rate <= 0 || m_rate > 1)
+    throw std::runtime_error("Subsample rate should be between (0,1]). Rate currently: " + std::to_string(m_rate));
+
+  // set the random generator
+  std::mt19937 m_gen(m_seed); // Standard mersenne_twister_engine seeded with rd()
+  std::uniform_real_distribution<> m_dis(0.0, 1.0); 
+  
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+
+  m_header.SortTags();
+  
+  // just in time, make the output stream
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+
+  return HEADER_NO_ACTION;
+  
+}
+
+int SubsampleProcessor::ProcessLine(Cell& line) {
+
+  m_count++;
+  
+  if (m_count % 500000 == 0 && m_verbose) {
+    std::cerr << "...sampled cell " << AddCommas(m_count) << std::endl;
+  }
+
+  if (m_dis(m_gen) <= m_rate) {
+    m_kept++;
+
+    if (m_kept % 100000 == 0 && m_verbose) {
+      std::cerr << "...kept cell " << AddCommas(m_kept) << " giving rate of " <<
+	static_cast<float>(m_kept)/m_count << std::endl;
+    }
+
+    
+    return WRITE_CELL;
+    
+  }
+  return NO_WRITE_CELL;
+  
 }
 
 int SelectProcessor::ProcessLine(Cell& cell) {
@@ -196,7 +247,7 @@ int RadialProcessor::ProcessHeader(CellHeader& header) {
   assert(m_archive);
   (*m_archive)(m_header);
   
-  return 0;
+  return HEADER_NO_ACTION;
   
 }
 
@@ -248,7 +299,7 @@ int RadialProcessor::ProcessLine(Cell& cell) {
 
 
 int CountProcessor::ProcessHeader(CellHeader& header) {
-  return 0; // do nothing
+  return HEADER_NO_ACTION; // do nothing
 }
 
 int CountProcessor::ProcessLine(Cell& cell) {
@@ -273,7 +324,7 @@ int HeadProcessor::ProcessHeader(CellHeader& header) {
   assert(m_archive);
   (*m_archive)(m_header);
 
-  return 0; 
+  return HEADER_NO_ACTION; 
 }
 
 int CutProcessor::ProcessHeader(CellHeader& header) {
@@ -309,7 +360,7 @@ int CutProcessor::ProcessHeader(CellHeader& header) {
   assert(m_archive);
   (*m_archive)(m_header);
   
-  return 0; 
+  return HEADER_NO_ACTION; 
 }
 
 int CutProcessor::ProcessLine(Cell& cell) {
@@ -364,7 +415,7 @@ int LogProcessor::ProcessHeader(CellHeader& header) {
   assert(m_archive);
   (*m_archive)(m_header);
 
-  return 0;
+  return HEADER_NO_ACTION;
 }
 
 int LogProcessor::ProcessLine(Cell& cell) {
@@ -377,18 +428,20 @@ int LogProcessor::ProcessLine(Cell& cell) {
       } else {
 	
 	if (!m_bool_warning_emitted) {
+	  std::vector<Tag> tags = m_header.GetDataTags();
 	  m_bool_warning_emitted = true;
 	  std::cerr << "Warning: encountered zero or negative number to log on " <<
-	    "line " << m_count << " - removing this line in output. This warning " <<
-	    "will emit only once per file";
+	    "line " << m_count << " with value " << cell.m_cols[i] << " on column " <<
+	    tags.at(i).id << " - removing this line in output. This warning " <<
+	    "will emit only once per file" << std::endl;
 	}
 	
-	return 0;
+	return NO_WRITE_CELL;
       }
     }
   }
     
-  return 1;
+  return WRITE_CELL;
   
 }
 
@@ -410,7 +463,7 @@ int ROIProcessor::ProcessHeader(CellHeader& header) {
   assert(m_archive);
   (*m_archive)(m_header);
 
-  return 0;
+  return HEADER_NO_ACTION;
 }
 
 int CleanProcessor::ProcessHeader(CellHeader& header) {
@@ -447,7 +500,7 @@ int CleanProcessor::ProcessHeader(CellHeader& header) {
   assert(m_archive);
   (*m_archive)(m_header);
 
-  return 0;
+  return HEADER_NO_ACTION;
 
 }
 
@@ -536,7 +589,7 @@ int TumorProcessor::ProcessHeader(CellHeader& header) {
   assert(m_archive);
   (*m_archive)(m_header);
 
-  return 0;
+  return HEADER_NO_ACTION;
 }
 
 int TumorProcessor::ProcessLine(Cell& cell) {
@@ -547,8 +600,6 @@ int TumorProcessor::ProcessLine(Cell& cell) {
   assert(cell.m_spatial_ids.size() == cell.m_spatial_flags.size());
   assert(cell.m_spatial_ids.size() == cell.m_spatial_dist.size());
 
-  
-  
 }
 
 int PhenoProcessor::ProcessHeader(CellHeader& header) {
@@ -591,7 +642,7 @@ int PhenoProcessor::ProcessHeader(CellHeader& header) {
   assert(m_archive);
   (*m_archive)(m_header);
   
-  return 0;
+  return HEADER_NO_ACTION;
 }
 
 int PhenoProcessor::ProcessLine(Cell& cell) {
@@ -636,7 +687,7 @@ int ViewProcessor::ProcessHeader(CellHeader& header) {
   if (m_print_header || m_header_only) 
     header.Print();
   
-  return m_header_only ? 1 : 0;
+  return m_header_only ? ONLY_WRITE_HEADER : HEADER_NO_ACTION;
   
 }
 
@@ -644,7 +695,7 @@ int ViewProcessor::ProcessLine(Cell& cell) {
 
   cell.Print(m_round);
     
-  return 0; // don't output, since already printing it
+  return NO_WRITE_CELL; // don't output, since already printing it
 }
 
 int CatProcessor::ProcessLine(Cell& line) {
@@ -720,7 +771,7 @@ int CatProcessor::ProcessHeader(CellHeader& header) {
     std::cerr << "Warning: Header already has sample tag, overwriting" << std::endl;
     }*/
 
-  return 0;
+  return HEADER_NO_ACTION;
 }
 
 int CerealProcessor::ProcessHeader(CellHeader& header) {
@@ -743,7 +794,7 @@ int CerealProcessor::ProcessHeader(CellHeader& header) {
   // archive the header
   (*m_archive)(m_header);
   
-  return 0;
+  return 0; // minor, but the HEADER_NO_ACTION is in CellProcessor abstract class, of which CerealProcessor is uniquely not a child
 }
 
 int CerealProcessor::ProcessLine(const std::string& line) {
@@ -752,7 +803,10 @@ int CerealProcessor::ProcessLine(const std::string& line) {
 
   // serialize it
   (*m_archive)(row);
-  return 0;
+
+  // serializing here, so don't need to write in the cell_table call
+  // minor, but NO_WRITE_CELL is in CellProcessor abstract class, of which CerealProcessor is uniquely not a child  
+  return 0; 
   
 }
 

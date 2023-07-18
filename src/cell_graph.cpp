@@ -3,7 +3,7 @@
 #include <charconv>
 #include <string_view>
 
-CellNode::CellNode(const Neighbors& neighbors,
+CellNode::CellNode(const JNeighbors& neighbors,
 		  const std::vector<cy_uint>& flags) {
   
   neighbors_ = neighbors;
@@ -32,7 +32,8 @@ void CellNode::sort_ascending_distance() {
 	    );
   
   // Use the sorted indices to reorder the neighbors_ and m_flags vectors
-  std::vector<umappp::Neighbor<float>> temp_neighbors_ = neighbors_;
+  JNeighbors temp_neighbors_ = neighbors_;
+  //std::vector<umappp::Neighbor<float>> temp_neighbors_ = neighbors_;
   std::vector<cy_uint> temp_m_flags = m_flags;
   for (size_t i = 0; i != indices.size(); ++i) {
     neighbors_[i] = temp_neighbors_[indices[i]];

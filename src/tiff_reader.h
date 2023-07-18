@@ -1,6 +1,8 @@
 #ifndef TIFF_READER_H
 #define TIFF_READER_H
 
+#ifdef HAVE_TIFFLIB
+
 #include <string>
 #include <cassert>
 #include <vector>
@@ -64,4 +66,5 @@ class TiffReader {
   
 };
 
+#endif
 #endif

@@ -1,6 +1,7 @@
 #ifndef TIFF_IFD_H
 #define TIFF_IFD_H
 
+#ifdef HAVE_TIFFLIB
 #include <vector>
 #include <iostream>
 #include <tiffio.h>
@@ -70,8 +71,8 @@ class TiffIFD {
   // get the tag and if not found, print an error
   template <typename T>
   void __get_tag(int tag, T& value);
-
   
 };
 
+#endif
 #endif

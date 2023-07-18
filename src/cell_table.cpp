@@ -1,39 +1,61 @@
-#include <random>
-#include <cstdlib>
-#include <boost/functional/hash.hpp>
+#include "cell_table.h"
+#include "csv.h"
+#include "color_map.h"
 
+#include <random>
+#include <array>
+#include <cstdlib>
+
+#ifdef HAVE_BOOST
+#include <boost/functional/hash.hpp>
+#endif
+
+#ifdef HAVE_CAIRO
 #include "cairo/cairo.h"
 #include "cairo/cairo-pdf.h"
+#endif
+
+#ifdef HAVE_UMAPPP
+#include "umappp/Umap.hpp"
+#include "umappp/NeighborList.hpp"
+#include "umappp/combine_neighbor_sets.hpp"
+#include "umappp/find_ab.hpp"
+#include "umappp/neighbor_similarities.hpp"
+#include "umappp/optimize_layout.hpp"
+#include "umappp/spectral_init.hpp"
+#include "knncolle/knncolle.hpp"
+#endif
+
+// cgal is needed only for Voronoi diagram output
+#ifdef HAVE_CGAL
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Delaunay_triangulation_2.h>
 #include <CGAL/Delaunay_triangulation_2.h>
 #include <CGAL/draw_triangulation_2.h>
-
-#ifdef HAVE_LDAPLUSPLUS
-#include <Eigen/Core>
-#include <ldaplusplus/LDABuilder.hpp>
-#include <ldaplusplus/LDA.hpp>
-#include <ldaplusplus/LDABuilder.hpp>
-#include <ldaplusplus/NumpyFormat.hpp>
-#include <ldaplusplus/events/ProgressEvents.hpp>
-#endif
-
 typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
 typedef CGAL::Delaunay_triangulation_2<K> DelaunayData;
 typedef K::Point_2 Point;
+#endif
 
 #include "cell_utils.h"
-#include "cell_table.h"
 #include "cell_graph.h"
 #include "tiff_writer.h"
 
+#ifdef HAVE_HDF5
 #include <H5Cpp.h>
+#endif
 
 #include <delaunator.hpp>
 
 #ifdef HAVE_MLPACK
 #include <mlpack/methods/gmm/gmm.hpp>
 #include <mlpack/core.hpp>
+#include <mlpack/methods/kmeans/kmeans.hpp>
+#include <armadillo>
+#endif
+
+#ifdef HAVE_KMEANS
+#include "kmeans/Kmeans.hpp"
 #endif
 
 struct JPoint {
@@ -45,11 +67,6 @@ struct JPoint {
   
   std::string print() const { return std::to_string(x) + "," + std::to_string(y); }
 
-  //  std::ostream& operator<<(std::ostream& os, const JPoint& p) {
-  //  os << p.x << "," << p.y;
-  //  return os;
-  //}
-  
   bool operator==(const JPoint& other) const {
     return x == other.x && y == other.y;
   }
@@ -59,10 +76,17 @@ struct JPoint {
 namespace std {
     template<> struct hash<JPoint> {
         std::size_t operator()(const JPoint& p) const {
+            std::size_t hx = std::hash<float>{}(p.x);
+            std::size_t hy = std::hash<float>{}(p.y);
+
+#ifdef HAVE_BOOST
             std::size_t seed = 0;
-            boost::hash_combine(seed, std::hash<float>{}(p.x));
-            boost::hash_combine(seed, std::hash<float>{}(p.y));
+            boost::hash_combine(seed, hx);
+            boost::hash_combine(seed, hy);
             return seed;
+#else
+            return hx ^ (hy << 1);  // Shift hy 1 bit to the left and XOR it with hx.
+#endif
         }
     };
 }
@@ -75,19 +99,6 @@ struct pair_hash {
     }
 };
 
-struct Color {
-  int red;
-  int green;  
-  int blue;
-};
-
-struct line_eq {
-    bool operator() (const std::pair<Point, Point>& lhs, const std::pair<Point, Point>& rhs) const {
-        return (lhs.first == rhs.first && lhs.second == rhs.second) ||
-               (lhs.first == rhs.second && lhs.second == rhs.first);
-    }
-};
-
 struct jline_eq {
     bool operator() (const std::pair<JPoint, JPoint>& lhs, const std::pair<JPoint, JPoint>& rhs) const {
         return (lhs.first == rhs.first && lhs.second == rhs.second) ||
@@ -95,24 +106,24 @@ struct jline_eq {
     }
 };
 
-#define CELL_BUFFER_LIMIT 1
 
-static size_t debugr = 0;
+// block for attempting bufferered writing to improve paralellization
+// not really doing much, CELL_BUFFER_LIMIT 1 basically turns this off,
+// but still here in case useful later
+#define CELL_BUFFER_LIMIT 1
 
 #ifdef __clang__
 std::vector<Cell> cell_buffer;
 #pragma omp threadprivate(cell_buffer)
 #endif
 
-const CellHeader& CellTable::GetHeader() const {
-  return m_header;
-}
-
 bool CellTable::ContainsColumn(const std::string& name) const {
   return m_table.count(name) > 0;
 }
 
 void CellTable::HDF5Write(const std::string& file) const {
+
+#ifdef HAVE_HDF5
   
   ///////
   // VAR (markers)
@@ -196,7 +207,8 @@ void CellTable::HDF5Write(const std::string& file) const {
   for (size_t i = 0; i < ptr->second->size(); i++) {
     std::string str = "cellid_" + std::to_string(static_cast<uint32_t>(ptr->second->GetNumericElem(i)));
     std::unique_ptr<char[]> cstr(new char[str.length() + 1]);
-    std::strcpy(cstr.get(), str.c_str());
+    //std::strcpy(cstr.get(), str.c_str());
+    std::strncpy(cstr.get(), str.c_str(), str.size() + 1);
     id_data.push_back(cstr.get());
     unique_id_data.push_back(std::move(cstr));
   }
@@ -286,6 +298,10 @@ void CellTable::HDF5Write(const std::string& file) const {
   dataset.write(flat_data.data(), H5::PredType::NATIVE_FLOAT);
 
   h5file.close();
+  
+#else
+  std::cerr << "Warning: Not able to read/write HDF5 file without including / linking HD5 library with build (and need -DHAVE_HDF5)" << std::endl;
+#endif
   
 }
 
@@ -400,54 +416,6 @@ size_t CellTable::CellCount() const {
   return n;
 }
 
-void CellTable::PrintTable(bool header) const {
-
-  //  for (const auto& m : m_table) {
-  // std::cerr << m.first << " - " << m.second->size() << std::endl;
-  //}
-  
-  if (m_verbose)
-    std::cerr << "...outputting table" << std::endl;
-  
-  if (header)
-    m_header.Print();
-
-  // graph data
-  auto g_ptr = m_table.find("spat");
-  
-  // Create a lookup table with pointers to the Column values
-  std::vector<ColPtr> lookup_table;
-  for (const auto& c : m_header.GetDataTags()) {
-    auto it = m_table.find(c.id);
-    if (it != m_table.end()) {
-      lookup_table.push_back(it->second);
-    }
-  }
-
-  // Write the data (values)
-  size_t numRows = CellCount();
-  
-  for (size_t row = 0; row < numRows; ++row) {
-    size_t count = 1;
-    
-    for (const auto& c : lookup_table) {
-      c->PrintElem(row);
-      if (count < lookup_table.size())
-	std::cout << ",";
-      count++;
-    }
-
-    // print the graph
-    if (g_ptr != m_table.end() && g_ptr->second->size()) {
-      std::cerr << ",";
-      g_ptr->second->PrintElem(row);
-    }
-    
-    std::cout << std::endl;
-  }
-
-}
-
 void CellTable::SetupOutputWriter(const std::string& file) {
 
   // set the output to file or stdout
@@ -460,8 +428,9 @@ void CellTable::SetupOutputWriter(const std::string& file) {
   
 }
 
+#ifdef HAVE_TIFFLIB
 void CellTable::Convolve(TiffWriter& otif, int boxwidth, float microns_per_pixel) {
-  
+
   int xwidth, ywidth;
   TIFFGetField(otif.get(), TIFFTAG_IMAGEWIDTH, &xwidth);
   TIFFGetField(otif.get(), TIFFTAG_IMAGELENGTH, &ywidth);  
@@ -519,6 +488,7 @@ void CellTable::Convolve(TiffWriter& otif, int boxwidth, float microns_per_pixel
 
   return;
 }
+#endif
 
 void CellTable::sortxy(bool reverse) {
 
@@ -608,13 +578,17 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
 		const std::string& pdf_voronoi,
 	        int limit) {
 
+#ifndef HAVE_BOOST
+  std::cerr << "Warning: Will run but may be signifiacntly slower without including Boost library (uses Boost hash function for speed)" << std::endl;
+#endif
+  
   // fill the coordinate vector
   FloatColPtr x_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("x"));
   FloatColPtr y_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("y"));  
 
   float xmax = 0;
   float ymax = 0;  
-  
+
   size_t ncells = CellCount();
   std::vector<double> coords(ncells * 2);
   
@@ -627,15 +601,17 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
       ymax = coords[i*2+1];
   }
 
+#ifdef HAVE_CAIRO
+  int width = xmax;
+  int height = ymax;
+#endif
+  
   // construct the graph
   if (m_verbose) 
     std::cerr << "...constructing Delaunay triangulation on " << AddCommas(ncells) << " cells" << std::endl;
   delaunator::Delaunator d(coords);
 
   float micron_per_pixel = 0.325f;
-  int width  = xmax;
-  int height = ymax;
-
   int limit_sq = limit <= 0 ? INT_MAX : limit * limit;
   
   // hash set to check if point already made
@@ -712,14 +688,6 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
     }
   }
   
-  // Run DFS from every point
-  /*  for (const auto& point : adjList) {
-    if (visited.find(point.first) == visited.end()) {
-      DFS(point.first);
-      currentComponentId++;
-    }
-    } */
-
   // setup columns to store the delaunay components
   std::shared_ptr<IntCol> d_label = std::make_shared<IntCol>();
   std::shared_ptr<IntCol> d_size = std::make_shared<IntCol>();
@@ -765,6 +733,8 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
 
     if (m_verbose)
       std::cerr << "...setting up for outputing Delaunay triangulation to PDF: " << pdf_delaunay << std::endl;
+
+#ifdef HAVE_CAIRO
     
     cairo_surface_t *surface = cairo_pdf_surface_create(pdf_delaunay.c_str(), width, height);
     cairo_t *cr = cairo_create(surface);
@@ -813,6 +783,9 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
     // Clean up
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
+#else
+    std::cerr << "Warning: Cairo PDF library needs to be linked during cysift build, no PDF will be output." << std::endl;
+#endif
   }
 
   ///////////////
@@ -822,6 +795,8 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
 
     if (m_verbose)
       std::cerr << "...setting up for outputing Voronoi diagram to PDF: " << pdf_voronoi << std::endl;
+
+#if defined(HAVE_CAIRO) && defined(HAVE_CGAL)
     
     std::vector<Point> points(ncells);
     for (size_t i = 0; i < ncells; ++i) {
@@ -870,6 +845,9 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
     cairo_show_page(cr);
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
+#else
+    std::cerr << "Warning: Cairo PDF library and CGAL geometry libraries needs to be included/linked during cysift build for Voronoi output. Otherwise no PDF will be output." << std::endl;
+#endif    
   }
 
   
@@ -1137,6 +1115,8 @@ void CellTable::SubsetROI(const std::vector<Polygon> &polygons) {
 void CellTable::TumorCall(int num_neighbors, float frac,
 			  cy_uint orflag, cy_uint andflag, cy_uint dist) {
 
+#ifdef HAVE_KNNCOLLE
+  
   // number of cells
   int nobs = CellCount();
   
@@ -1168,17 +1148,18 @@ void CellTable::TumorCall(int num_neighbors, float frac,
    
    if (m_verbose)
      std::cerr << "...setting up KNN graph (spatial) for tumor calling on " << AddCommas(nobs) << " points" << std::endl;
-   
-  umappp::NeighborList<float> output(nobs);
+
+   JNeighbors output(nobs);
+   //umappp::NeighborList<floaat> output(nobs);
 
   if (m_verbose)
     std::cerr << "...building KNN (spatial) graph with " <<
       num_neighbors << " nearest neigbors and dist limit " << dist << std::endl;
 
   // initialize the tree. Can choose from different algorithms, per knncolle library
-  //knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());
+  knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());
   //knncolle::AnnoyEuclidean<int, float> searcher(ndim, nobs, concatenated_data.data());
-  knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());  
+  //knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());  
 
   if (m_verbose)
     std::cerr << " threads " << m_threads <<
@@ -1194,7 +1175,7 @@ void CellTable::TumorCall(int num_neighbors, float frac,
 	omp_get_thread_num() << " K " << num_neighbors << " Dist: " << dist <<
 	std::endl;
     
-    Neighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
+    JNeighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
     
     CellNode node;
     
@@ -1221,9 +1202,17 @@ void CellTable::TumorCall(int num_neighbors, float frac,
       static_cast<IntCol*>(cflag_ptr.get())->SetNumericElem(1, i);
     
   }// end for
+
+#else
+  std::cerr << "Warning: tumor call function requires including header library knncolle (https://github.com/LTLA/knncolle)" <<
+    " and preprocessor directive -DHAVE_KNNCOLLE" << std::endl;
+#endif
+  
 }
 
 void CellTable::KNN_spatial(int num_neighbors, int dist) {
+
+#ifdef HAVE_KNNCOLLE
   
   // number of cells
   int nobs = CellCount();
@@ -1253,7 +1242,6 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
    column_to_row_major(concatenated_data, nobs, ndim);
    
    // get the cell id colums
-   //auto id_ptr = GetIDColumn();
    auto id_ptr = m_table.at("id");
    
    if (m_verbose)
@@ -1274,9 +1262,9 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
   size_t lost_cell = 0;
   
   // initialize the tree. Can choose from different algorithms, per knncolle library
-  //knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());
+  knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());
   //knncolle::AnnoyEuclidean<int, float> searcher(ndim, nobs, concatenated_data.data());
-  knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());  
+  //knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());  
     
   // archive the header
   assert(m_archive);
@@ -1304,7 +1292,7 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
 	omp_get_thread_num() << " K " << num_neighbors << " Dist: " << dist <<
 	std::endl;
     
-    Neighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
+    JNeighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
 
 
     CellNode node;
@@ -1313,7 +1301,7 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
     if (dist > 0) {
       
       size_t osize = neigh.size();
-      Neighbors neigh_trim;
+      JNeighbors neigh_trim;
       for (const auto& nnn : neigh) {
 	if (nnn.second < dist)
 	  neigh_trim.push_back(nnn);
@@ -1410,10 +1398,19 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
   Tag gtag(Tag::GA_TAG, "spat", "NN:" + std::to_string(num_neighbors));
   //gtag.addValue("NN", std::to_string(num_neighbors));
   AddColumn(gtag, graph);
+
+#else
+  std::cerr << "Warning: tumor call function requires including header library knncolle (https://github.com/LTLA/knncolle)" <<
+    " and preprocessor directive -DHAVE_KNNCOLLE" << std::endl;
+#endif
+
+  
 }
 
-void CellTable::UMAP(int num_neighbors) {
+void CellTable::UMAP(int num_neighbors) { 
 
+#ifdef HAVE_UMAPPP
+  
   // get the number of markers
   int ndim = 0;
   for (const auto& t : m_header.GetDataTags())
@@ -1451,28 +1448,6 @@ void CellTable::UMAP(int num_neighbors) {
   // convert to row major?
   column_to_row_major(concatenated_data, nobs, ndim);
 
-  /*
-  std::vector<double> concatenated_data2(concatenated_data.size());
-  for (size_t i = 0; i < concatenated_data.size(); i++)
-    concatenated_data2[i] = concatenated_data[i];
-
-  std::vector<double> embedding2(nobs * 2);
-  umappp::Umap<double> x2;
-  x2.set_seed(42);
-  x2.set_num_neighbors(10);
-  x2.set_initialize(umappp::InitMethod::RANDOM);  
-  if (m_threads > 1)
-    x2.set_parallel_optimization(true);
-  x2.set_num_threads(m_threads);
-  //knncolle::VpTreeEuclidean<> searcher2(ndim, nobs, concatenated_data2.data());
-  knncolle::Kmknn<knncolle::distances::Euclidean, int, double> searcher2(ndim, nobs, concatenated_data2.data());
-  umappp::NeighborList<double> output2(nobs);
-  for (size_t i = 0; i < nobs; i++)
-    output2[i] = searcher2.find_nearest_neighbors(i, 15);
-  auto status2 = x2.initialize(std::move(output2), 2, embedding2.data());
-  status2.run(0);
-  */
-    
   if (m_verbose)
     std::cerr << "...setting up KNN graph on " << AddCommas(nobs) << " points (" <<
       ndim << "-dimensional)" << std::endl;
@@ -1481,9 +1456,9 @@ void CellTable::UMAP(int num_neighbors) {
     std::cerr << "...building KNN (marker) graph" << std::endl;
   
   // initialize the tree. Can choose from different algorithms, per knncolle library
-  //knncolle::VpTreeEuclidean<int, double> searcher(ndim, nobs, concatenated_data.data());
-  //knncolle::AnnoyEuclidean<int, double> searcher(ndim, nobs, concatenated_data.data());  
-  knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher2(ndim, nobs, concatenated_data.data());
+  knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());
+  //knncolle::Annoy<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());
+  //knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());
 
   umappp::NeighborList<float> nlist;
   nlist.resize(nobs);
@@ -1495,7 +1470,7 @@ void CellTable::UMAP(int num_neighbors) {
 	AddCommas(i) << " with thread " <<
 	omp_get_thread_num() << " K " << num_neighbors << std::endl;
     
-    Neighbors neigh = searcher2.find_nearest_neighbors(i, num_neighbors);
+    JNeighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
     
 #pragma omp critical
     {
@@ -1534,7 +1509,15 @@ void CellTable::UMAP(int num_neighbors) {
 
   if (m_verbose)
     std::cerr << "...done with umap" << std::endl;
-  
+
+  // rescale to -1 to 1
+  // find abs value
+  float max_abs = 0.0f;
+  for (int i = 0; i < nobs*2; i++) {
+    max_abs = std::max(max_abs, std::abs(embedding[i]));
+  }
+  assert(max_abs > 0);
+    
   // transfer to Column
   std::shared_ptr<FloatCol> comp1 = make_shared<FloatCol>(); 
   std::shared_ptr<FloatCol> comp2 = make_shared<FloatCol>();
@@ -1543,8 +1526,8 @@ void CellTable::UMAP(int num_neighbors) {
   comp2->resize(nobs); 
 
   for (size_t i = 0; i < nobs; i++) {
-    comp1->SetNumericElem(embedding[i*2    ], i);
-    comp2->SetNumericElem(embedding[i*2 + 1], i);
+    comp1->SetNumericElem(embedding[i*2    ] / max_abs, i);
+    comp2->SetNumericElem(embedding[i*2 + 1] / max_abs, i);
   }
 
   //
@@ -1554,6 +1537,114 @@ void CellTable::UMAP(int num_neighbors) {
   Tag gtag2(Tag::CA_TAG, "umap2", "NN:" + std::to_string(num_neighbors));  
   AddColumn(gtag2, comp2);
 
+#else
+  std::cerr << "Warning: Need to include umappp header library (https://github.com/LTLA/umappp) and adding -DHAVE_UMAPPP preprocessor directive" << std::endl;
+#endif
+  
+}
+
+bool CellTable::HasColumn(const std::string& col) const {
+  return m_table.find(col) != m_table.end();
+}
+
+void CellTable::UMAPPlot(const std::string& file, int width, int height) const {
+
+  if (m_table.find("umap1") == m_table.end() ||
+      m_table.find("umap1") == m_table.end()) {
+    std::cerr << "Warning: Need to build UMAP first before plotting" << std::endl;
+    return;
+  }
+
+
+  ColorMap colormap;
+  
+  
+#ifdef HAVE_CAIRO
+  FloatColPtr u1_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("umap1"));
+  FloatColPtr u2_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("umap2"));  
+  assert(u1_ptr->size() == u2_ptr->size());
+
+  // clusters from kmeans
+  std::vector<int> clusters(u1_ptr->size());
+
+ 
+#ifdef HAVE_KMEANS
+
+  // store as concatenated data
+  std::vector<double> concatenated_umap_data;
+  const auto& u1d = u1_ptr->getData();
+  concatenated_umap_data.insert(concatenated_umap_data.end(), u1d.begin(), u1d.end());
+  const auto& u2d = u2_ptr->getData();
+  concatenated_umap_data.insert(concatenated_umap_data.end(), u2d.begin(), u2d.end());
+
+  const int ndim = 2;
+  const int nobs = u1_ptr->size();
+  const int nclusters = 6;
+
+  if (nclusters > 12) {
+    std::cerr << "Requesting more clusters than available colors. Max 12. Will recycle colors" << std::endl;
+  }
+
+  kmeans::InitializeRandom rd;
+  kmeans::HartiganWong hw;
+  hw.set_max_iterations(100);
+  hw.set_num_threads(m_threads);
+  kmeans::Kmeans km;
+  km.set_seed(42);
+  km.set_num_threads(m_threads);
+  
+  // auto res = km.run(ndim, nobs, concatenated_umap_data.data(), nclusters, &rd, &hw);
+  
+  // kmeans::Kmeans km;
+  // km.set_seed(42);
+  // km.set_num_threads(m_threads);
+
+  if (m_verbose)
+    std::cerr << "...running k-means clustering with " << nclusters << " clusters" << std::endl;
+  auto res = kmeans::Kmeans().run(ndim, nobs, concatenated_umap_data.data(), nclusters);
+  
+  clusters = res.clusters;
+  
+  // set the best colormap based on number of clusters
+  colormap = getColorMap(nclusters);
+  
+  if (m_verbose) {
+    std::cerr << "...done with kmeans" << std::endl;
+    std::cerr << "   Iterations: " << res.details.iterations << std::endl;
+    std::cerr << "   Status: " << res.details.status << std::endl;
+    for (size_t i = 0; i < nclusters; i++)
+      std::cerr << "   Cluster " << i << " -- size " << res.details.sizes.at(i) << std::endl;
+  }
+  
+#elif defined(HAVE_MLPACK)
+  
+  
+#else
+  std::cerr << "Warning: Unable to run umap *clustering* without including CppKmeans (https://github.com/LTLA/CppKmeans)" <<
+    " and -DHAVE_KMEANS preprocessor directive" << std::endl;
+#endif
+  
+  // open the PDF for drawing
+  const int cwidth = 500;
+  cairo_surface_t *surface = cairo_pdf_surface_create(file.c_str(), cwidth, cwidth);
+  cairo_t *cr = cairo_create(surface);
+
+  for (size_t i = 0; i < u1_ptr->size(); i++) {
+    Color c = colormap.at(clusters.at(i) % 12);
+    cairo_set_source_rgba(cr, c.red/255.0, c.green/255.0, c.blue/255.0, 0.3);
+    cairo_arc(cr, u1_ptr->GetNumericElem(i)*cwidth/2+cwidth/2, u2_ptr->GetNumericElem(i)*cwidth/2+cwidth/2, 0.5, 0.0, 2.0 * M_PI);
+    cairo_fill(cr);
+  }
+
+  // Clean up and close
+  cairo_destroy(cr);
+  cairo_surface_destroy(surface);
+    
+  
+#else
+  std::cerr << "Error: Need to build / link with Cairo library to build PDF." << std::endl;
+#endif
+  
 }
 
 void CellTable::print_correlation_matrix(const std::vector<std::pair<std::string, const ColPtr>>& data,
@@ -1612,8 +1703,6 @@ void CellTable::initialize_cols() {
 
 int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
 
-  bool build_table_memory = false;
-  
   std::istream *inputStream = nullptr;
   std::unique_ptr<std::ifstream> fileStream;
   
@@ -1673,13 +1762,10 @@ int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
     if (val == CellProcessor::WRITE_CELL) {
       proc.OutputLine(cell);
     } else if (val == CellProcessor::SAVE_CELL) {
-      build_table_memory = true;
       add_cell_to_table(cell, false, false);
     } else if (val == CellProcessor::SAVE_NODATA_CELL) {
-      build_table_memory = true;
       add_cell_to_table(cell, true, false);
     } else if (val == CellProcessor::SAVE_NODATA_NOGRAPH_CELL) {
-      build_table_memory = true;
       add_cell_to_table(cell, true, true);
     } else if (val == CellProcessor::NO_WRITE_CELL) {
       ; // do nothing
@@ -1688,9 +1774,6 @@ int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
     }
 
   }
-
-  if (!build_table_memory)
-    return 0;
 
   return 0;
   
@@ -1767,6 +1850,8 @@ void CellTable::StreamTableCSV(LineProcessor& proc, const std::string& file) {
 
 void CellTable::BuildKDTree() {
 
+#ifdef HAVE_KDTREE
+  
   pointVec points;
   const auto x_ptr = m_table.find("x");
   const auto y_ptr = m_table.find("y");
@@ -1795,165 +1880,26 @@ void CellTable::BuildKDTree() {
     }
   }
   */  
+
+#else
+  std::cerr << "Warning: Unable to build KD-tree, need to include KDTree header library (https://github.com/crvs/KDTree) " <<
+    " and add preprocessor directive -DHAVE_KDTREE" << std::endl;
+#endif
   
 }
 
-int CellTable::RadialDensity(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
-			     std::vector<cy_uint> logor, std::vector<cy_uint> logand,
-			     std::vector<std::string> label) {
+void CellTable::setCmd(const std::string& cmd) {
 
-  // check the radial geometry parameters
-  assert(inner.size());
-  assert(inner.size() == outer.size());
-  assert(inner.size() == logor.size());
-  assert(inner.size() == logand.size());
-  assert(inner.size() == label.size());    
-
-  if (m_verbose)  {
-    for (size_t i = 0; i < inner.size(); i++) {
-      std::cerr << "In " << inner.at(i) << " Out " << outer.at(i) <<
-	" log " << logor.at(i) << " logand " << logand.at(i) << " label " << label.at(i) << std::endl;
-    }
-  }
-
-  // get the flag column
-  shared_ptr<IntCol> fc = std::dynamic_pointer_cast<IntCol>(m_table["pflag"]);
-  assert(fc);
-  assert(fc->size());
-
-  // get the graph column
-  shared_ptr<GraphColumn> gc = std::dynamic_pointer_cast<GraphColumn>(m_table["spat"]);
-  assert(gc);
-  assert(gc->size());
-
-  // check sizes are good
-  assert(gc->size() == fc->size());
-  assert(gc->size() == CellCount());
-
-  // check if already exists in the table
-  for (const auto& l : label) {
-    if (m_table.find(l) != m_table.end()) {
-      throw std::runtime_error("Adding density meta column " + l + " already in table");
-    }
-  }
-  
-  
-  // store the densities
-  std::vector<std::shared_ptr<FloatCol>> dc(inner.size()); for(auto& ptr : dc) {
-    ptr = std::make_shared<FloatCol>();
-    ptr->resize(gc->size());
-  }
-
-  //shared_ptr<FloatCol> dc = std::make_shared<FloatCol>();  
-  //dc->resize(gc->size());
-  //dc->SetPrecision(2);
-
-  // get the cell id colums
-  auto id_ptr = m_table.at("id"); 
-  assert(id_ptr->size() == gc->size());
-
-  // flip it so that the id points to the zero-based index
-  std::unordered_map<uint32_t, size_t> inverse_lookup;
-  if (m_verbose)
-    std::cerr << "...done loading, doing the flip" << std::endl;
-  uint32_t max_cell_id = 0;
-  for (size_t i = 0; i < id_ptr->size(); ++i) {
-    uint32_t value = id_ptr->GetNumericElem(i);
-    inverse_lookup[value] = i;
-    if (value > max_cell_id)
-      max_cell_id = value;
-  }
-
-  // convert to vector for speed
-  //std::cerr << " Max cell id " << AddCommas(max_cell_id) << std::endl;
-  //std::vector<uint32_t> inverse_lookup_v(max_cell_id);
-  //for (const auto& i : inverse_lookup)
-  //  inverse_lookup_v[i.first] = i.second;
-  
-  if (m_verbose)
-    std::cerr << "...radial density: starting loop" << std::endl;
-  
-  // loop the cells
-  #pragma omp parallel for num_threads(m_threads)
-  for (size_t i = 0; i < gc->size(); i++) {
-
-    // initialize the counts for each radial condition
-    std::vector<float> cell_count(inner.size());
-
-    const CellNode& node = gc->GetNode(i);
-
-    const Neighbors& neigh = node.get_neighbors();
-
-    // loop the nodes connected to each cell
-    for (const auto& n : neigh) {
-      
-      uint32_t cellindex = inverse_lookup[n.first];
-      
-      // test if the connected cell meets the flag criteria
-      // n.first is cell_id of connected cell to this cell
-      for (size_t j = 0; j < inner.size(); j++) {
-	
-	// both are 0, so take all cells OR it meets flag criteria
-	CellFlag mflag(fc->GetNumericElem(cellindex))
-	  ;
-	if ( (!logor[j] && !logand[j]) || mflag.testAndOr(logor[j], logand[j])) {
-	  
-	  // then increment cell count if cell in bounds
-	  cell_count[j] += n.second >= inner[j] && n.second <= outer[j];
-	  
-	}
-      }
-    }
-    
-    // calculate the density
-    std::vector<float> area(inner.size());
-    for (size_t j = 0; j < inner.size(); ++j) {
-      float outerArea = static_cast<float>(outer[j]) * static_cast<float>(outer[j]) * 3.1415926535f;
-      float innerArea = static_cast<float>(inner[j]) * static_cast<float>(inner[j]) * 3.1415926535f;
-      area[j] = outerArea - innerArea;
-    }
-
-    // do the density calculation for each condition
-    // remember, i is iterator over cells, j is over conditions
-    for (size_t j = 0; j < area.size(); ++j) {
-      if (!neigh.empty()) {
-	float value = cell_count[j] * 1000000 / area[j]; // density per 1000 square pixels
-	dc[j]->SetNumericElem(value, i);
-      } else {
-	dc[j]->SetNumericElem(0, i); 
-      }
-    }
-    
-    if (m_verbose && i % 50000 == 0)
-      std::cerr << "...radial density: looping on " << AddCommas(i) << " and found density[0] " << dc.at(0)->GetNumericElem(i) << std::endl;
-    
-  } // end the main cell loop
-  
-  if (m_verbose)
-    std::cerr << "...adding the density column" << std::endl;
-
-  for (size_t i = 0; i < label.size(); ++i) {
-    
-    // form the data tag
-    Tag dtag(Tag::CA_TAG, label[i], "");
-    
-    AddColumn(dtag, dc[i]);
-    
-  }
-
-  return 0;
-}
-
-void CellTable::SetCmd(const std::string cmd) {
-
+  m_cmd = cmd;
   m_header.addTag(Tag(Tag::PG_TAG, "", cmd));
-  
+    
 }
 
 int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
 			     std::vector<cy_uint> logor, std::vector<cy_uint> logand,
 			     std::vector<std::string> label) {
-
+#ifdef HAVE_KDTREE
+  
   // check the radial geometry parameters
   assert(inner.size());
   assert(inner.size() == outer.size());
@@ -2141,6 +2087,10 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     
   }
 
+#else
+  std::cerr << "Warning: Unable to run without including kdtree header library (https://github.com/crvs/KDTree)" << std::endl;
+#endif
+  
   return 0;
 }
 
@@ -2155,70 +2105,203 @@ void CellTable::GMM_EM() {
   
   // Train the model.
   gmm.Train(dataset);
-
+#else
+  std::cerr << "Warning: Unable to run GMM without linking / including MLPACK and armadillo in build" << std::endl;
 #endif 
 }
 
-void CellTable::LDA() {
-
 #ifdef HAVE_LDAPLUSPLUS
 
-  size_t n_topics = 10;
-  
-  std::vector<std::string> marker_cols = {
-    "CD31_200r",
-    "CD45_200r",
-    "CD68_200r",
-    "CD4_200r",
-    "FOXP3_200r",
-    "CD8_200r",
-    "FOXP3_200r",
-    "CD8_200r",
-    "CD45RO_200r",
-    "CD20_200r",
-    "PD_L1_200r",
-    "CD3_200r",
-    "CD163_200r",
-    "Ecad_200r",
-    "PD1_200r",
-    "Ki67_200r",
-    "PanCK_200r",
-    "SMA_200r"};
+std::ostream& operator<<(std::ostream& os, const LDAModel& result) {
+
+    os << "alpha size: " << result.alpha.size() << "\n";
+    os << "beta size: " << result.beta.size() << "\n";
+    if(!result.beta.empty()) {
+        os << "beta[0] size: " << result.beta[0].size() << "\n";
+    }
+    return os;
+}
+
+// Constructor that takes Eigen objects and converts them to std::vector
+LDAModel::LDAModel(const Eigen::VectorXd& alpha_eigen,
+		   const Eigen::MatrixXd& beta_eigen,
+		   const std::vector<std::string>& markers) {
+
+    markers_to_run = markers;
     
+    // Convert Eigen::VectorXd to std::vector<double>
+    alpha = std::vector<double>(alpha_eigen.data(), alpha_eigen.data() + alpha_eigen.size());
+
+    // Convert Eigen::MatrixXd to std::vector<std::vector<double>>
+    beta.resize(beta_eigen.rows(), std::vector<double>(beta_eigen.cols()));
+    for(int i = 0; i < beta_eigen.rows(); ++i) 
+      for(int j = 0; j < beta_eigen.cols(); ++j)
+        beta[i][j] = beta_eigen(i, j);
+  }
+
+void CellTable::LDA_write_model(const std::string& model_out) const {
+
+  // store the model
+  if (!model_out.empty()) {
+    
+    if (m_verbose) 
+      std::cerr << "...storing the model to " << model_out << std::endl;
+
+    m_ldamodel.JSONArchive(model_out);
+    
+    //std::ofstream ofs(model_out);
+    //cereal::PortableBinaryOutputArchive oarchive(ofs);
+    //oarchive(m_ldamodel);
+  }
+
+  return;
+}
+
+void CellTable::LDA_load_model(const std::string& model_file) {
+
+  if (!check_readable(model_file))  {
+    std::cerr << "Error: Model file " << model_file << " not readable/exist" << std::endl;
+    return;
+  }
+
+  std::ifstream is(model_file);
+  cereal::JSONInputArchive iarchive(is);
+  iarchive(m_ldamodel);
+
+  if (m_verbose)
+    std::cerr << m_ldamodel << std::endl;
+  
+  //std::ifstream is(model_file, std::ios::binary);
+  //cereal::PortableBinaryInputArchive iarchive(is);
+  //iarchive(m_ldamodel);
+  
+  return;
+}
+
+void CellTable::LDA_score_cells(const std::string& pdffile) { 
+
+  if (m_verbose)
+    std::cerr << "...scoring cells with LDA model" << std::endl;
+
+  if (!m_ldamodel.initialized()) {
+    std::cerr << "Error: Need to create or load LDA model first" << std::endl;
+    return;
+  }
+
+  // Build the model
+  std::shared_ptr<ldaplusplus::parameters::ModelParameters<double>> model = std::make_shared<ldaplusplus::parameters::ModelParameters<double>>(m_ldamodel.toModelParameters());
+  ldaplusplus::LDA<double> lda_r = ldaplusplus::LDABuilder<double>()
+    .initialize_topics_from_model(model);
+
+  // Create an Eigen matrix to hold the document data
+  size_t n_words = m_ldamodel.markers_to_run.size();
+  size_t n_docs = CellCount();
+  assert(n_words > 0);
+  assert(n_docs > 0);
+  Eigen::MatrixXi X(n_words, n_docs);
+  
+  // Fill the matrix with the marker data
+  int i = 0;
+  for (const auto& s : m_ldamodel.markers_to_run) {
+    assert(m_table.find(s) != m_table.end());
+    shared_ptr<FloatCol> fc = std::dynamic_pointer_cast<FloatCol>(m_table.at(s));
+    assert(fc->size());
+    
+    for (int j = 0; j < CellCount(); j++) {
+      X(i, j) = static_cast<int>(fc->GetNumericElem(j));
+    }
+    i++;
+  }
+  
+  // predict
+  std::cerr << "...transforming" << std::endl;
+  Eigen::MatrixXd Zr = lda_r.transform(X); // cols is docs, rows is topics
+  for (int i = 0; i < Zr.cols(); ++i) {
+    double sum = Zr.col(i).sum();
+    Zr.col(i) = Zr.col(i) /= sum;
+  }
+
+  //////
+  // PLOT
+  //////
+  if (!pdffile.empty()) {
+#ifdef HAVE_CAIRO
+    
+  // open the PDF for drawing
+  const int cwidth = 500;
+  cairo_surface_t *surface = cairo_pdf_surface_create(pdffile.c_str(), cwidth, cwidth);
+  cairo_t *cr = cairo_create(surface);
+  
+#else
+    std::cerr << "Unable to make PDF -- need to include / link Cairo library" << std::endl;
+#endif
+  }
+  
+  /*  int j = 0; //document to print
+  std::cerr << "cols " << Zr.cols() << " rows " << Zr.rows() << std::endl;
+  for (int i = 0; i < Zr.rows(); ++i) {
+    std::cerr << "Score of topic (re)" << i
+	      << " for document " << j 
+	      << ": " << Zr(i, j) << std::endl;
+  }
+  std::cerr << "..end" << std::endl;
+  */
+  
+  // // Assuming that each row of beta represents a topic
+  // for(int topicIdx = 0; topicIdx < model->beta.rows(); topicIdx++) {
+    
+  //   // Get the word distribution for the current topic
+  //   Eigen::Matrix<double, 1, Eigen::Dynamic> wordDistribution = model->beta.row(topicIdx);
+
+  //   std::cerr << "...Topic " << (topicIdx) << " rows " << wordDistribution.rows() << std::endl;
+  //   // Loop over each word's probability in the topic
+  //   for(int wordIdx = 0; wordIdx < wordDistribution.cols(); wordIdx++) {
+  //     double probability = wordDistribution[wordIdx];
+  //     std::cerr << "Word " << wordIdx << " probability: " << probability << "\n";
+  //   }
+  // }
+  
+  
+}
+
+void CellTable::LDA_create_model(const std::vector<std::string>& marker_cols,
+				 size_t n_topics,
+				 size_t n_iterations) {
+
   size_t n_words = marker_cols.size();
   size_t n_docs = CellCount();
 
-  std::cerr << " n_docs " << n_docs << std::endl;
-  std::cerr << " n_words " << n_words << std::endl;
+  if (m_verbose)
+    std::cerr << "...setting up LDA with " << AddCommas(n_docs) <<
+      " cells; " <<
+      n_words << " columns; " <<
+      n_topics << " topics" << std::endl;
   
   // Create an Eigen matrix to hold the document data
   Eigen::MatrixXi X(n_words, n_docs);
   
-  // Fill the matrix with your data
-  std::cerr << " filling matrix" << std::endl;
+  // Fill the matrix with the marker data
   int i = 0;
   for (const auto& s : marker_cols) {
     assert(m_table.find(s) != m_table.end());
     shared_ptr<FloatCol> fc = std::dynamic_pointer_cast<FloatCol>(m_table.at(s));
     assert(fc->size());
     
-    for (int k = 0; k < 20; k++) {
-      for (int j = 0; j < CellCount(); j++) {
-	X(i, j + k*CellCount()) = static_cast<int>(fc->GetNumericElem(j));
-      }
+    for (int j = 0; j < CellCount(); j++) {
+      X(i, j) = static_cast<int>(fc->GetNumericElem(j));
     }
     i++;
   }
 
-  std::cerr << " done zfilling matrix" << std::endl;
   // all the parameters below are the default and can be omitted
   ldaplusplus::LDA<double> lda = ldaplusplus::LDABuilder<double>()
     .initialize_topics_random(
         X.rows(),   // X.rows() is the number of words in the vocab
         n_topics  // how many topics we want to infer
     )
-    .set_iterations(50)
-    .set_workers(8);
+    .set_iterations(n_iterations)
+    .set_workers(m_threads);
+  
   /*
   ldaplusplus::LDA<double> lda = ldaplusplus::LDABuilder<double>()
     .set_fast_supervised_e_step(
@@ -2252,13 +2335,10 @@ void CellTable::LDA() {
   int count_likelihood = 0;
   int count = 0;
   lda.get_event_dispatcher()->add_listener(
-					   [&likelihood, &count, &count_likelihood](std::shared_ptr<ldaplusplus::events::Event> ev) {
+					   [this, &likelihood, &count, &count_likelihood](std::shared_ptr<ldaplusplus::events::Event> ev) {
 					     // an expectation has finished for a document
 					     if (ev->id() == "ExpectationProgressEvent") {
 					       count++; // seen another document
-					       /*if (count % 128 == 0) {
-						 std::cout << count << std::endl;
-						 }*/
 					       
 					       // aggregate the likelihood if computed for this document
 					       auto expev =
@@ -2272,8 +2352,9 @@ void CellTable::LDA() {
 					     // A whole pass from the corpus has finished print the approximate per
 					     // document likelihood and reset the counters
 					     else if (ev->id() == "EpochProgressEvent") {
-					       std::cout << "Per document likelihood ~= "
-							 << likelihood / count_likelihood << std::endl;
+					       if (this->m_verbose)
+						 std::cerr << "Per document likelihood ~= "
+							   << likelihood / count_likelihood << std::endl;
 					       likelihood = 0;
 					       count_likelihood = 0;
 					       count = 0;
@@ -2281,21 +2362,23 @@ void CellTable::LDA() {
 					   }
 					   );
 
-
   // run the training for 15 iterations (we could also manually run each
   // iteration using partial_fit())
+  if (m_verbose)
+    std::cerr << "...running LDA" << std::endl;
   lda.fit(X);
 
   // Extract the top words of the unsupervised model
-  auto model = lda.model_parameters<ldaplusplus::parameters::ModelParameters<> >();
-  Eigen::VectorXi top_words(model->beta.rows());
-  for (int i=0; i<model->beta.rows(); i++) {
-    model->beta.row(i).maxCoeff(&top_words[i]);
-  }
-  std::cout << "Top Words:" << std::endl << top_words
-	    << std::endl << std::endl;
-#else
-  std::cerr << "Error: Unable to run LDA without including ldaplusplus header library to build." << std::endl;
-#endif
+  const std::shared_ptr<ldaplusplus::parameters::ModelParameters<> > model =
+    lda.model_parameters<ldaplusplus::parameters::ModelParameters<> >();
+
+  // add the model to this object
+  m_ldamodel = LDAModel(model->alpha, model->beta, marker_cols);
+  m_ldamodel.cmd = m_cmd;
+  
+
 
 }
+
+//end HAVE_LDAPLUSPLU
+#endif 

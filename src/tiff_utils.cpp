@@ -1,3 +1,4 @@
+#ifdef HAVE_TIFFLIB
 #include "tiff_utils.h"
 #include <cassert>
 #include <iostream>
@@ -205,3 +206,4 @@ int MergeGrayToRGB(TIFF* in, TIFF* out) {
   }
   return 0;
 }
+#endif

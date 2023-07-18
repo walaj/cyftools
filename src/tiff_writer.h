@@ -1,6 +1,8 @@
 #ifndef TIFF_WRITER_H
 #define TIFF_WRITER_H
 
+#ifdef HAVE_TIFFLIB
+
 #include <string>
 #include <memory>
 #include "tiffio.h"
@@ -53,4 +55,5 @@ class TiffWriter {
 
 };
 
+#endif
 #endif

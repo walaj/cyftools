@@ -1,6 +1,6 @@
+#ifdef HAVE_TIFFLIB
 #ifndef TIFF_COPY_H
 #define TIFF_COPY_H
-
 
 /*
  * Copyright (c) 1988-1997 Sam Leffler
@@ -225,4 +225,5 @@ std::string tiffprint(TIFF* tif);
 
 int GetIntTag(TIFF* tif, int tag);
 
+#endif
 #endif

@@ -1,6 +1,7 @@
 #ifndef TIFF_IMAGE_H
 #define TIFF_IMAGE_H
 
+#ifdef HAVE_TIFFLIB
 #include <string>
 #include <cassert>
 #include <vector>
@@ -165,4 +166,5 @@ class TiffImage {
 
 };
 
+#endif
 #endif
