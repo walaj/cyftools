@@ -7,10 +7,6 @@
 
 #include "cell_header.h"
 
-#include <cereal/archives/portable_binary.hpp>
-
-
-
 class Cell {
 
  public:

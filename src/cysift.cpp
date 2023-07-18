@@ -302,7 +302,7 @@ static int convolvefunc(int argc, char** argv) {
   TIFFSetField(otif.get(), TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
   
   // build the umap in marker-space
-  table.Convolve(otif, width, microns_per_pixel);
+  table.Convolve(&otif, width, microns_per_pixel);
 #else
   std::cerr << "Unable to proceed, need to include and link libtiff and have preprocessor directory -DHAVE_TIFFLIB" << std::endl;
 #endif
@@ -489,7 +489,12 @@ static int ldarunfunc(int argc, char** argv) {
 
   if (model_in.empty()) {
     die = true;
-    std::cerr << "Error: Must specify model input file with -m" << std::endl;
+    std::cerr << "Error: Must specify model input file with -i" << std::endl;
+  }
+
+  if (!check_readable(model_in)) {
+    die = true;
+    std::cerr << "Error: Model file " << model_in << " not readable/exists" << std::endl;
   }
 
   if (die || in_out_process(argc, argv)) {

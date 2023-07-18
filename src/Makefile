@@ -94,6 +94,8 @@ LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB) $(KDLIB) ${TIFFLD} $(ARMADILLOL) \
 # Specify the source files
 SRCS = cysift.cpp \
        cell_table.cpp \
+       cell_table_graph.cpp \
+       cell_table_lda.cpp \
        polygon.cpp \
        cell_header.cpp \
        cell_graph.cpp \

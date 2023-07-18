@@ -77,22 +77,6 @@ std::string columnTypeToString(ColumnType type) {
   }
 }
 
-
-std::string tokens_to_comma_string(const std::vector<std::string>& input) {
-    std::string result;
-
-    if (!input.empty()) {
-        result += input.front();
-        
-        for (auto it = input.begin() + 1; it != input.end(); ++it) {
-            result += ',';
-            result += *it;
-        }
-    }
-
-    return result;
-}
-
 std::vector<std::string> tokenize_comma_delimited(const std::string& str) {
     std::vector<std::string> tokens;
     size_t start = 0;
@@ -108,8 +92,8 @@ std::vector<std::string> tokenize_comma_delimited(const std::string& str) {
     tokens.push_back(str.substr(start));
 
     return tokens;
-}
-
+    }
+/*
 std::string exclude_elements(const std::string_view& str, const std::unordered_set<size_t>& exclude_set) {
   
     std::string result;
@@ -141,8 +125,8 @@ std::string exclude_elements(const std::string_view& str, const std::unordered_s
     
     return result;
 }
-
-int get_nth_element_as_integer(const std::string_view& str, size_t n) {
+*/
+/*int get_nth_element_as_integer(const std::string_view& str, size_t n) {
   size_t start = 0;
     size_t end = str.find(',');
     
@@ -201,6 +185,7 @@ void get_two_elements_as_floats(const std::string_view& str, size_t n, size_t m,
         throw std::out_of_range("One or both indices are out of range.");
     }
 }
+*/
 
 #ifdef HAVE_HDF5
 void write_hdf5_dataframe_attributes(H5::Group& group) {
