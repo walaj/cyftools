@@ -1,6 +1,7 @@
 #pragma once
 
 #include <set>
+
 #include "cell_column.h"
 #include "cell_header.h"
 #include "cell_processor.h"
@@ -92,7 +93,7 @@ public:
 
   int RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
 		      std::vector<cy_uint> logor, std::vector<cy_uint> logand,
-		      std::vector<std::string> label);
+		      std::vector<std::string> label, bool normalize);
   
   void TumorCall(int num_neighbors, float frac,
 		 cy_uint orflag, cy_uint andflag, cy_uint dist);
@@ -148,7 +149,9 @@ public:
 			size_t n_topics,
 			size_t n_iterations);
 
-  void LDA_score_cells(const std::string& pdffile); 
+  void LDA_score_cells(const std::string& pdffile,
+		       int topic_highlight,
+		       float cont_cutoff); 
   
  private:
 

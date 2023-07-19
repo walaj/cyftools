@@ -1,5 +1,7 @@
 #include "cell_graph.h"
 
+#include <cassert>
+#include <algorithm>
 #include <charconv>
 #include <string_view>
 

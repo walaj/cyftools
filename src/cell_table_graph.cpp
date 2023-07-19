@@ -608,7 +608,7 @@ void CellTable::BuildKDTree() {
 
 int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
 			     std::vector<cy_uint> logor, std::vector<cy_uint> logand,
-			     std::vector<std::string> label) {
+			       std::vector<std::string> label, bool normalize) {
 #ifdef HAVE_KDTREE
   
   // check the radial geometry parameters
@@ -729,7 +729,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
       }
     }
     
-    // calculate the density
+    // calculate the area
     std::vector<float> area(inner.size());
     for (size_t j = 0; j < inner.size(); ++j) {
       float outerArea = static_cast<float>(outer[j]) * static_cast<float>(outer[j]) * 3.1415926535f;
@@ -742,9 +742,11 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     for (size_t j = 0; j < area.size(); ++j) {
       if (!inds.empty()) {
 	float value = cell_count[j] * 1000000 / area[j]; // density per 1000 square pixels
+	if (normalize) // normalize to total cell count?
+	  value = value / inds.size();
 	dc[j]->SetNumericElem(value, i);
       } else {
-	dc[j]->SetNumericElem(0, i); 
+	dc[j]->SetNumericElem(0, i);
       }
     }
 

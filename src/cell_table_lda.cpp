@@ -63,10 +63,12 @@ void CellTable::LDA_load_model(const std::string& model_file) {
     return;
   }
 
+  m_ldamodel = new LDAModel();
+  
   std::ifstream is(model_file);
   cereal::JSONInputArchive iarchive(is);
-  assert(m_ldamodel);
   iarchive(*m_ldamodel);
+  assert(m_ldamodel);
 
   if (m_verbose)
     std::cerr << *m_ldamodel << std::endl;
@@ -78,7 +80,9 @@ void CellTable::LDA_load_model(const std::string& model_file) {
   return;
 }
 
-void CellTable::LDA_score_cells(const std::string& pdffile) { 
+void CellTable::LDA_score_cells(const std::string& pdffile,
+				int topic_highlight,
+				float cont_cutoff) { 
 
   if (m_verbose)
     std::cerr << "...scoring cells with LDA model" << std::endl;
@@ -115,9 +119,10 @@ void CellTable::LDA_score_cells(const std::string& pdffile) {
   }
   
   // predict
-  std::cerr << "...transforming" << std::endl;
+  if (m_verbose)
+    std::cerr << "...transforming" << std::endl;
+  
   Eigen::MatrixXd Zr = lda_r.transform(X); // cols is docs, rows is topics
-  std::cerr << "ZR dims " << Zr.rows() << " , " << Zr.cols() << std::endl;
   for (int i = 0; i < Zr.cols(); ++i) {
     double sum = Zr.col(i).sum();
     Zr.col(i) = Zr.col(i) /= sum;
@@ -129,9 +134,8 @@ void CellTable::LDA_score_cells(const std::string& pdffile) {
   if (!pdffile.empty()) {
 #ifdef HAVE_CAIRO
 
-    const float scale_factor = 0.5f;
-    const float radius_size = 3.0f;
-    const float cont_cutoff = 0.10f;
+    const float scale_factor = 1.0f;
+    const float radius_size = 6.0f;
     const float alpha_val = 0.5f;
     
     // get the x y coordinates of the cells
@@ -143,18 +147,27 @@ void CellTable::LDA_score_cells(const std::string& pdffile) {
     // open the PDF for drawing
     const int width  = x_ptr->second->Max();
     const int height = y_ptr->second->Max();    
-    cairo_surface_t *surface = cairo_pdf_surface_create(pdffile.c_str(), width, height);
-    cairo_t *cr = cairo_create(surface);
+    //cairo_surface_t *surface = cairo_pdf_surface_create(pdffile.c_str(), width, height);
+    //cairo_t *cr = cairo_create(surface);
 
-    std::cerr << "Data: "   << width << "," << height << std::endl;
-    std::cerr << "Scaled: " << scale_factor*width << "," << height*scale_factor << std::endl;    
-    
     // open PNG for drawing
     cairo_surface_t *surfacep = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width*scale_factor, height*scale_factor);
     cairo_t *crp = cairo_create (surfacep);
     cairo_set_source_rgb(crp, 0, 0, 0); // background color
 
     ColorMap cm = getColorMap(m_ldamodel->getNumTopics());
+
+    topic_highlight -= 1;
+    if (topic_highlight >= 0) {
+      if (topic_highlight > m_ldamodel->getNumTopics())
+	throw std::runtime_error("Error: selected topic greater than number of topics");
+      for (size_t i = 0; i < cm.size(); i++) {
+	if (i != topic_highlight)
+	  cm[i] = {255,255,255};
+	else
+	  cm[i] = {255,0,0};
+      }
+    }
     
     // setup for drawing loop
     assert(Zr.cols() == CellCount());
@@ -193,7 +206,6 @@ void CellTable::LDA_score_cells(const std::string& pdffile) {
 	//png
         cairo_set_source_rgba(crp, c.redf(), c.greenf(), c.bluef(), alpha_val);
         cairo_arc(crp, x*scale_factor, y*scale_factor, radius_size, start_angle, start_angle + arc_length);
-
 	
 	//if (j % 10000 == 0) {
 	//  std::cerr << "X " << x << " Y " << y << " contribtion " << contribution <<
@@ -221,7 +233,7 @@ void CellTable::LDA_score_cells(const std::string& pdffile) {
 
     std::vector<std::string> labels;
     for (size_t i = 0; i < Zr.rows(); i++) {
-      labels.push_back("Topic " + std::to_string(i));
+      labels.push_back("Topic " + std::to_string(i+1));
     }
 
     ////////
@@ -230,11 +242,11 @@ void CellTable::LDA_score_cells(const std::string& pdffile) {
     // Setting up font face
     cairo_select_font_face(crp, "Arial",
 			   CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    cairo_set_font_size(crp, 108*scale_factor); // Adjust font size to your needs
+    cairo_set_font_size(crp, 216*scale_factor); // Adjust font size to your needs
 
     // Dimensions for the legend
-    int legend_width = 2000*scale_factor; // Width of each color box
-    int legend_height = 100; // Height of each color box
+    int legend_width = 1000*scale_factor; // Width of each color box
+    int legend_height = 300*scale_factor; // Height of each color box
     int legend_padding = 20; // Space between color boxes
     
     // Starting position for the legend in the upper right corner
@@ -257,13 +269,9 @@ void CellTable::LDA_score_cells(const std::string& pdffile) {
       cairo_show_text(crp, labels[i].c_str());
     }
 
-    
-    std::cerr << " drawing " << AddCommas(count) << " fragments PNG " << std::endl;
-    
     cairo_destroy (crp);
-    cairo_surface_write_to_png (surfacep, "output.png");
+    cairo_surface_write_to_png (surfacep, pdffile.c_str());
     cairo_surface_destroy (surfacep);
-    
     
 #else
     std::cerr << "Unable to make PDF -- need to include / link Cairo library" << std::endl;

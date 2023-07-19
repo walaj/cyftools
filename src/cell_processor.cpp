@@ -212,7 +212,7 @@ int SelectProcessor::ProcessLine(Cell& cell) {
   return CellProcessor::NO_WRITE_CELL; // don't write if not selected
 }
 
-int RadialProcessor::ProcessHeader(CellHeader& header) {
+/*int RadialProcessor::ProcessHeader(CellHeader& header) {
 
   m_header = header;
 
@@ -296,7 +296,7 @@ int RadialProcessor::ProcessLine(Cell& cell) {
 
   return WRITE_CELL;
 }
-
+*/
 
 int CountProcessor::ProcessHeader(CellHeader& header) {
   return HEADER_NO_ACTION; // do nothing
@@ -574,7 +574,7 @@ int ROIProcessor::ProcessLine(Cell& cell) {
   
 }
 
-int TumorProcessor::ProcessHeader(CellHeader& header) {
+/*int TumorProcessor::ProcessHeader(CellHeader& header) {
   
   m_header = header;
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
@@ -600,7 +600,7 @@ int TumorProcessor::ProcessLine(Cell& cell) {
   assert(cell.m_spatial_ids.size() == cell.m_spatial_flags.size());
   assert(cell.m_spatial_ids.size() == cell.m_spatial_dist.size());
 
-}
+  }*/
 
 int PhenoProcessor::ProcessHeader(CellHeader& header) {
 

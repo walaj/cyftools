@@ -475,13 +475,17 @@ static int ldarunfunc(int argc, char** argv) {
 
 #ifdef HAVE_LDAPLUSPLUS
   
-  std::string model_in, pdf; 
+  std::string model_in, pdf;
+  int topic_highlight = 0;
+  float cont_cutoff = 0.10f;
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'i' : arg >> model_in; break;
+    case 'l' : arg >> topic_highlight; break;
+    case 'c' : arg >> cont_cutoff; break;
     case 'D' : arg >> pdf; break;
     default: die = true;
     }
@@ -505,6 +509,8 @@ static int ldarunfunc(int argc, char** argv) {
       "    <file>: filepath or a '-' to stream to stdin\n"
       "    -i                        Input model (won't re-run LDA)\n"
       "    -D                        Output a PDF plot of the topics\n"
+      "    -c                        Cont cutoff\n"
+      "    -l                        Highlight topic\n"      
       "    -v, --verbose             Increase output to stderr\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
@@ -517,7 +523,7 @@ static int ldarunfunc(int argc, char** argv) {
   table.LDA_load_model(model_in);
 
   // score the scells
-  table.LDA_score_cells(pdf);
+  table.LDA_score_cells(pdf, topic_highlight, cont_cutoff);
   
   return 0;
 
@@ -1489,6 +1495,7 @@ static int radialdensfunc(int argc, char** argv) {
   cy_uint logand = 0;
   std::string label;
 
+  bool normalize = false; // normalize to cells count
   std::string file;
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1502,6 +1509,7 @@ static int radialdensfunc(int argc, char** argv) {
     case 'a' : arg >> logand; break;
     case 'l' : arg >> label; break;
     case 'f' : arg >> file; break;
+    case 'j' : normalize = true; break;
     default: die = true;
     }
   }
@@ -1517,6 +1525,7 @@ static int radialdensfunc(int argc, char** argv) {
       "    -o                    Logical OR flags\n"
       "    -a                    Logical AND flags\n"
       "    -l                    Label the column\n"
+      "    -j                    Flag for normalizing to cell count\n"
       "    -f                    File for multiple labels [r,R,o,a,l]\n"
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
@@ -1560,8 +1569,8 @@ static int radialdensfunc(int argc, char** argv) {
 
   
   // streaming way
-  RadialProcessor radp;
-  radp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  //RadialProcessor radp;
+  //radp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
 
   std::vector<cy_uint> innerV(rsv.size());
   std::vector<cy_uint> outerV(rsv.size());  
@@ -1569,7 +1578,7 @@ static int radialdensfunc(int argc, char** argv) {
   std::vector<cy_uint> logandV(rsv.size());  
   std::vector<std::string> labelV(rsv.size());
   if (rsv.empty()) {
-    radp.SetParams({inner},{outer},{logor},{logand},{label});
+    //radp.SetParams({inner},{outer},{logor},{logand},{label}, normalize);
   } else {
     for (size_t i = 0; i < innerV.size(); i++) {
       innerV[i] = rsv.at(i).int_data.at(0);
@@ -1578,7 +1587,7 @@ static int radialdensfunc(int argc, char** argv) {
       logandV[i] = rsv.at(i).int_data.at(3);     
       labelV[i] = rsv.at(i).label;
     }
-    radp.SetParams(innerV, outerV, logorV, logandV, labelV);
+    //radp.SetParams(innerV, outerV, logorV, logandV, labelV, normalize);
   }
 
   // building way
@@ -1586,16 +1595,16 @@ static int radialdensfunc(int argc, char** argv) {
 
   table.SetupOutputWriter(opt::outfile);
   
-  table.RadialDensityKD(innerV, outerV, logorV, logandV, labelV);
+  table.RadialDensityKD(innerV, outerV, logorV, logandV, labelV, normalize);
 
   table.OutputTable();
   
   return 0;
   
-  if (table.StreamTable(radp, opt::infile))
+  /*if (table.StreamTable(radp, opt::infile))
     return 1; // non-zero exit from StreamTable
 
-  return 0;
+    return 0;*/
 }
 
 int debugfunc(int argc, char** argv) {

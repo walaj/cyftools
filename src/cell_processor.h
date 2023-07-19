@@ -216,7 +216,7 @@ class PhenoProcessor : public CellProcessor {
 };
 
 // Tumor processor
-class TumorProcessor : public CellProcessor {
+/*class TumorProcessor : public CellProcessor {
   
  public:
   
@@ -237,7 +237,7 @@ class TumorProcessor : public CellProcessor {
   float m_frac;
  
 };
-
+*/
 
 // Count processor
 class CountProcessor : public CellProcessor {
@@ -486,13 +486,13 @@ private:
 
 };
 
-class RadialProcessor : public CellProcessor { 
+/*class RadialProcessor : public CellProcessor { 
 
  public:
 
   void SetParams(const std::vector<cy_uint>& inner, const std::vector<cy_uint>& outer,
 		 const std::vector<cy_uint>& logor, const std::vector<cy_uint>& logand,
-		 const std::vector<std::string>& label) {
+		 const std::vector<std::string>& label, bool normalize) {
 
     // check the radial geometry parameters
     assert(inner.size());
@@ -506,6 +506,7 @@ class RadialProcessor : public CellProcessor {
     m_logor = logor;
     m_logand = logand;
     m_label = label;
+    m_normalize = normalize;
   }
   
   
@@ -517,5 +518,6 @@ class RadialProcessor : public CellProcessor {
   
   std::vector<cy_uint> m_inner, m_outer, m_logor, m_logand;
   std::vector<std::string> m_label;
-  
+  bool m_normalize;
 };
+*/

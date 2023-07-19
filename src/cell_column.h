@@ -1,5 +1,8 @@
 #pragma once
 
+#include <memory>
+#include <algorithm>
+
 #include "cysift.h"
 #include "cell_utils.h"
 #include "cell_flag.h"
