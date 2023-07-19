@@ -102,8 +102,6 @@ public:
   //////
   // Numeric ops
   //////
-  void Log10();
-
   void PrintPearson(bool csv, bool sort) const;
 
   //////

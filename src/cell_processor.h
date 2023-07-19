@@ -302,6 +302,32 @@ class SelectProcessor : public CellProcessor {
   bool m_or_toggle = false;
 };
 
+// Divide processor
+class DivideProcessor : public CellProcessor {
+
+ public:
+
+  void SetParams(const std::string& num,
+		 const std::string& den,
+		 float div)  {
+    m_numer_string = num;
+    m_denom_string = den;
+    m_div_zero = div;
+  }
+  
+  int ProcessHeader(CellHeader& header) override;
+
+  int ProcessLine(Cell& cell) override;
+  
+ private:
+
+  std::string m_numer_string; // name numerator
+  std::string m_denom_string; // name denominator
+  size_t m_numer = -1; // index of numerator in data column
+  size_t m_denom = -1; // index of denominator in data column  
+  float m_div_zero; // value to be given to divde-by-zero
+  size_t m_count = 0; // for verbose
+};
 
 // Log10 processor
 class LogProcessor : public CellProcessor {

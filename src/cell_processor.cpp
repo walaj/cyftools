@@ -212,91 +212,6 @@ int SelectProcessor::ProcessLine(Cell& cell) {
   return CellProcessor::NO_WRITE_CELL; // don't write if not selected
 }
 
-/*int RadialProcessor::ProcessHeader(CellHeader& header) {
-
-  m_header = header;
-
-  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
-  
-  // build a set (just for this method) to compare existing tags with
-  std::unordered_set<std::string> tag_set; 
-  for (const auto& t : m_header.GetDataTags())
-    tag_set.insert(t.id);
-  
-  // assure tags aren't already there
-  for (const auto& l : m_label) {
-    
-    // warn if already there
-    if (tag_set.count(l)) {
-      std::cerr << "Warning: header already contains column: " <<
-	l << std::endl;
-    } else {
-      // otherwise add the new tags
-      Tag dtag(Tag::CA_TAG, l, "");
-      m_header.addTag(dtag);
-    }
-  }
-
-  m_header.SortTags();
-  
-  // just in time output, so as not to write an empty file if the input crashes
-  // set the output to file or stdout
-  this->SetupOutputStream(); 
-
-  // output the header
-  assert(m_archive);
-  (*m_archive)(m_header);
-  
-  return HEADER_NO_ACTION;
-  
-}
-
-int RadialProcessor::ProcessLine(Cell& cell) {
-
-  std::vector<float> cell_count(m_inner.size());
-
-  assert(cell.m_spatial_ids.size() == cell.m_spatial_flags.size());
-  assert(cell.m_spatial_ids.size() == cell.m_spatial_dist.size());
-  
-  // loop the nodes connected to each cell
-  for (size_t i = 0; i < cell.m_spatial_ids.size(); i++) { 
-
-    // test if the connected cell meets the flag criteria
-    // n.first is cell_id of connected cell to this cell
-    for (size_t j = 0; j < m_inner.size(); j++) {
-      
-      CellFlag tflag(cell.m_spatial_flags.at(i));
-      
-      // both are 0, so take all cells OR it meets flag criteria
-      if ( (!m_logor[j] && !m_logand[j]) ||
-	   tflag.testAndOr(m_logor[j], m_logand[j])) {
-	
-	// then increment cell count if cell in bounds
-	cell_count[j] += cell.m_spatial_dist.at(i) >= m_inner[j] &&
-    	              cell.m_spatial_dist.at(i) <= m_outer[j];
-
-      }
-    }
-  }
-  
-  // calculate the density
-  std::vector<float> area(m_inner.size());
-  for (size_t j = 0; j < m_inner.size(); ++j) {
-    float outerArea = static_cast<float>(m_outer[j]) * static_cast<float>(m_outer[j]) * 3.1415926535f;
-    float innerArea = static_cast<float>(m_inner[j]) * static_cast<float>(m_inner[j]) * 3.1415926535f;
-    area[j] = outerArea - innerArea;
-  }
-  
-  // do the density calculation for each condition
-  // remember, i is iterator over cells, j is over conditions
-  for (size_t j = 0; j < area.size(); ++j) {
-    float value = cell.m_spatial_ids.empty() ? 0 : cell_count[j] * 1000000 / area[j]; // density per 1000 square pixels
-    cell.m_cols.push_back(value);
-  }
-
-  return WRITE_CELL;
-}
-*/
 
 int CountProcessor::ProcessHeader(CellHeader& header) {
   return HEADER_NO_ACTION; // do nothing
@@ -390,6 +305,69 @@ int HeadProcessor::ProcessLine(Cell& cell) {
   return NO_WRITE_CELL;
 }
 
+int DivideProcessor::ProcessHeader(CellHeader& header) {
+  
+  m_header = header;
+
+  // error handling
+  if (m_numer_string == m_denom_string) {
+    throw std::runtime_error("Error: Numerator and denominator must be different");
+  }
+  
+  // find the indicies
+  size_t i = 0;
+  for (const auto& t : header.GetAllTags()) { 
+    if (t.id == m_numer_string) {
+      m_numer = i;
+    } else if (t.id == m_denom_string) {
+      m_denom = i;
+    }
+    i++;
+  }
+
+  // make sure we found something
+  if (m_numer < 0) 
+    throw std::runtime_error("Error: Numerator column " + m_numer_string + " not in cell table");
+  if (m_denom < 0) 
+    throw std::runtime_error("Error: Denominator column " + m_denom_string + " not in cell table");
+
+  // add cmd and new tag
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  
+  m_header.addTag(Tag(Tag::CA_TAG, m_numer_string + "div" + m_denom_string, ""));
+  
+  m_header.SortTags();
+  
+  // just in time output
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+
+  return HEADER_NO_ACTION;
+  
+}
+
+int DivideProcessor::ProcessLine(Cell& cell) {
+
+  m_count++;
+
+  assert(m_numer >= 0 && m_denom >= 0);
+
+  // divide by zero
+  if (cell.m_cols.at(m_denom) == 0) {
+    cell.m_cols.push_back(m_div_zero);
+    return WRITE_CELL;
+  }
+
+  
+  float val = cell.m_cols.at(m_numer) / cell.m_cols.at(m_denom);
+    
+  cell.m_cols.push_back(val);
+  return WRITE_CELL;
+  
+}
 
 int LogProcessor::ProcessHeader(CellHeader& header) {
 
@@ -573,34 +551,6 @@ int ROIProcessor::ProcessLine(Cell& cell) {
   return 1;
   
 }
-
-/*int TumorProcessor::ProcessHeader(CellHeader& header) {
-  
-  m_header = header;
-  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
-
-  // just in time output, so as not to write an empty file if the input crashes
-  // set the output to file or stdout
-  this->SetupOutputStream(); 
-  
-  m_header.SortTags();
-
-  // output the header
-  assert(m_archive);
-  (*m_archive)(m_header);
-
-  return HEADER_NO_ACTION;
-}
-
-int TumorProcessor::ProcessLine(Cell& cell) {
-
-  // make a copy of the cell for output
-  Cell cell_new = cell;
-
-  assert(cell.m_spatial_ids.size() == cell.m_spatial_flags.size());
-  assert(cell.m_spatial_ids.size() == cell.m_spatial_dist.size());
-
-  }*/
 
 int PhenoProcessor::ProcessHeader(CellHeader& header) {
 

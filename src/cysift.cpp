@@ -50,7 +50,7 @@ static CellTable table;
 
 static void build_table();
 
-static const char* shortopts = "jhHNyvmMPr:e:g:G:t:a:i:A:O:d:b:c:s:k:n:r:w:l:L:x:X:o:R:f:D:V:";
+static const char* shortopts = "jhHNyvmMPr:e:g:G:t:a:i:A:O:d:b:c:s:k:n:r:w:l:L:x:X:o:R:f:D:V:z:";
 static const struct option longopts[] = {
   { "verbose",                    no_argument, NULL, 'v' },
   { "threads",                    required_argument, NULL, 't' },
@@ -72,6 +72,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  view       - View the cell table\n"
 "  count      - Output number of cells in table\n"  
 "  cut        - Select only given markers and metas\n"
+"  divide     - Divide two columns\n"
 "  head       - Keep the first lines of a file\n"
 "  clean      - Removes data to decrease disk size\n"
 "  delaunay   - Calculate the Delaunay triangulation\n"
@@ -97,6 +98,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  ldarun     - Run a Latent Dirichlet model\n"    
 "\n";
 
+static int dividefunc(int argc, char** argv);
 static int sortfunc(int argc, char** argv);
 static int headfunc(int argc, char** argv);
 static int convolvefunc(int argc, char** argv);
@@ -173,6 +175,8 @@ int main(int argc, char **argv) {
     val = subsamplefunc(argc, argv);
   } else if (opt::module == "plot") {
     return(plotfunc(argc, argv));
+  } else if (opt::module == "divide") {
+    return (dividefunc(argc, argv));
   } else if (opt::module == "roi") {
     val = roifunc(argc, argv);
   } else if (opt::module == "crop") {
@@ -886,6 +890,54 @@ static int log10func(int argc, char** argv)  {
   return 0;
 }
 
+static int dividefunc(int argc, char** argv)  {
+
+  std::string numerator, denominator;
+  float div_zero = -1;
+  
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'n' : arg >> numerator; break;
+    case 'd' : arg >> denominator; break;
+    case 'z' : arg >> div_zero; break;            
+    default: die = true;
+    }
+  }
+
+  if (numerator.empty() || denominator.empty())
+    die = true;
+  
+  
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift divide [cysfile] <options>\n"
+      "  Divide two columns by each other\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
+      "    -v, --verbose             Increase output to stderr\n"
+      "    -n                        Name of numerator column\n"
+      "    -d                        Name of denominator column\n"
+      "    -z [-1]                   Value given to divide-by-zero\n"      
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+  
+  // set table params
+  table.setVerbose(opt::verbose);
+
+  DivideProcessor divp;
+  divp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  divp.SetParams(numerator, denominator, div_zero);
+
+  if (table.StreamTable(divp, opt::infile))
+    return 1; // non-zero status on StreamTable
+
+  return 0;
+}
+
 
 
 // parse the command line options
@@ -906,7 +958,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "count" || opt::module == "clean" ||
 	 opt::module == "tumor" || opt::module == "convolve" || 
 	 opt::module == "cat" || opt::module == "cereal" ||
-	 opt::module == "sort" || 
+	 opt::module == "sort" || opt::module == "divide" || 
 	 opt::module == "correlate" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
 	 opt::module == "delaunay" || opt::module == "head" || 

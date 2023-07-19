@@ -33,11 +33,12 @@ g <- ggplot(beta_long, aes(x = factor(marker), y = Distribution, fill=model)) +
         axis.title.x = element_blank(),axis.title.y = element_blank()) +
   facet_wrap(~ Topic, scales = "free") +
   
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=6),
+        legend.text = element_text(size = 6)) 
 
-
-
-
+pdf("~/Sorger/figs/lda_iter_comp.pdf", width=8, height=4, useDingbats = FALSE)
+print(g)
+dev.off()
 
 
 
