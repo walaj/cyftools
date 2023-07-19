@@ -327,6 +327,7 @@ class DivideProcessor : public CellProcessor {
   size_t m_denom = -1; // index of denominator in data column  
   float m_div_zero; // value to be given to divde-by-zero
   size_t m_count = 0; // for verbose
+  size_t m_existing_column = -1; // if the column for the answer already exists, overwrite
 };
 
 // Log10 processor

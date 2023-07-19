@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <algorithm>
+#include <optional>
 
 #include "cysift.h"
 #include "cell_utils.h"

@@ -309,11 +309,13 @@ int DivideProcessor::ProcessHeader(CellHeader& header) {
   
   m_header = header;
 
+  const std::string div_ans = m_numer_string + "div" + m_denom_string;
+  
   // error handling
   if (m_numer_string == m_denom_string) {
     throw std::runtime_error("Error: Numerator and denominator must be different");
   }
-  
+
   // find the indicies
   size_t i = 0;
   for (const auto& t : header.GetAllTags()) { 
@@ -321,6 +323,9 @@ int DivideProcessor::ProcessHeader(CellHeader& header) {
       m_numer = i;
     } else if (t.id == m_denom_string) {
       m_denom = i;
+    } else if (t.id == div_ans) {
+      std::cerr << "Warning: Overwriting existing column " << div_ans << std::endl;
+      m_existing_column = i;
     }
     i++;
   }
@@ -334,7 +339,7 @@ int DivideProcessor::ProcessHeader(CellHeader& header) {
   // add cmd and new tag
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
   
-  m_header.addTag(Tag(Tag::CA_TAG, m_numer_string + "div" + m_denom_string, ""));
+  m_header.addTag(Tag(Tag::CA_TAG, div_ans, ""));
   
   m_header.SortTags();
   
@@ -354,17 +359,26 @@ int DivideProcessor::ProcessLine(Cell& cell) {
   m_count++;
 
   assert(m_numer >= 0 && m_denom >= 0);
+  assert(m_existing_column == -1 || m_existing_column < cell.m_cols.size());
+  assert(m_numer < cell.m_cols.size() && m_denom < cell.m_cols.size());
 
   // divide by zero
   if (cell.m_cols.at(m_denom) == 0) {
-    cell.m_cols.push_back(m_div_zero);
+    if (m_existing_column >= 0)
+      cell.m_cols[m_existing_column] = m_div_zero;
+    else
+      cell.m_cols.push_back(m_div_zero);
     return WRITE_CELL;
   }
-
   
   float val = cell.m_cols.at(m_numer) / cell.m_cols.at(m_denom);
-    
-  cell.m_cols.push_back(val);
+
+  // store the value
+  if (m_existing_column >= 0)
+    cell.m_cols[m_existing_column] = val;
+  else
+    cell.m_cols.push_back(val);
+
   return WRITE_CELL;
   
 }
