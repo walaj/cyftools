@@ -22,20 +22,20 @@ struct RadialSelector {
 
     std::vector<std::string> tokens = split(line, ',');
     
-    if (tokens.size() != 5) {
-      throw std::runtime_error("There must be exactly 5 tokens: " + line);
+    if (tokens.size() != 6) {
+      throw std::runtime_error("There must be exactly 6 tokens: " + line);
     }
 
-    int_data.resize(4);
-    for (int i = 0; i < 4; i++) {
+    int_data.resize(5);
+    for (int i = 0; i < 5; i++) {
       try {
 	int_data[i] = std::stoi(tokens[i]);
       } catch (const std::invalid_argument &e) {
-	throw std::runtime_error("The first 4 tokens must be integers.");
+	throw std::runtime_error("The first 5 tokens must be integers.");
       }
     }
 
-    label = tokens[4];
+    label = tokens[5];
     
   }
 

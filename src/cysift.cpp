@@ -1579,19 +1579,25 @@ static int radialdensfunc(int argc, char** argv) {
   std::vector<cy_uint> innerV(rsv.size());
   std::vector<cy_uint> outerV(rsv.size());  
   std::vector<cy_uint> logorV(rsv.size());
-  std::vector<cy_uint> logandV(rsv.size());  
+  std::vector<cy_uint> logandV(rsv.size());
+  std::vector<int>     normalizeV(rsv.size());    
   std::vector<std::string> labelV(rsv.size());
   if (rsv.empty()) {
-    //radp.SetParams({inner},{outer},{logor},{logand},{label}, normalize);
+    innerV = {inner};
+    outerV = {outer};
+    logorV = {logor};
+    logandV= {logand};
+    labelV = {label};
+    normalizeV={normalize};
   } else {
     for (size_t i = 0; i < innerV.size(); i++) {
       innerV[i] = rsv.at(i).int_data.at(0);
       outerV[i] = rsv.at(i).int_data.at(1);
       logorV[i] = rsv.at(i).int_data.at(2);
-      logandV[i] = rsv.at(i).int_data.at(3);     
+      logandV[i] = rsv.at(i).int_data.at(3);
+      normalizeV[i] = rsv.at(i).int_data.at(4);
       labelV[i] = rsv.at(i).label;
     }
-    //radp.SetParams(innerV, outerV, logorV, logandV, labelV, normalize);
   }
 
   // building way
@@ -1599,7 +1605,7 @@ static int radialdensfunc(int argc, char** argv) {
 
   table.SetupOutputWriter(opt::outfile);
   
-  table.RadialDensityKD(innerV, outerV, logorV, logandV, labelV, normalize);
+  table.RadialDensityKD(innerV, outerV, logorV, logandV, labelV, normalizeV);
 
   table.OutputTable();
   
