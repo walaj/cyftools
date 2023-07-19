@@ -524,6 +524,10 @@ static int ldarunfunc(int argc, char** argv) {
 
   // score the scells
   table.LDA_score_cells(pdf, topic_highlight, cont_cutoff);
+
+  // print the table
+  table.SetupOutputWriter(opt::outfile);
+  table.OutputTable();
   
   return 0;
 

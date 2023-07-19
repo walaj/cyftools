@@ -3,7 +3,7 @@ library(jsonlite)
 library(reshape2)
 library(ggplot2)
 
-model_file <- "~/Sorger/orion/orion_1_74/lda10M_100.json"
+model_file <- "~/Sorger/orion/orion_1_74/lda20M.json"
 
 # Replace "path_to_your_file.json" with the actual path to your JSON file
 json_content <- jsonlite::fromJSON(model_file)

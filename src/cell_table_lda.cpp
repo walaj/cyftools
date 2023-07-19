@@ -120,7 +120,7 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
   
   // predict
   if (m_verbose)
-    std::cerr << "...transforming" << std::endl;
+    std::cerr << "...getting topic assignment using existing LDA model" << std::endl;
   
   Eigen::MatrixXd Zr = lda_r.transform(X); // cols is docs, rows is topics
   for (int i = 0; i < Zr.cols(); ++i) {
@@ -128,6 +128,18 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
     Zr.col(i) = Zr.col(i) /= sum;
   }
 
+  // add to the output to the data
+  for (size_t i = 0; i < Zr.rows(); ++i) {
+    std::shared_ptr<FloatCol> fc = make_shared<FloatCol>();
+    fc->resize(Zr.cols());
+    for (size_t j = 0; j < Zr.cols(); j++) {
+      fc->SetNumericElem(Zr(i, j), j);
+    }
+    //
+    Tag ttag1(Tag::CA_TAG, "topic" + std::to_string(i+1),"");
+    AddColumn(ttag1, fc);
+  }
+  
   //////
   // PLOT
   //////
@@ -176,7 +188,7 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
     
     // loop and draw
     size_t count = 0;
-    for (size_t j = 0; j < Zr.cols(); j++) {
+    for (size_t j = 0; j < Zr.cols(); j++) { // loop the cells
 
       // Draw the arc segment
       const float x = x_ptr->second->GetNumericElem(j);
@@ -222,8 +234,8 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
 	
         // Update the start angle for the next iteration
         start_angle += arc_length;
+      }
     }
-  }
     
     //std::cerr << " drawing " << AddCommas(count) << " fragments " << std::endl;
     
