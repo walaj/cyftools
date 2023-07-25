@@ -6,6 +6,11 @@
 #include <cmath>
 #include <fstream>
 
+#ifdef HAVE_CAIRO
+#include "cairo/cairo.h"
+#include "cairo/cairo-pdf.h"
+#endif
+
 void column_to_row_major(std::vector<float>& data, int nobs, int ndim) {
 
   float* temp = new float[data.size()];
@@ -236,3 +241,54 @@ bool check_readable(const std::string& filename) {
 
   return answer;
 }
+
+std::pair<std::string, std::string> colon_parse(const std::string& str) {
+
+    auto colonPos = str.find(':');
+    if (colonPos == std::string::npos || colonPos == 0 || colonPos == str.length() - 1) {
+        throw std::invalid_argument("Invalid string format");
+    }
+
+    auto colonCount = std::count(str.begin(), str.end(), ':');
+    if (colonCount > 1) {
+        throw std::invalid_argument("Multiple colons are not allowed");
+    }
+
+    return std::make_pair(str.substr(0, colonPos), str.substr(colonPos + 1));
+}
+
+
+void add_legend_cairo(cairo_t* crp, int font_size,
+		      int legend_width, int legend_height,
+		      int legend_x, int legend_y,
+		      const ColorMap& cm, const std::vector<std::string> labels) {
+#ifdef HAVE_CAIRO
+  // Setting up font face
+  cairo_select_font_face(crp, "Arial",
+			 CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+  cairo_set_font_size(crp, font_size); // Adjust font size to your needs
+  
+  // Dimensions for the legend
+  int legend_padding = 20; // Space between color boxes
+  
+  for (int i = 0; i < labels.size(); ++i) {
+    
+    // Set color for this entry
+    Color c = cm[i];
+    cairo_set_source_rgb(crp, c.redf(), c.greenf(), c.bluef());
+    
+    // Draw the color box
+    cairo_rectangle(crp, legend_x, legend_y + i*(legend_height+legend_padding), legend_width, legend_height);
+    cairo_fill(crp);
+    
+    // Draw the label
+    cairo_set_source_rgb(crp, 0, 0, 0); // Set color to black for the text
+      cairo_move_to(crp, legend_x, legend_y + i*(legend_height+legend_padding) + legend_height);
+      cairo_show_text(crp, labels[i].c_str());
+  }
+#else
+  std::cerr << "Warning: Can't plot, need to build with Cairo library" << std::endl;
+#endif  
+  
+}
+  

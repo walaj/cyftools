@@ -19,40 +19,7 @@ void CellLDA::run(CellTable& tab) {
   n_docs = 1000;
   //size_t n_words = 100;
 
-  std::vector<std::string> marker_cols = {
-    "CD31_200r",
-    "CD45_200r",
-    "CD68_200r",
-    "CD4_200r",
-    "FOXP3_200r",
-    "CD8_200r",
-    "FOXP3_200r",
-    "CD8_200r",
-    "CD45RO_200r",
-    "CD20_200r",
-    "PD_L1_200r",
-    "CD3_200r",
-    "CD163_200r",
-    "Ecad_200r",
-    "PD1_200r",
-    "Ki67_200r",
-    "PanCK_200r",
-    "SMA_200r"};
-    
-  n_words = marker_cols.size();
-  n_docs = m_table.at(marker_cols.at(0))->size();
 
-  // Create an Eigen matrix to hold the document data
-  Eigen::MatrixXi X(n_words, n_docs);
-  
-  // Fill the matrix with your data
-  for (const auto& s : marker_cols) {
-    auto it = tab.find(s);
-    assert(it != tab.end());
-    for (int j = 0; j < n_docs; j++) {
-      X(i, j) = static_cast<int>(it->second.GetNumericElem(j));
-    }
-  }
 
   std::cerr << "...created documents" << std::endl;
   

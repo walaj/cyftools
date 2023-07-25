@@ -1148,6 +1148,110 @@ void CellTable::initialize_cols() {
   
 }
 
+int CellTable::PlotPNG(const std::string& file) const {
+
+#ifdef HAVE_CAIRO
+
+  std::cerr << "...plotting " << file << std::endl;
+  
+  std::random_device rd; 
+  std::mt19937 gen(rd()); 
+  std::uniform_int_distribution<> dis(0,1);
+  
+  const float scale_factor = 0.25f;
+  const float radius_size = 3.0f;
+  const float alpha_val = 0.5f;
+  constexpr float TWO_PI = 2.0 * M_PI;
+  
+  // get the x y coordinates of the cells
+  const auto x_ptr = m_table.find("x");
+  const auto y_ptr = m_table.find("y");
+  const auto flag_ptr = m_table.find("pflag");
+  const auto cflag_ptr = m_table.find("cflag");    
+  assert(x_ptr != m_table.end());
+  assert(y_ptr != m_table.end());
+  assert(flag_ptr != m_table.end());
+  assert(cflag_ptr != m_table.end());        
+  
+  // Open the PDF for drawing
+  const int width  = x_ptr->second->Max();
+  const int height = y_ptr->second->Max();    
+  
+  // open PNG for drawing
+  cairo_surface_t *surfacep = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width*scale_factor, height*scale_factor);
+  cairo_t *crp = cairo_create (surfacep);
+  cairo_set_source_rgb(crp, 0, 0, 0); // background color
+  
+  // loop and draw
+  size_t count = 0;
+  for (size_t j = 0; j < CellCount(); j++) { // loop the cells
+    
+    // Draw the arc segment
+    const float x = x_ptr->second->GetNumericElem(j);
+    const float y = y_ptr->second->GetNumericElem(j);
+    const cy_uint f = flag_ptr->second->GetNumericElem(j);
+    const cy_uint cf = cflag_ptr->second->GetNumericElem(j);      
+    
+    float start_angle = 0.0;
+    
+    CellFlag flag(f);
+    CellFlag cflag(cf);
+    
+    Color c;
+    if (flag.testAndOr(4416,0)) //  && cflag.testAndOr(1,0))
+      c = color_red;
+    else if (flag.testAndOr(1024,0)) // && cflag.testAndOr(1,0))
+      c = color_purple;
+    else if (flag.testAndOr(147456,0) && cflag.testAndOr(1,0))
+      c = color_light_green;
+    else if (flag.testAndOr(147456,0) && cflag.testAndOr(1,0) == 0)
+      c = color_dark_green;
+    else
+      c = color_gray;
+    
+    cairo_set_source_rgba(crp, c.redf(), c.greenf(), c.bluef(), alpha_val);
+    cairo_arc(crp, x*scale_factor, y*scale_factor, radius_size, 0, TWO_PI);
+    cairo_line_to(crp, x*scale_factor, y*scale_factor);
+    cairo_fill(crp);
+    
+    // red radius
+    if (flag.testAndOr(147456,0) && j % 100000 == 0) { //dis(gen) < 0.00002)  {
+      cairo_set_source_rgb(crp, 1, 0, 0);
+      cairo_set_line_width(crp, 4);
+      cairo_arc(crp, x*scale_factor, y*scale_factor, 200.0f/0.325f*scale_factor, 0, 2*M_PI);
+      cairo_stroke(crp);
+    }
+  }
+
+  int legend_width = 2600*scale_factor;
+  int legend_height = 300*scale_factor; // Height of each color box
+  int font_size = 70;
+  int legend_padding = 20;
+  int legend_x = width*scale_factor - legend_width - legend_padding;
+  int legend_y = legend_padding;
+
+  ColorMap cm = {color_red, color_purple, color_light_green, color_dark_green, color_gray};
+  std::vector<std::string> labels = {
+    "T-cell",
+    "B-cell",
+    "Tumor-cell",
+    "Pan-CK+/E-cad+ non-tumor",
+    "Stromal"
+  };
+  
+  add_legend_cairo(crp, font_size, legend_width, legend_height, legend_x, legend_y,
+		   cm, labels);
+  
+  cairo_destroy (crp);
+  cairo_surface_write_to_png (surfacep, file.c_str());
+  cairo_surface_destroy (surfacep);
+  
+#else
+  std::cerr << "Unable to make PNG -- need to include / link Cairo library" << std::endl;
+#endif
+  
+  return 0;
+}
 
 int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
 

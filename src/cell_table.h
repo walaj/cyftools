@@ -53,7 +53,10 @@ public:
   
   void HDF5Write(const std::string& file) const;
 
-
+  //////
+  // Plotting
+  //////
+  int PlotPNG(const std::string& file) const;
   
   //////
   // Basic table operations

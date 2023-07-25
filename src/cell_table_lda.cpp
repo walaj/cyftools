@@ -248,23 +248,17 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
       labels.push_back("Topic " + std::to_string(i+1));
     }
 
-    ////////
     /// LEGEND
-    ////////
-    // Setting up font face
-    cairo_select_font_face(crp, "Arial",
-			   CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    cairo_set_font_size(crp, 216*scale_factor); // Adjust font size to your needs
-
-    // Dimensions for the legend
     int legend_width = 1000*scale_factor; // Width of each color box
     int legend_height = 300*scale_factor; // Height of each color box
-    int legend_padding = 20; // Space between color boxes
-    
+    int font = 216*scale_factor;
     // Starting position for the legend in the upper right corner
+    int legend_padding = 20;
     int legend_x = width*scale_factor - legend_width - legend_padding;
     int legend_y = legend_padding;
-    
+    add_legend_cairo(crp, font, legend_width, legend_height,
+		     legend_x, legend_y, cm, labels);
+    /*    
     for (int i = 0; i < 10; ++i) {
       
       // Set color for this entry
@@ -280,7 +274,7 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
       cairo_move_to(crp, legend_x, legend_y + i*(legend_height+legend_padding) + legend_height);
       cairo_show_text(crp, labels[i].c_str());
     }
-
+    */
     cairo_destroy (crp);
     cairo_surface_write_to_png (surfacep, pdffile.c_str());
     cairo_surface_destroy (surfacep);

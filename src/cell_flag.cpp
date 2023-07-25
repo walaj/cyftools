@@ -1,7 +1,5 @@
 #include "cell_flag.h"
 
-const std::string CellFlag::BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
 std::ostream& operator<<(std::ostream& os, const CellFlag& cellFlag) {
   os << cellFlag.toString(); 
   return os;

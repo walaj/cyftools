@@ -19,5 +19,11 @@ extern ColorMap color_map4;
 extern ColorMap color_map8;
 extern ColorMap color_map12;
 
+extern Color color_red;
+extern Color color_purple;
+extern Color color_light_green;
+extern Color color_dark_green;
+extern Color color_gray;
+
 // Pick the appropriate colormap 
 const ColorMap& getColorMap(int size);

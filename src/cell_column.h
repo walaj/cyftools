@@ -4,6 +4,11 @@
 #include <algorithm>
 #include <optional>
 
+#include <iostream>
+#include <cmath>
+#include <string>
+#include <vector>
+
 #include "cysift.h"
 #include "cell_utils.h"
 #include "cell_flag.h"

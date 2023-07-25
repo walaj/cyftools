@@ -1,6 +1,12 @@
 #include "color_map.h"
 #include <stdexcept>
 
+Color color_red = {255,0,0};
+Color color_purple = {0,255,255};
+Color color_light_green = {144, 238, 144};
+Color color_dark_green = {173,216,230};
+Color color_gray = {100,100,100};
+
   //https://colorbrewer2.org/#type=qualitative&scheme=Set1&n=4
   ColorMap color_map4 = {
     {27,158,119},

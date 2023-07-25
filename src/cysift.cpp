@@ -76,10 +76,12 @@ static const char *RUN_USAGE_MESSAGE =
 "  head       - Keep the first lines of a file\n"
 "  clean      - Removes data to decrease disk size\n"
 "  delaunay   - Calculate the Delaunay triangulation\n"
-"  average    - Average all of the data columns\n"  
+"  average    - Average all of the data columns\n"
+"  reheader   - Change the header\n"
 "  cat        - Concatenate multiple samples\n"
 "  sort       - Sort the cells\n"
 "  subsample  - Subsample cells randomly\n"
+"  png        - Plot PNG\n"
   //"  plot       - Generate an ASCII style plot\n"
 "  roi        - Trim cells to a region of interest within a given polygon\n"
   //"  histogram  - Create a histogram of the data\n"
@@ -98,6 +100,8 @@ static const char *RUN_USAGE_MESSAGE =
 "  ldarun     - Run a Latent Dirichlet model\n"    
 "\n";
 
+static int plotpngfunc(int argc, char** argv);
+static int reheaderfunc(int argc, char** argv);
 static int dividefunc(int argc, char** argv);
 static int sortfunc(int argc, char** argv);
 static int headfunc(int argc, char** argv);
@@ -169,6 +173,8 @@ int main(int argc, char **argv) {
     val = ldarunfunc(argc, argv);    
   } else if (opt::module == "clean") {
     val = cleanfunc(argc, argv);
+  } else if (opt::module == "png") {
+    val = plotpngfunc(argc, argv);
   } else if (opt::module == "radialdens") {
     val = radialdensfunc(argc, argv);
   } else if (opt::module == "subsample") {
@@ -215,6 +221,8 @@ int main(int argc, char **argv) {
     val = sortfunc(argc, argv);
   } else if (opt::module == "delaunay") {
     val = delaunayfunc(argc, argv);
+  } else if (opt::module == "reheader") {
+    val = reheaderfunc(argc, argv);
   } else if (opt::module == "pheno") {
     val = phenofunc(argc, argv);
   } else if (opt::module == "count") {
@@ -239,6 +247,73 @@ static void build_table() {
   table.StreamTable(buildp, opt::infile);
   
   table.setCmd(cmd_input);
+}
+
+static int reheaderfunc(int argc, char** argv) {
+
+  std::vector<std::string> rename;
+  std::string str;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'r' : arg >> str; rename.push_back(str); break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift reheader [csvfile]\n"
+      "  Change or reheader the header only \n"
+      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    -r       Rename a marker of meta column (old:new) \n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+
+  ///////// read the header
+  /////////
+  std::istream *inputStream = nullptr;
+  std::unique_ptr<std::ifstream> fileStream;
+  
+  // set input from file or stdin
+  if (opt::infile == "-") {
+    inputStream = &std::cin;
+  } else {
+    fileStream = std::make_unique<std::ifstream>(opt::infile, std::ios::binary);
+    if (!fileStream->good()) {
+      std::cerr << "Error opening: " << opt::infile << " - file may not exist" << std::endl;
+      return 1;
+    }
+    inputStream = fileStream.get();
+  }
+
+  cereal::PortableBinaryInputArchive inputArchive(*inputStream);
+
+  CellHeader header;
+  
+  // First read the CellHeader
+  try {
+    inputArchive(header);
+  } catch (const std::bad_alloc& e) {
+    // Handle bad_alloc exception
+    std::cerr << "Memory allocation failed during deserialization: " << e.what() << std::endl;
+    return 1;  // or handle the error appropriately for your program
+  } catch (const cereal::Exception& e) {
+    // Handle exception if any error occurs while deserializing header
+    std::cerr << "Error while deserializing header: " << e.what() << std::endl;
+    return 1;  // or handle the error appropriately for your program
+  }
+
+  /*  is.seekg(0, is.end);
+  int length = is.tellg() - is.tellg(); // calculate the remaining bytes in the file
+  is.seekg(is.tellg(), is.beg); // go to the current position
+  */
+
+  return 0;
 }
 
 static int convolvefunc(int argc, char** argv) {
@@ -537,6 +612,46 @@ static int ldarunfunc(int argc, char** argv) {
 
 #else
   std::cerr << "Error: Unable to run LDA without including ldaplusplus header library to build." << std::endl;
+  return 1;
+#endif
+  
+}
+
+static int plotpngfunc(int argc, char** argv) {
+
+#ifdef HAVE_CAIRO
+  
+  int width = 1000;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'w' : arg >> width; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift png [csvfile]\n"
+      "  Plot as a PNG file\n"
+      "    <file>: filepath or a '-' to stream to stdin\n"
+      "    -w                        Width\n"      
+      "    -v, --verbose             Increase output to stderr\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // stream into memory
+  build_table();
+  
+  table.PlotPNG(opt::outfile);
+  
+  return 0;
+
+#else
+  std::cerr << "Error: Unable to run PNG without including cairo library in build." << std::endl;
   return 1;
 #endif
   
@@ -963,7 +1078,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "cut" || opt::module == "view" ||
 	 opt::module == "delaunay" || opt::module == "head" || 
 	 opt::module == "average" || opt::module == "ldacreate" ||
-	 opt::module == "ldarun" || 
+	 opt::module == "ldarun" || opt::module == "png" || 
 	 opt::module == "spatial" || opt::module == "radialdens" || 
 	 opt::module == "select" || opt::module == "pheno")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
@@ -1671,8 +1786,6 @@ static int radialdensfunc(int argc, char** argv) {
 
 int debugfunc(int argc, char** argv) {
 
-  
-  
   return 1;
 
 }

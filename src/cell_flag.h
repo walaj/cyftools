@@ -1,7 +1,7 @@
-#ifndef CELL_FLAG_H
-#define CELL_FLAG_H
+#pragma once
 
 #include "cysift.h"
+
 #include <bitset>
 #include <stdexcept>
 #include <string>
@@ -13,15 +13,11 @@
 class CellFlag {
 public:
   
-  static const std::string BASE64_CHARS;
-  
   CellFlag() { bitmap = 0; }
   
   explicit CellFlag(cy_uint num) {
     bitmap = num;
-    //fromBase10(num);
-      //fromBase10(base64_string);
-    }
+  }
   
   std::string toBitString() const;
   
@@ -44,7 +40,5 @@ private:
   
   void check_bounds(int n) const;
 };
-
-#endif
 
 	    
