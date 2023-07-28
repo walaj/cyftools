@@ -38,8 +38,6 @@ typedef CGAL::Delaunay_triangulation_2<K> DelaunayData;
 typedef K::Point_2 Point;
 #endif
 
-
-
 #ifdef HAVE_MLPACK
 #include <mlpack/methods/gmm/gmm.hpp>
 #include <mlpack/core.hpp>
@@ -868,6 +866,12 @@ void CellTable::OutputTable() {
     cell.m_x    = static_cast<FloatCol*>(x_ptr.get())->GetNumericElem(i);
     cell.m_y    = static_cast<FloatCol*>(y_ptr.get())->GetNumericElem(i);
 
+    // if there are any filters, pass if not in the set
+    if (m_cells_to_write.size())  {
+      if (!m_cells_to_write.count(cell.m_id))
+	continue;
+    }
+    
     for (const auto& c : col_ptr) {
       cell.m_cols.push_back(static_cast<FloatCol*>(c.get())->GetNumericElem(i));
     }
@@ -1198,14 +1202,18 @@ int CellTable::PlotPNG(const std::string& file) const {
     CellFlag cflag(cf);
     
     Color c;
-    if (flag.testAndOr(4416,0)) //  && cflag.testAndOr(1,0))
+    if (flag.testAndOr(4416,0) && flag.testAndOr(32768,0)) // T-cell - PD-1+ 
       c = color_red;
-    else if (flag.testAndOr(1024,0)) // && cflag.testAndOr(1,0))
+    else if (flag.testAndOr(4416,0) && !flag.testAndOr(32768,0)) // T-cell - PD-1-
+      c = color_light_red;
+    else if (flag.testAndOr(1024,0)) // B-cell
       c = color_purple;
-    else if (flag.testAndOr(147456,0) && cflag.testAndOr(1,0))
-      c = color_light_green;
-    else if (flag.testAndOr(147456,0) && cflag.testAndOr(1,0) == 0)
+    else if (flag.testAndOr(0,18432) || flag.testAndOr(0,133120)) // PD-L1 POS tumor cell
       c = color_dark_green;
+    else if (flag.testAndOr(147456,0)) // PD-L1 NEG tumor cell
+      c = color_light_green;
+    else if (flag.testAndOr(2048,0)) // PD-L1 any cell
+      c = color_cyan;      
     else
       c = color_gray;
     
@@ -1215,27 +1223,31 @@ int CellTable::PlotPNG(const std::string& file) const {
     cairo_fill(crp);
     
     // red radius
-    if (flag.testAndOr(147456,0) && j % 100000 == 0) { //dis(gen) < 0.00002)  {
+    /*    if (flag.testAndOr(147456,0) && j % 100000 == 0) { //dis(gen) < 0.00002)  {
       cairo_set_source_rgb(crp, 1, 0, 0);
       cairo_set_line_width(crp, 4);
       cairo_arc(crp, x*scale_factor, y*scale_factor, 200.0f/0.325f*scale_factor, 0, 2*M_PI);
       cairo_stroke(crp);
-    }
+      }*/
   }
 
-  int legend_width = 2600*scale_factor;
-  int legend_height = 300*scale_factor; // Height of each color box
+  int legend_width = 3500*scale_factor;
+  int legend_height = 400*scale_factor; // Height of each color box
   int font_size = 70;
   int legend_padding = 20;
   int legend_x = width*scale_factor - legend_width - legend_padding;
   int legend_y = legend_padding;
 
-  ColorMap cm = {color_red, color_purple, color_light_green, color_dark_green, color_gray};
+  ColorMap cm = {color_red, color_light_red,
+		 color_purple, color_dark_green, color_light_green,
+		 color_cyan, color_gray};
   std::vector<std::string> labels = {
-    "T-cell",
+    "T-cell PD-1 pos",
+    "T-cell PD-1 neg",    
     "B-cell",
-    "Tumor-cell",
-    "Pan-CK+/E-cad+ non-tumor",
+    "Tumor-cell - PD-L1 pos",
+    "Tumor-cell - PD-L1 neg",
+    "Other PD-L1 pos",
     "Stromal"
   };
   

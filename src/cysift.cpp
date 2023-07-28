@@ -1504,7 +1504,6 @@ static int spatialfunc(int argc, char** argv) {
 
 static int selectfunc(int argc, char** argv) {
 
-
   // flag selection
   cy_uint plogor = 0;
   cy_uint plogand = 0;
@@ -1514,11 +1513,13 @@ static int selectfunc(int argc, char** argv) {
   cy_uint clogand = 0;
   bool clognot = false;
 
-
   // field selection
   bool or_toggle = false;
   std::string sholder;
   float holder;
+
+  // radius for mask select
+  float radius = 0.0f;
   
   SelectOpVec num_vec;
   SelectOpMap criteria;
@@ -1541,10 +1542,11 @@ static int selectfunc(int argc, char** argv) {
     case 'L' : arg >> holder; num_vec.push_back({optype::LESS_THAN_OR_EQUAL, holder}); break;
     case 'e' : arg >> holder; num_vec.push_back({optype::EQUAL_TO, holder}); break;
     case 'j' : or_toggle = true; break;
+    case 'r' : arg >> radius; break;
+    case 't' : arg >> opt::threads; break;      
     default: die = true;
     }
   }
-
 
   if (field_vec.size() > 1) {
 
@@ -1592,21 +1594,41 @@ static int selectfunc(int argc, char** argv) {
       "    -L                    <= - Less than or equal to\n"      
       "    -e                    Equal to (can use with -g or -m for >= or <=)\n"
       "    -j                    Or the operations (default is and)\n"
+      "  Mask selection\n"
+      "    -r                    Radius (in x,y coords) of region around selected cells to also include\n"
       "  Options\n"
-      "    -v, --verbose         Increase output to stderr\n"      
+      "    -v, --verbose         Increase output to stderr\n"
+      "    -t                    Number of threads (mask selection only)\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
-  // setup the selector processor
-  SelectProcessor select;
-  select.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  select.SetFlagParams(plogor, plogand, plognot, clogor, clogand, clognot); 
-  select.SetFieldParams(criteria, or_toggle);
-			
-  // process
-  table.StreamTable(select, opt::infile);
+  // setup the selector processor for zero radius
+  if (radius <= 0) {
+    SelectProcessor select;
+    select.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+    select.SetFlagParams(plogor, plogand, plognot, clogor, clogand, clognot); 
+    select.SetFieldParams(criteria, or_toggle);
+    
+    // process
+    table.StreamTable(select, opt::infile);
+
+    return 0;
+  }
+
+  // or else we read table and then select
+  build_table();
+
+  table.SetupOutputWriter(opt::outfile);
+  
+  table.Select(plogor, clogor, plogand, clogand,
+	       plognot, clognot,
+	       criteria,
+	       or_toggle,
+	       radius);
+
+  table.OutputTable();
   
   return 0;
 }

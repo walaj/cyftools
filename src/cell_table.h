@@ -7,6 +7,9 @@
 #include "cell_processor.h"
 #include "cysift.h"
 
+// to-do - back this out, shouldn't have this here
+#include "cell_processor.h"
+
 #include <cereal/types/vector.hpp>
 #include <cereal/archives/portable_binary.hpp>
 #include <cereal/archives/json.hpp>
@@ -130,8 +133,13 @@ public:
   
   void Cut(const std::set<std::string>& tokens);
 
-  void select(cy_uint on, cy_uint off);
-
+  void Select(cy_uint por, cy_uint cor,
+	      cy_uint pand, cy_uint cand,
+	      bool pnot, bool cnot,
+	      SelectOpMap criteria,
+	      bool or_toggle,
+	      float radius);
+  
   //////
   // Phenotyping ops
   //////
@@ -179,6 +187,9 @@ public:
   // params
   bool m_verbose = false;
   size_t m_threads = 1;
+
+  // selected write
+  std::unordered_set<int> m_cells_to_write;
   
   // internal member functions
 #ifndef DOXYGEN_SHOULD_SKIP_THIS

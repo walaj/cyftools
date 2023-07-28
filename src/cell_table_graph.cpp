@@ -807,3 +807,124 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   
   return 0;
 }
+
+void CellTable::Select(cy_uint por, cy_uint cor,
+		       cy_uint pand, cy_uint cand,
+		       bool pnot, bool cnot,
+		       SelectOpMap criteria,
+		       bool or_toggle,
+		       float radius) {
+  
+  // add a dummy to ensure that OutputTable recognizes that m_cells_to_write is non-empty
+  m_cells_to_write.insert(-1);
+  
+  IntCol* cflag_ptr = static_cast<IntCol*>(m_table.at("cflag").get());
+  IntCol* pflag_ptr = static_cast<IntCol*>(m_table.at("pflag").get());
+  IntCol* celli_ptr = static_cast<IntCol*>(m_table.at("id").get());    
+  FloatCol* x_ptr = static_cast<FloatCol*>(m_table.at("x").get());
+  FloatCol* y_ptr = static_cast<FloatCol*>(m_table.at("y").get());  
+
+  if (m_verbose)
+    std::cerr << "...starting loop to tag cells as include/exclude" << std::endl;
+  
+  size_t count = CellCount();
+  for (size_t i = 0; i < count; i++) {
+
+    bool write_cell = false;
+    
+    ///////
+    // FLAGS
+    ///////
+    // NB: even if flags are all empty, default should be to trigger a "write_cell = true"
+    CellFlag pflag(pflag_ptr->GetNumericElem(i));
+    CellFlag cflag(cflag_ptr->GetNumericElem(i));
+    bool pflags_met = pflag.testAndOr(por, pand);
+    bool cflags_met = cflag.testAndOr(cor, cand);  
+  
+    // if flags met, print the cell
+    if ( (pflags_met != pnot) && (cflags_met != cnot)) {
+      write_cell = true;
+    }
+
+    ///////
+    // FIELD
+    ///////
+    bool flag_write_cell = write_cell;
+    write_cell = or_toggle ? false : write_cell; // if or toggle is on, then ignore flag criteria and set true
+
+    for (const auto& c : criteria) {
+
+      // to-do -- will segfault if column not in table
+      FloatCol* ptr = static_cast<FloatCol*>(m_table.at(c.first).get());
+      
+      float value = ptr->GetNumericElem(i);
+    
+      for (const auto& cc : c.second) { // loop the vector of {optype, float}
+	
+	/*      std::cerr << "m_or_toggle " << m_or_toggle <<
+		" criteria int " << c.first << " optype equal? " <<
+		(cc.first == optype::EQUAL_TO) << " numeric " << cc.second <<
+		" value " << value << " write_cell before " << write_cell << std::endl;
+	*/
+	
+	switch (cc.first) { // switching on the optype
+	case optype::GREATER_THAN: write_cell          = write_cell = or_toggle ? (write_cell || (value >  cc.second)) : (write_cell && (value >  cc.second));  break;
+	case optype::LESS_THAN: write_cell             = write_cell = or_toggle ? (write_cell || (value <  cc.second)) : (write_cell && (value <  cc.second));  break;
+	case optype::GREATER_THAN_OR_EQUAL: write_cell = write_cell = or_toggle ? (write_cell || (value >= cc.second)) : (write_cell && (value >= cc.second));  break;
+	case optype::LESS_THAN_OR_EQUAL: write_cell    = write_cell = or_toggle ? (write_cell || (value <= cc.second)) : (write_cell && (value <= cc.second));  break;
+	case optype::EQUAL_TO: write_cell              = write_cell = or_toggle ? (write_cell || (value == cc.second)) : (write_cell && (value == cc.second));  break;
+	default: assert(false);
+	}
+      }
+    } // end criteria loop
+
+    if (flag_write_cell && write_cell)
+      m_cells_to_write.insert(celli_ptr->GetNumericElem(i));
+    
+  } // end cell loop
+
+
+  // second loop to actually write
+  
+  // build the tree
+  if (m_verbose)
+    std::cerr << "...building the KDTree" << std::endl;
+  BuildKDTree();
+
+  if (m_verbose)
+    std::cerr << "...starting second loop to include cells within radius of include" << std::endl;
+
+  
+#pragma omp parallel for num_threads(m_threads)
+  for (size_t i = 0; i < count; i++) {
+
+    if (i % 100000 == 0 && m_verbose)
+      std::cerr << "...working on cell " << AddCommas(i) << std::endl;
+    
+    // if this cell is write, no KD lookup needed
+    int this_cid = celli_ptr->GetNumericElem(i);
+    if (m_cells_to_write.count(this_cid)) {
+      continue;
+    }
+    
+    // find the point
+    float x1 = x_ptr->GetNumericElem(i);
+    float y1 = y_ptr->GetNumericElem(i);
+    point_t pt = { x1, y1 };
+
+    // this will be inclusive of this point
+    assert(m_kdtree);
+    std::vector<size_t> inds = m_kdtree->neighborhood_indices(pt, radius);
+
+    // loop the inds, and check if neighbors a good cell
+    for (const auto& j : inds) {
+      int neigh_cid = celli_ptr->GetNumericElem(j);
+      if (m_cells_to_write.count(neigh_cid)) {
+	m_cells_to_write.insert(this_cid);
+	continue;
+      }
+    }
+  }
+
+  return;
+}

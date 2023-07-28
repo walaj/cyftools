@@ -307,8 +307,6 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
   //     std::cerr << "Word " << wordIdx << " probability: " << probability << "\n";
   //   }
   // }
-  
-  
 }
 
 void CellTable::LDA_create_model(const std::vector<std::string>& marker_cols,
