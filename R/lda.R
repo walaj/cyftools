@@ -3,7 +3,8 @@ library(jsonlite)
 library(reshape2)
 library(ggplot2)
 
-model_file <- "~/Sorger/orion/orion_1_74/lda20M.json"
+model_file <- "~/Desktop/lda7M.200r.50its.12t.tumor.json"
+model_file <- "~/Sorger/orion/orion_1_74/all74.10M.ptrdv.20i.12t.json"
 
 # Replace "path_to_your_file.json" with the actual path to your JSON file
 json_content <- jsonlite::fromJSON(model_file)
@@ -36,7 +37,7 @@ g <- ggplot(beta_long, aes(x = factor(marker), y = Distribution, fill=model)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=6),
         legend.text = element_text(size = 6)) 
 
-pdf("~/Sorger/figs/lda_iter_comp.pdf", width=8, height=4, useDingbats = FALSE)
+pdf("~/Sorger/figs/lda_iter_12.pdf", width=8, height=6, useDingbats = FALSE)
 print(g)
 dev.off()
 

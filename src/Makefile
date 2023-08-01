@@ -1,36 +1,42 @@
 #CC = /opt/homebrew/Cellar/gcc/12.2.0/bin/g++-12
 CC=g++
 
+MYHOME=$(HOME)
+
+# if on O2 and haven't installed the dependencies, can just grab frmo jaw34
+# then just uncommend below
+#MYHOME=/home/jaw34
+
 ## Required libraries
-CEREAL = -I$(HOME)/software/cereal-1.3.2/include ## header only
+CEREAL = -I$(MYHOME)/software/cereal-1.3.2/include ## header only
 
 ## Required header-only libraries for UMAP functionality (all are required)
 ## Could theoretically have KNN only if want KNN graphs but not umap
-UMAP =  -I$(HOME)/git/umappp/include -I$(HOME)/git/CppIrlba/include -DHAVE_UMAPPP -DKNNCOLLE_NO_KMKNN -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
-EIGEN = -I$(HOME)/software/eigen-3.4.0 -DHAVE_EIGEN
-KNN = -I$(HOME)/git/knncolle/include -DHAVE_KNNCOLLE
+UMAP =  -I$(MYHOME)/git/umappp/include -I$(MYHOME)/git/CppIrlba/include -DHAVE_UMAPPP -DKNNCOLLE_NO_KMKNN -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
+EIGEN = -I$(MYHOME)/software/eigen-3.4.0 -DHAVE_EIGEN
+KNN = -I$(MYHOME)/git/knncolle/include -DHAVE_KNNCOLLE
 
 ## Very optional header-only libraries for alternative neighor finding algorithms (e.g. in UMAP, etc)
-#HNSW = -I$(HOME)/git/hnswlib
-KMEANS = -I$(HOME)/git/CppKmeans/include -DHAVE_KMEANS
-#ANNOY = -I$(HOME)/git/annoy
+#HNSW = -I$(MYHOME)/git/hnswlib
+KMEANS = -I$(MYHOME)/git/CppKmeans/include -DHAVE_KMEANS
+#ANNOY = -I$(MYHOME)/git/annoy
 
 ## Optional header/lib library for spatial latent dirichlet allocation
-LDA = -I$(HOME)/git/supervised-lda/include -DHAVE_LDAPLUSPLUS
-LDALIB = -L $(HOME)/git/supervised-lda/lib -lldaplusplus -Wl,-rpath,$(HOME)/git/supervised-lda/lib
+LDA = -I$(MYHOME)/git/supervised-lda/include -DHAVE_LDAPLUSPLUS
+LDALIB = -L $(MYHOME)/git/supervised-lda/lib -lldaplusplus -Wl,-rpath,$(MYHOME)/git/supervised-lda/lib
 
 ## Optional library for HDF5 output
-HD5 = -I$(HOME)/software/hdf5-1.14.1/include -DHAVE_HDF5
-HD5LIB = -L $(HOME)/software/hdf5-1.14.1/lib -lhdf5_cpp -lhdf5
+HD5 = -I$(MYHOME)/software/hdf5-1.14.1/include -DHAVE_HDF5
+HD5LIB = -L $(MYHOME)/software/hdf5-1.14.1/lib -lhdf5_cpp -lhdf5
 
 ## Optional header/liblibrary for image-based functions
-TIFF = -I$(HOME)/software/libtiff-git/include -DHAVE_TIFFLIB
+TIFF = -I$(MYHOME)/software/libtiff-git/include -DHAVE_TIFFLIB
 JPEG = -L/opt/homebrew/opt/jpeg/lib -L/opt/homebrew/Cellar/libpng/1.6.39/lib
-TIFFLD = ${JPEG} -llzma $(HOME)/software/libtiff-git/lib/libtiff.a -ljpeg -lz -lpng
+TIFFLD = ${JPEG} -llzma $(MYHOME)/software/libtiff-git/lib/libtiff.a -ljpeg -lz -lpng
 
 ## Optional library for KD-tree functions (radial proximity)
-KDTREE = -I$(HOME)/git/KDTree -DHAVE_KDTREE
-KDLIB = -L $(HOME)/git/KDTree/lib -lKDTree -Wl,-rpath,$(HOME)/git/KDTree/lib
+KDTREE = -I$(MYHOME)/git/KDTree -DHAVE_KDTREE
+KDLIB = -L $(MYHOME)/git/KDTree/lib -lKDTree -Wl,-rpath,$(MYHOME)/git/KDTree/lib
 
 # cysift specific parameter
 #USE64BIT=-DUSE_64_BIT
@@ -38,12 +44,12 @@ KDLIB = -L $(HOME)/git/KDTree/lib -lKDTree -Wl,-rpath,$(HOME)/git/KDTree/lib
 ## set the OMP location
 ODIR := /opt/homebrew/opt/libomp/include
 ifeq ($(wildcard $(ODIR)),)  # If dir does not exist, probably on HMS server
-    OMP := -I$(HOME)/software/openmpi-4.1.5/include
-    OMPL := -L$(HOME)/software/openmpi-4.1.5/lib -lmpi
+    OMP := -I$(MYHOME)/software/openmpi-4.1.5/include
+    OMPL := -L$(MYHOME)/software/openmpi-4.1.5/lib -lmpi
 
 	#CAIRO -- module load cairo
     CAIRO=-DHAVE_CAIRO
-    #CGAL=-I$(HOME)/software/CGAL-5.5.2/include -DHAVE_CGAL
+    #CGAL=-I$(MYHOME)/software/CGAL-5.5.2/include -DHAVE_CGAL
     CAIROLIB = -lcairo
     CGALLIB = -lgmp
     #BOOST - module load boost
