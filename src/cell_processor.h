@@ -104,6 +104,58 @@ class LineProcessor {
   virtual int ProcessLine(const std::string& line) = 0;
 };
 
+class ScatterProcessor : public CellProcessor {
+
+public:
+  
+  void SetParams(int width, int height, int seed) {
+    m_width = width;
+    m_height = height;
+    m_seed = seed;
+  }
+
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+
+private:
+
+  int m_width = 0;
+  int m_height = 0;
+  int m_seed = 42;
+  
+  std::mt19937 m_gen; // random number generator
+  std::uniform_int_distribution<> m_wdistrib;
+  std::uniform_int_distribution<> m_hdistrib;   
+  
+};
+
+class HallucinateProcessor : public CellProcessor {
+
+public:
+
+  void SetParams(size_t n, int seed) {
+    m_nphenotypes = n;
+    m_seed = seed;
+  }
+
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+
+private:
+
+  size_t m_nphenotypes = 0;
+
+  int m_seed = 42;
+  
+  std::unordered_set<size_t> m_to_remove;
+
+  std::mt19937 m_gen; // random number generator
+  std::uniform_int_distribution<> m_distrib;
+
+};
+
 
 class HeadProcessor : public CellProcessor {
 
@@ -239,6 +291,25 @@ class PhenoProcessor : public CellProcessor {
 };
 */
 
+class SummaryProcessor : public CellProcessor {
+
+ public:
+  
+  void SetParams() {}
+  
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+
+  void Print();
+  
+ private:
+  std::vector<float> m_min;
+  std::vector<float> m_max;
+  std::vector<float> m_mean;  
+  size_t m_count = 0;
+};
+  
 // Count processor
 class CountProcessor : public CellProcessor {
   

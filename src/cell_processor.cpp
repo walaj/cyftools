@@ -5,6 +5,8 @@
 
 #include "cell_row.h"
 
+#include <limits>
+
 int SelectProcessor::ProcessHeader(CellHeader& header) {
   
   m_header = header;
@@ -95,6 +97,103 @@ void AverageProcessor::EmitCell() const {
 
   // write the one cell
   OutputLine(cell);
+}
+
+int SummaryProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+  size_t num_data_tags = header.GetDataTags().size();
+
+  // 5 is the number of pre-specified data colums. e.g
+  // x, y, cflag, pflag, id
+  m_min = std::vector<float>(num_data_tags + 5, std::numeric_limits<float>::max());
+  m_max = std::vector<float>(num_data_tags + 5, std::numeric_limits<float>::min());
+  m_mean = std::vector<float>(num_data_tags + 5, 0.0f); 
+
+  return HEADER_NO_ACTION; // do nothing  
+}
+
+int SummaryProcessor::ProcessLine(Cell& cell) {
+
+  m_count++;
+
+  // fixed mins
+  if (cell.m_x < m_min[0])
+    m_min[0] = cell.m_x;
+  if (cell.m_y < m_min[1])
+    m_min[1] = cell.m_y;
+  if (cell.m_pheno_flag < m_min[2])
+    m_min[2] = cell.m_pheno_flag;
+  if (cell.m_cell_flag < m_min[3])
+    m_min[3] = cell.m_cell_flag;
+  if (cell.m_id < m_min[4])
+    m_min[4] = cell.m_id;
+
+  // fixed maxs
+  if (cell.m_x > m_max[0])
+    m_max[0] = cell.m_x;
+  if (cell.m_y > m_max[1])
+    m_max[1] = cell.m_y;
+  if (cell.m_pheno_flag > m_max[2])
+    m_max[2] = cell.m_pheno_flag;
+  if (cell.m_cell_flag > m_max[3])
+    m_max[3] = cell.m_cell_flag;
+  if (cell.m_id > m_max[4])
+    m_max[4] = cell.m_id;
+
+  // fixed means
+  // assert is to make sure we don't have numeric overflow
+  assert(m_mean[0] >= 0); // x and y should be > 0
+  assert(m_mean[1] >= 0);
+  assert(m_mean[4] >= 0);  
+  assert(std::numeric_limits<float>::max() - m_mean[0] > cell.m_x);
+  assert(std::numeric_limits<float>::max() - m_mean[1] > cell.m_y);
+  assert(std::numeric_limits<float>::max() - m_mean[4] > cell.m_id);
+  
+  m_mean[0] += cell.m_x;
+  m_mean[1] += cell.m_y;
+  m_mean[4] += cell.m_id;
+
+  // update remaining columns
+  for (size_t i = 0; i < cell.m_cols.size(); i++) {
+    if (m_mean.at(i+5) > 0)
+      assert(std::numeric_limits<float>::max() - m_mean.at(i+5) > cell.m_cols.at(i));
+    m_mean[i+5] += cell.m_cols.at(i);
+  }
+
+  return NO_WRITE_CELL;
+}
+
+void SummaryProcessor::Print() {
+
+  if (m_count > 0)
+    for (auto& m : m_mean)
+      m /= static_cast<float>(m_count);
+  
+  // print x, y, id
+  std::cout << "Cell count: " << AddCommas(m_count) << std::endl;
+  std::cout << "X range (mean): [" << m_min[0] << "," << m_max[0] << "] (" << m_mean[0] << ")" << std::endl;
+  std::cout << "Y range (mean): [" << m_min[1] << "," << m_max[1] << "] (" << m_mean[1] << ")"  << std::endl;
+  std::cout << "ID range (mean): [" << m_min[4] << "," << m_max[4] << "] (" << m_mean[4] << ")"  << std::endl;
+  std::cout << "pflag range: [" << m_min[2] << "," << m_max[2] << "]" << std::endl;
+  std::cout << "cflag range: [" << m_min[3] << "," << m_max[3] << "]" << std::endl;      
+  
+  // print marker info
+  std::vector<Tag> markers = m_header.GetMarkerTags();
+  std::cout << "Number of markers: " << AddCommas(markers.size()) << std::endl;
+  std::cout << "Markers: ";
+  for (size_t i = 0; i < markers.size(); i++) {
+    std::cout << markers.at(i).id;
+    std::cout << ((i != markers.size() - 1) ? "," : "\n");
+  }
+
+  // print meat info
+  std::vector<Tag> metas = m_header.GetMetaTags();
+  std::cout << "Number of metas: " << AddCommas(metas.size()) << std::endl;
+  std::cout << "Metas: ";
+  for (size_t i = 0; i < metas.size(); i++) {
+    std::cout << metas.at(i).id;
+    std::cout << ((i != metas.size() - 1) ? "," : "\n");    
+  }
 }
 
 int SubsampleProcessor::ProcessHeader(CellHeader& header) {
@@ -210,6 +309,71 @@ int SelectProcessor::ProcessLine(Cell& cell) {
 }
 
 
+int HallucinateProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+
+  // setup generator
+  m_gen = std::mt19937(m_seed); // Seed the generator
+  m_distrib = std::uniform_int_distribution<>(0, m_nphenotypes - 1); // Define the range
+  
+  // remove old markers
+  size_t i = 0;
+  for (const auto& t : header.GetAllTags()) {
+    if (t.type == Tag::MA_TAG)
+      m_to_remove.insert(i);
+    i++;
+  }
+  m_header.Cut(m_to_remove);
+
+  // add the new fake tags
+  for (size_t i = 0; i < m_nphenotypes; i++) 
+    m_header.addTag(Tag(Tag::MA_TAG, "FakeMarker" + std::to_string(i + 1), ""));
+  
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  m_header.SortTags();
+
+  // just in time output
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+
+  return HEADER_NO_ACTION; 
+}
+
+int HallucinateProcessor::ProcessLine(Cell& cell) {
+
+  // just transfer to a new set of columns,
+  // not including what is to be cut
+  std::vector<float> m_cols_new;
+  assert(cell.m_cols.size() >= m_to_remove.size());
+  m_cols_new.reserve(cell.m_cols.size() - m_to_remove.size() + m_nphenotypes);
+
+  // add back the old non-marker data
+  for (size_t i = 0; i < cell.m_cols.size(); i++) {
+    if (!m_to_remove.count(i)) {
+      m_cols_new.push_back(cell.m_cols.at(i));
+    }
+  }
+
+  // the hallucinated data is just zeros in the markers
+  for (size_t i = 0; i < cell.m_cols.size(); i++) {
+    m_cols_new.push_back(0);
+  }
+  cell.m_cols = m_cols_new;
+
+  
+  assert(m_nphenotypes > 0);
+
+  // Generate random flag to turn on
+  CellFlag flag;
+  flag.setFlagOn(m_distrib(m_gen));
+  cell.m_pheno_flag = flag.toBase10();
+
+  return WRITE_CELL;
+}
+
 int CountProcessor::ProcessHeader(CellHeader& header) {
   return HEADER_NO_ACTION; // do nothing
 }
@@ -221,6 +385,39 @@ int CountProcessor::ProcessLine(Cell& cell) {
 
 void CountProcessor::PrintCount() {
   std::cout << m_count << std::endl;
+}
+
+int ScatterProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+  
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  m_header.SortTags();
+
+  // setup random number generator
+  m_gen = std::mt19937(m_seed);
+  m_wdistrib = std::uniform_int_distribution<>(0, m_width);
+  m_hdistrib = std::uniform_int_distribution<>(0, m_height);  
+
+  assert(m_width > 0);
+  assert(m_height > 0);
+  
+  // just in time output
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+
+  return HEADER_NO_ACTION; 
+
+}
+
+int ScatterProcessor::ProcessLine(Cell& cell) {
+
+  cell.m_x = m_wdistrib(m_gen);
+  cell.m_y = m_hdistrib(m_gen);  
+
+  return WRITE_CELL;
 }
 
 int HeadProcessor::ProcessHeader(CellHeader& header) {
@@ -254,9 +451,7 @@ int CutProcessor::ProcessHeader(CellHeader& header) {
     if (!m_include.count(t.id)) {
       m_to_remove.insert(i);
     }
-
     i++;
-    
   }
   
   // cut down the header

@@ -69,37 +69,55 @@ static const struct option longopts[] = {
 
 static const char *RUN_USAGE_MESSAGE =
 "Usage: cysift [module] <options> \n"
-"  view       - View the cell table\n"
-"  count      - Output number of cells in table\n"  
-"  cut        - Select only given markers and metas\n"
-"  divide     - Divide two columns\n"
-"  head       - Keep the first lines of a file\n"
-"  clean      - Removes data to decrease disk size\n"
-"  delaunay   - Calculate the Delaunay triangulation\n"
-"  average    - Average all of the data columns\n"
-"  reheader   - Change the header\n"
-"  cat        - Concatenate multiple samples\n"
-"  sort       - Sort the cells\n"
-"  subsample  - Subsample cells randomly\n"
-"  png        - Plot PNG\n"
+" --- Information --- \n"
+"  view        - View the cell table as character data\n"
+"  info        - Display detailed information\n"
+"  summary     - Display brief information\n"    
+"  count       - Count cells\n"
+"  head        - Returns first lines of a file\n"  
+" --- Low-level processing ---\n"
+"  cereal      - Create a .cys format file from a CSV\n"    
+"  cut         - Select only given markers and metas\n"
+"  reheader    - Change the header\n"
+"  clean       - Remove classes of data (e.g. all meta)\n"
+"  cat         - Concatenate multiple files\n"
+"  sort        - Sort the cells\n"
+"  subsample   - Subsample cells randomly\n"
+"  roi         - Trim cells to a region of interest within a given polygon\n"
+"  select      - Select by cell phenotype flags\n"
+"  pheno       - Phenotype cells (set the phenotype flags)\n"
+" --- Numeric ---\n"
+"  mean        - Collapse to mean of each column\n"  
+"  divide      - Divide two columns\n"
+"  log10       - Apply a base-10 logarithm transformation to the data\n"
+"  jaccard     - Calculate the Jaccard similarty coeffiecient for cell flags\n"
+"  pearson     - Calculate the Pearson correlation between marker intensities\n"  
+" --- PDF/PNG ---\n"
+"  png         - Plot PNG\n"
   //"  plot       - Generate an ASCII style plot\n"
-"  roi        - Trim cells to a region of interest within a given polygon\n"
   //"  histogram  - Create a histogram of the data\n"
-"  log10      - Apply a base-10 logarithm transformation to the data\n"
-  //"  correlate  - Calculate the correlation between variables\n"
-"  info       - Display information about the dataset\n"
-"  umap       - Construct the marker space UMAP\n"
-"  spatial    - Construct the spatial KNN graph\n"
-"  tumor      - Set the tumor flag\n"
-"  select     - Select by cell phenotype flags\n"
-"  pheno      - Phenotype cells to set the flag\n"
-"  convolve   - Density convolution to produce TIFF\n"
-"  radialdens - Calculate density of cells within a radius\n"
-"  cereal     - Create a .cys format file from a CSV\n"
-"  ldacreate  - Create a Latent Dirichlet model\n"
-"  ldarun     - Run a Latent Dirichlet model\n"    
+" --- Graph ops ---\n"
+"  delaunay    - Calculate the Delaunay triangulation\n"
+"  umap        - Construct the marker space UMAP\n"
+"  spatial     - Construct the spatial KNN graph\n"
+"  tumor       - Set the tumor flag using KNN approach\n"
+"  radialdens  - Calculate density of cells within a radius\n"  
+" --- Convolution ---\n"
+"  convolve    - Density convolution to produce TIFF\n"
+" --- Neighborhood ---\n"
+"  ldacreate   - Create a Latent Dirichlet model\n"
+"  ldarun      - Run a Latent Dirichlet model\n"
+" --- Null models ---\n"  
+"  scramble    - Randomly permute the phenotype flags\n"
+"  scatter     - Randomly assign x and y positions throughout the slide\n"
+"  hallucinate - Randomly assign cell phenotypes\n"
 "\n";
 
+static int jaccardfunc(int argc, char** argv);
+static int summaryfunc(int argc, char** argv);
+static int hallucinatefunc(int argc, char** argv);
+static int scramblefunc(int argc, char** argv);
+static int scatterfunc(int argc, char** argv);
 static int plotpngfunc(int argc, char** argv);
 static int reheaderfunc(int argc, char** argv);
 static int dividefunc(int argc, char** argv);
@@ -110,7 +128,7 @@ static int delaunayfunc(int argc, char** argv);
 static int tumorfunc(int argc, char** argv);
 static int ldacreatefunc(int argc, char** argv);
 static int ldarunfunc(int argc, char** argv);
-static int averagefunc(int argc, char** argv);
+static int meanfunc(int argc, char** argv);
 static int cleanfunc(int argc, char** argv);
 static int countfunc(int argc, char** argv);
 static int cerealfunc(int argc, char** argv);
@@ -120,7 +138,7 @@ static int subsamplefunc(int argc, char** argv);
 static int viewfunc(int argc, char** argv);
 static int infofunc(int argc, char** argv);
 static int roifunc(int argc, char** argv);
-static int correlatefunc(int argc, char** argv);
+static int pearsonfunc(int argc, char** argv);
 static int histogramfunc(int argc, char** argv);
 static int plotfunc(int argc, char** argv);
 static int debugfunc(int argc, char** argv);
@@ -187,8 +205,10 @@ int main(int argc, char **argv) {
     val = roifunc(argc, argv);
   } else if (opt::module == "crop") {
     val = cropfunc(argc, argv);
-  } else if (opt::module == "correlate") {
-    return(correlatefunc(argc, argv));
+  } else if (opt::module == "pearson") {
+    return(pearsonfunc(argc, argv));
+  } else if (opt::module == "jaccard") {
+    return(jaccardfunc(argc, argv));    
   } else if (opt::module == "histogram") {
     return(histogramfunc(argc, argv));
   } else if (opt::module == "log10") {
@@ -199,8 +219,8 @@ int main(int argc, char **argv) {
     val = cutfunc(argc, argv);
   } else if (opt::module == "cereal") {
     val = cerealfunc(argc, argv);
-  } else if (opt::module == "average") {
-    val = averagefunc(argc, argv);
+  } else if (opt::module == "mean") {
+    val = meanfunc(argc, argv);
   } else if (opt::module == "info") {
     return(infofunc(argc, argv));
   } else if (opt::module == "view") {
@@ -225,8 +245,16 @@ int main(int argc, char **argv) {
     val = reheaderfunc(argc, argv);
   } else if (opt::module == "pheno") {
     val = phenofunc(argc, argv);
+  } else if (opt::module == "summary") {
+    val = summaryfunc(argc, argv);
   } else if (opt::module == "count") {
     countfunc(argc, argv);
+  } else if (opt::module == "scramble") {
+    scramblefunc(argc, argv);
+  } else if (opt::module == "scatter") {
+    scatterfunc(argc, argv);
+  } else if (opt::module == "hallucinate") {
+    hallucinatefunc(argc, argv);
   } else {
     assert(false);
   }
@@ -241,12 +269,20 @@ static void build_table() {
   table.setVerbose(opt::verbose);
   table.setThreads(opt::threads);
 
+  //
+  
   // stream into memory
   BuildProcessor buildp;
   buildp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   table.StreamTable(buildp, opt::infile);
   
   table.setCmd(cmd_input);
+
+  // check we were able to read the table
+  if (table.CellCount() == 0) {
+    std::cerr << "Warning: Table with no cells? Error in upstream operation?" << std::endl;
+  }
+  
 }
 
 static int reheaderfunc(int argc, char** argv) {
@@ -264,9 +300,9 @@ static int reheaderfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift reheader [csvfile]\n"
+      "Usage: cysift reheader [cysfile]\n"
       "  Change or reheader the header only \n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -r       Rename a marker of meta column (old:new) \n"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -316,6 +352,180 @@ static int reheaderfunc(int argc, char** argv) {
   return 0;
 }
 
+static int jaccardfunc(int argc, char** argv) {
+
+  bool sorted = false;
+  bool csv_print = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'j' : csv_print = true; break;
+    case 's' : sorted = true; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_only_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift jaccard [cysfile]\n"
+      "  Compute the Jaccard similarity score for the cell phenotype flags\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
+      "    -j                        Output as a csv file\n"
+      "    -s                        Sort the output by Jaccard score\n"
+      "    -v, --verbose             Increase output to stderr\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+  
+  build_table();
+
+  table.PrintJaccardSimilarity(csv_print, sorted);
+
+  return 0;
+}
+
+static int scatterfunc(int argc, char** argv) {
+
+  int width = 1000;
+  int height = 1000;  
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'w' : arg >> width; break;
+    case 'l' : arg >> height; break;
+    case 's' : arg >> opt::seed; break;      
+    default: die = true;
+    }
+  }
+
+  if (width <= 0 || height <= 0) {
+    std::cerr << "Error: Width and height must be positive integer" << std::endl;
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift scatter [cysfile]\n"
+      "  Randomly assign cell x,y position\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
+      "    -w                        Width of the \"slide\" to scatter on\n"
+      "    -l                        Length of the \"slide\" to scatter on\n"      
+      "    -s                        Random seed\n"
+      "    -v, --verbose             Increase output to stderr\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  ScatterProcessor scatterp;
+  scatterp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  scatterp.SetParams(width, height, opt::seed); 
+
+  // process 
+  if (!table.StreamTable(scatterp, opt::infile)) {
+    return 1;
+  }
+  
+  return 0;
+
+  
+}
+
+static int hallucinatefunc(int argc, char** argv) {
+
+  int n_phenotypes = 10;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'n' : arg >> n_phenotypes; break;
+    case 's' : arg >> opt::seed; break;
+    default: die = true;
+    }
+  }
+
+#ifdef USE_64_BIT
+  if (n_phenotypes <= 0 || n_phenotypes > 64) {
+    const std::string plim = "64";
+#else
+  if (n_phenotypes < 0 || n_phenotypes > 32) {
+    const std::string plim = "32";    
+#endif
+    std::cerr << "Error: Number of phenotypes must be > 0 and < " << plim << std::endl;
+  }
+  
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift hallucinate [cysfile]\n"
+      "  Randomly assign cell phenotypes\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
+      "    -n                        Number of cell types possible\n"
+      "    -s                        Random seed\n"
+      "    -v, --verbose             Increase output to stderr\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  HallucinateProcessor hallp;
+  hallp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  hallp.SetParams(n_phenotypes, opt::seed); 
+
+  // process 
+  if (!table.StreamTable(hallp, opt::infile)) {
+    return 1;
+  }
+  
+  return 0;
+}
+
+
+static int scramblefunc(int argc, char** argv) {
+
+  bool lock_flags = false;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'P' : lock_flags = true; break;
+    case 'v' : opt::verbose = true; break;
+    case 's' : arg >> opt::seed; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift scramble [cysfile]\n"
+      "  Scrambles the cell flag labels among cells\n"
+      "        Essentially cell frequencies stay the same and slide morphology,\n"
+      "        but the labels on each cell are scrambled\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
+      "    -P                        Flag to lock phenotype flags (just permute which cells they go to)\n"
+      "    -s <int>                  Random seed\n"
+      "    -v, --verbose             Increase output to stderr\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  build_table();
+
+  table.SetupOutputWriter(opt::outfile);
+
+  table.ScramblePflag(opt::seed, lock_flags);
+
+  // print it
+  table.OutputTable();
+  
+  return 0;
+}
+
 static int convolvefunc(int argc, char** argv) {
  
   int width = 200;
@@ -336,9 +546,9 @@ static int convolvefunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv) || microns_per_pixel <= 0) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift convolve [csvfile]\n"
+      "Usage: cysift convolve [cysfile]\n"
       "  Perform a convolution to produce a TIFF\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -i                        Input TIFF file to set params for output\n"
       "    -d                        Number of microns per pixel (e.g. 0.325). Required\n"
       "    -w [200]                  Width of the convolution box (in pixels)\n"
@@ -413,9 +623,9 @@ static int umapfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift umap [csvfile]\n"
+      "Usage: cysift umap [cysfile]\n"
       "  Construct the UMAP (in marker space)\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -k [15]                   Number of neighbors\n"
       "    -t [1]                    Number of threads\n"
       "    -D <file>                 Optional output to PDF\n"
@@ -494,7 +704,7 @@ static int ldacreatefunc(int argc, char** argv) {
   if (die || in_only_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift ldacreate [csvfile]\n"
+      "Usage: cysift ldacreate [cysfile]\n"
       "  Create a topic-model learning using Latent Dirichlet Allocation\n"
       "    <file>: filepath or a '-' to stream to stdin\n"
       "    -r                        Comma-separated list of inputs to LDA model\n"
@@ -583,7 +793,7 @@ static int ldarunfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift ldarun [csvfile]\n"
+      "Usage: cysift ldarun [cysfile]\n"
       "  Score cells using a pre-computed topic-model learning using Latent Dirichlet Allocation\n"
       "    <file>: filepath or a '-' to stream to stdin\n"
       "    -i                        Input model (won't re-run LDA)\n"
@@ -621,12 +831,12 @@ static int plotpngfunc(int argc, char** argv) {
 
 #ifdef HAVE_CAIRO
   
-  int width = 1000;
+  float scale_factor = 0.25f;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'w' : arg >> width; break;
+    case 'f' : arg >> scale_factor; break;
     default: die = true;
     }
   }
@@ -634,10 +844,10 @@ static int plotpngfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift png [csvfile]\n"
+      "Usage: cysift png [cysfile]\n"
       "  Plot as a PNG file\n"
       "    <file>: filepath or a '-' to stream to stdin\n"
-      "    -w                        Width\n"      
+      "    -f <float>                Fractional scale factor (def 0.25)\n"            
       "    -v, --verbose             Increase output to stderr\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
@@ -646,7 +856,7 @@ static int plotpngfunc(int argc, char** argv) {
   // stream into memory
   build_table();
   
-  table.PlotPNG(opt::outfile);
+  table.PlotPNG(opt::outfile, scale_factor);
   
   return 0;
 
@@ -678,7 +888,7 @@ static int cleanfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift clean [csvfile]\n"
+      "Usage: cysift clean [cysfile]\n"
       "  Clean up the data to reduce disk space\n"
       "    <file>: filepath or a '-' to stream to stdin\n"
       "    -m,          Remove all marker data\n"
@@ -731,9 +941,9 @@ static int catfunc(int argc, char** argv) {
   if (opt::infile_vec.empty() || die) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift cat [csvfile]\n"
+      "Usage: cysift cat [cysfile]\n"
       "  Concatenate together multiple cell tables\n"
-      "    csvfile: filepaths of cell tables\n"
+      "    cysfile: filepaths of cell tables\n"
       "    -v, --verbose             Increase output to stderr\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -794,7 +1004,33 @@ static int catfunc(int argc, char** argv) {
   return 0;
 }
 
-static int infofunc(int argc, char** argv) {
+static int summaryfunc(int argc, char** argv) {
+
+  // display help if no input
+  if (die || in_only_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift summary [cysfile]\n"
+      "  Display brief summary of the cell table\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  SummaryProcessor summp;
+  summp.SetCommonParams(opt::outfile, cmd_input, opt::verbose); // really shouldn't need any of these
+
+  if (table.StreamTable(summp, opt::infile)) 
+    return 1; // non-zero status on StreamTable
+  
+  summp.Print();
+  
+  return 0;
+}
+
+
+ static int infofunc(int argc, char** argv) {
 
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -808,9 +1044,9 @@ static int infofunc(int argc, char** argv) {
   if (die || in_only_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift info [csvfile]\n"
-      "  Display basic information on the cell table\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "Usage: cysift info [cysfile]\n"
+      "  Display detailed information on the cell table\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -v, --verbose             Increase output to stderr\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -847,7 +1083,7 @@ static int cutfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift cut [csvfile] <marker1,markers2>\n"
+      "Usage: cysift cut [cysfile] <marker1,markers2>\n"
       "  Cut the file to only certain markers\n"
       "    <file>: filepath or a '-' to stream to stdin\n"
       "    -x, --cut                 Comma-separated list of markers to cut to\n"
@@ -881,7 +1117,7 @@ static int cutfunc(int argc, char** argv) {
   return 0;
 }
 
-static int averagefunc(int argc, char** argv) {
+static int meanfunc(int argc, char** argv) {
  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -894,9 +1130,9 @@ static int averagefunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift average [csvfile] <options>\n"
-      "  Calculate the average of each data column\n"
-      "  csvfile: filepath or a '-' to stream to stdin\n"
+      "Usage: cysift mean [cysfile] <options>\n"
+      "  Calculate the mean of each data column\n"
+      "  cysfile: filepath or a '-' to stream to stdin\n"
       "  -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -941,9 +1177,9 @@ static int tumorfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
   
     const char *USAGE_MESSAGE =
-      "Usage: cysift tumor [csvfile]\n"
+      "Usage: cysift tumor [cysfile]\n"
       "  Set the flag on whether a cell is in the tumor region\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -k [20]               Number of neighbors\n"
       "    -f [0.75]             Fraction of neighbors\n"
       "    -o                    Flag OR for tumor\n"
@@ -984,9 +1220,9 @@ static int log10func(int argc, char** argv)  {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift log10 [csvfile] <options>\n"
+      "Usage: cysift log10 [cysfile] <options>\n"
       "  Calculate the log10 of marker intensities\n"
-      "  csvfile: filepath or a '-' to stream to stdin\n"
+      "  cysfile: filepath or a '-' to stream to stdin\n"
       "  -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -1074,12 +1310,15 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "tumor" || opt::module == "convolve" || 
 	 opt::module == "cat" || opt::module == "cereal" ||
 	 opt::module == "sort" || opt::module == "divide" || 
-	 opt::module == "correlate" || opt::module == "info" ||
+	 opt::module == "pearson" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
 	 opt::module == "delaunay" || opt::module == "head" || 
-	 opt::module == "average" || opt::module == "ldacreate" ||
+	 opt::module == "mean" || opt::module == "ldacreate" ||
 	 opt::module == "ldarun" || opt::module == "png" || 
-	 opt::module == "spatial" || opt::module == "radialdens" || 
+	 opt::module == "spatial" || opt::module == "radialdens" ||
+	 opt::module == "scramble" || opt::module == "scatter" ||
+	 opt::module == "hallucinate" || opt::module == "summary" ||
+	 opt::module == "jaccard" || 
 	 opt::module == "select" || opt::module == "pheno")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
     die = true;
@@ -1110,9 +1349,9 @@ static int roifunc(int argc, char** argv) {
   if (die || roifile.empty() || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift roi [csvfile] <options>\n"
+      "Usage: cysift roi [cysfile] <options>\n"
       "  Subset or label the cells to only those contained in the rois\n"
-      "  csvfile: filepath or a '-' to stream to stdin\n"
+      "  cysfile: filepath or a '-' to stream to stdin\n"
       "  -r                        ROI file\n"
       "  -l                        Output all cells and add \"roi\" column with ROI label\n"      
       "  -v, --verbose             Increase output to stderr"
@@ -1158,9 +1397,9 @@ static int viewfunc(int argc, char** argv) {
   if (die || in_only_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift view [csvfile] <options>\n"
+      "Usage: cysift view [cysfile] <options>\n"
       "  View the contents of a cell table\n" 
-      "  csvfile: filepath or a '-' to stream to stdin\n"
+      "  cysfile: filepath or a '-' to stream to stdin\n"
       "  -n  [-1]                  Number of decimals to keep (-1 is no change)\n"
       "  -H                        View only the header\n"      
       "  -h                        Output with the header\n"
@@ -1199,9 +1438,9 @@ static int histogramfunc(int argc, char** argv) {
   if (die || in_only_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift histogram [csvfile] <options>\n"
+      "Usage: cysift histogram [cysfile] <options>\n"
       "  Calculate the histogram of a set of markers\n"
-      "  csvfile: filepath or a '-' to stream to stdin\n"
+      "  cysfile: filepath or a '-' to stream to stdin\n"
       "  -n  [50]                  Number of bins\n"
       "  -w  [50]                  Binwidth\n"
       "  -v, --verbose             Increase output to stderr"
@@ -1235,9 +1474,9 @@ static int plotfunc(int argc, char** argv) {
   if (die || in_only_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift plot [csvfile] <options>\n"
+      "Usage: cysift plot [cysfile] <options>\n"
       "  Outputs an ASCII-style plot of cell locations\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -l, --length        [50]  Height (length) of output plot, in characters\n"   
       "    -w, --width         [50]  Width of output plot, in characters\n"
       "    -v, --verbose             Increase output to stderr"
@@ -1269,9 +1508,9 @@ static int headfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
 
     const char *USAGE_MESSAGE =
-      "Usage: cysift head [csvfile] <options>\n"
+      "Usage: cysift head [cysfile] <options>\n"
       "  Keep only the first n cells\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -n, --numrows             Number of rows to keep\n"
       "    -v, --verbose             Increase output to stderr"
       "\n";
@@ -1323,9 +1562,9 @@ static int subsamplefunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
 
     const char *USAGE_MESSAGE =
-      "Usage: cysift subsample [csvfile] <options>\n"
+      "Usage: cysift subsample [cysfile] <options>\n"
       "  Subsamples a cell quantification table, randomly.\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -n, --numrows             Number of rows to subsample. Reads full file into memory!\n"
       "    -r                        Subsample at given rate (0,1]. Overrides -n. Streams without memory load, but doesn't guarentee given n outcome\n"
       "    -s, --seed           [42] Seed for random subsampling\n"
@@ -1362,7 +1601,7 @@ static int subsamplefunc(int argc, char** argv) {
   
 }
 
-static int correlatefunc(int argc, char** argv) {
+static int pearsonfunc(int argc, char** argv) {
 
   bool sorted = false;
   bool csv_print = false;
@@ -1379,9 +1618,9 @@ static int correlatefunc(int argc, char** argv) {
   if (die || in_only_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift correlate [csvfile] <options>\n"
-      "  Outputs an ASCII-style plot of marker intensity pearson correlations\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "Usage: cysift pearson [cysfile] <options>\n"
+      "  Outputs an ASCII-style plot of marker intensity Pearson correlations\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -j                        Output as a csv file\n"
       "    -s                        Sort the output by Pearson correlation\n"
       "    -v, --verbose             Increase output to stderr\n"
@@ -1413,9 +1652,9 @@ static int cropfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift crop [csvfile] <options>\n"
+      "Usage: cysift crop [cysfile] <options>\n"
       "  Crop the table to a given rectangle (in pixels)\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    --crop                    String of form xlo,xhi,ylo,yhi\n"
       "    -v, --verbose             Increase output to stderr"
       "\n";
@@ -1478,9 +1717,9 @@ static int spatialfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
   
     const char *USAGE_MESSAGE =
-      "Usage: cysift spatial [csvfile]\n"
+      "Usage: cysift spatial [cysfile]\n"
       "  Construct the Euclidean KNN spatial graph\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -k [10]               Number of neighbors\n"
       "    -d [-1]               Max distance to include as neighbor (-1 = none)\n"
       "    -v, --verbose         Increase output to stderr\n"      
@@ -1576,9 +1815,9 @@ static int selectfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
   
     const char *USAGE_MESSAGE =
-      "Usage: cysift select [csvfile]\n"
+      "Usage: cysift select [cysfile]\n"
       "  Select cells by phenotype flag\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "  Flag selection\n"
       "    -o                    Cell phenotype: Logical OR flags\n"
       "    -a                    Cell phenotype: Logical AND flags\n"
@@ -1648,9 +1887,9 @@ static int phenofunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
 
     const char *USAGE_MESSAGE =
-      "Usage: cysift pheno [csvfile]\n"
+      "Usage: cysift pheno [cysfile]\n"
       "  Phenotype cells (set the flags) with threshold file\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -t               File that holds gates: marker(string), low(float), high(float)\n"
       "    -v, --verbose    Increase output to stderr\n"
       "\n";
@@ -1710,9 +1949,9 @@ static int radialdensfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift radialdens [csvfile]\n"
+      "Usage: cysift radialdens [cysfile]\n"
       "  Calculate the density of cells away from individual cells\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -r [20]               Outer radius\n"
       "    -R [0]                Inner radius\n"
       "    -o                    Logical OR flags\n"
@@ -1825,9 +2064,9 @@ static int cerealfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift cys [csvfile]\n"
+      "Usage: cysift cys [cysfile]\n"
       "  Create a .cys formatted file from a csv file\n" 
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -1862,9 +2101,9 @@ static int delaunayfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift delaunay [csvfile]\n"
+      "Usage: cysift delaunay [cysfile]\n"
       "  Perform a the Delaunay triangulation of a cell table\n"
-      "    csvfile: filepath or a '-' to stream to stdin\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -t [1]                    Number of threads\n"
       "    -D                        Filename of PDF to output of Delaunay triangulation\n"
       "    -V                        Filename of PDF to output of Voronoi diagram\n"
@@ -1989,6 +2228,7 @@ static int countfunc(int argc, char** argv) {
   return 0;
 }
 
+
 // return TRUE if you want the process to die and print message
 static bool in_out_process(int argc, char** argv) {
   
@@ -2008,6 +2248,12 @@ static bool in_out_process(int argc, char** argv) {
   // there should be only 2 non-flag input
   if (count > 2)
     return true;
+
+  if (!check_readable(opt::infile) && opt::infile != "-") {
+    std::cerr << "Error: File " << opt::infile << " not readable/exists" << std::endl;
+    return true;
+  }
+
   
   return opt::infile.empty() || opt::outfile.empty();
 
@@ -2030,6 +2276,11 @@ static bool in_only_process(int argc, char** argv) {
   // there should be only 1 non-flag input
   if (count > 1)
     return true;
+
+  if (!check_readable(opt::infile) && opt::infile != "-") {
+    std::cerr << "Error: File " << opt::infile << " not readable/exists" << std::endl;
+    return true;
+  }
   
   return opt::infile.empty();
 

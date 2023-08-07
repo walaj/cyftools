@@ -157,7 +157,6 @@ void CellTable::HDF5Write(const std::string& file) const {
       flat_data_meta.push_back(ptr->second->GetNumericElem(i));
     }
   }
-
   
   ///////
   // X
@@ -923,12 +922,14 @@ void CellTable::Crop(float xlo, float xhi, float ylo, float yhi) {
 void CellTable::PrintPearson(bool csv, bool sort) const {
 
   // collect the marker data in one structure
-  std::vector<std::pair<std::string, const ColPtr>> data;
+  std::vector<std::string> labels;
+  std::vector<const std::vector<float>> data;
   for (const auto& t : m_header.GetDataTags()) {
     if (t.type == Tag::MA_TAG) {
       auto ptr = m_table.find(t.id);
       assert(ptr != m_table.end());
-      data.push_back({ptr->first, ptr->second});
+      data.push_back(dynamic_pointer_cast<FloatCol>(ptr->second)->getData());
+      labels.push_back(ptr->first);
     }
   }    
   
@@ -937,13 +938,14 @@ void CellTable::PrintPearson(bool csv, bool sort) const {
   std::vector<std::vector<float>> correlation_matrix(n, std::vector<float>(n, 0));
   for (size_t i = 0; i < n; i++) {
     for (size_t j = i + 1; j < n; j++) {
-      correlation_matrix[i][j] = data[i].second->Pearson(*data[j].second);
+      correlation_matrix[i][j] = pearsonCorrelation(data[i], data[j]); 
     }
   }
   
+  
   // if csv, print to csv instead of triangle table
   if (csv) {
-    print_correlation_matrix(data, correlation_matrix, sort);
+    print_correlation_matrix(labels, correlation_matrix, sort);
     /*
       for (int i = 0; i < n; i++) {
       for (int j = i + 1; j < n; j++) {
@@ -966,7 +968,7 @@ void CellTable::PrintPearson(bool csv, bool sort) const {
   // Print x-axis markers
   std::cout << std::setw(spacing) << " ";
   for (size_t i = 0; i < n; i++) {
-    std::cout << std::setw(spacing) << data[i].first;
+    std::cout << std::setw(spacing) << labels.at(i);
   }
   std::cout << std::endl;
 
@@ -974,11 +976,11 @@ void CellTable::PrintPearson(bool csv, bool sort) const {
   for (size_t i = 0; i < n; i++) {
     
     // Print y-axis marker
-    std::cout << std::setw(spacing) << data[i].first;
+    std::cout << std::setw(spacing) << labels.at(i);
     
     for (size_t j = 0; j < n; j++) {
       if (j < i) {
-	std::cout << std::setw(spacing) << std::fixed << std::setprecision(4) << correlation_matrix[j][i];	
+	std::cout << std::setw(spacing) << std::fixed << std::setprecision(4) << correlation_matrix[j][i];
       } else {
 	std::cout << std::setw(spacing) << " ";
       }
@@ -1099,35 +1101,37 @@ bool CellTable::HasColumn(const std::string& col) const {
   return m_table.find(col) != m_table.end();
 }
 
-void CellTable::print_correlation_matrix(const std::vector<std::pair<std::string, const ColPtr>>& data,
-					 const std::vector<std::vector<float>>& correlation_matrix, bool sort) const {
-    int n = data.size();
-    std::vector<std::tuple<int, int, double>> sorted_correlations;
+void CellTable::print_correlation_matrix(const std::vector<std::string>& labels,
+					 const std::vector<std::vector<float>>& correlation_matrix,
+					 bool sort) const {
 
-    for (int i = 0; i < n; i++) {
-        for (int j = i + 1; j < n; j++) {
-            sorted_correlations.push_back(std::make_tuple(i, j, correlation_matrix[i][j]));
-        }
+  assert(labels.size() == correlation_matrix.size());
+  std::vector<std::tuple<int, int, double>> sorted_correlations;
+  
+  for (int i = 0; i < labels.size(); i++) {
+    for (int j = i + 1; j < labels.size(); j++) {
+      sorted_correlations.push_back(std::make_tuple(i, j, correlation_matrix[i][j]));
     }
-
-    if (sort) {
-        std::sort(sorted_correlations.begin(), sorted_correlations.end(),
-            [](const std::tuple<int, int, double>& a, const std::tuple<int, int, double>& b) {
-                return std::get<2>(a) < std::get<2>(b);
-            });
-    }
-
-    for (const auto& item : sorted_correlations) {
-        int i = std::get<0>(item);
-        int j = std::get<1>(item);
-        double corr = std::get<2>(item);
-
-        std::cout << data[i].first << "," << data[j].first << "," << corr << std::endl;
-    }
+  }
+  
+  if (sort) {
+    std::sort(sorted_correlations.begin(), sorted_correlations.end(),
+	      [](const std::tuple<int, int, double>& a, const std::tuple<int, int, double>& b) {
+		return std::get<2>(a) < std::get<2>(b);
+	      });
+  }
+  
+  for (const auto& item : sorted_correlations) {
+    int i = std::get<0>(item);
+    int j = std::get<1>(item);
+    double corr = std::get<2>(item);
+    
+    std::cout << labels.at(i) << "," << labels.at(j) << "," << corr << std::endl;
+  }
 }
 
 void CellTable::initialize_cols() {
-
+  
   // initialize cell id
   m_table["id"] = std::make_shared<IntCol>();
   m_table["pflag"] = std::make_shared<IntCol>();
@@ -1152,17 +1156,95 @@ void CellTable::initialize_cols() {
   
 }
 
-int CellTable::PlotPNG(const std::string& file) const {
+void CellTable::PrintJaccardSimilarity(bool csv, bool sort) const {
 
+  // collect the marker data in one structure
+  std::vector<Tag> markers = m_header.GetMarkerTags();
+
+  // get the pflags
+  auto pflag_ptr = m_table.find("pflag");
+  assert(pflag_ptr != m_table.end());
+  
+  std::vector<const std::vector<bool>> data;
+  std::vector<std::string> labels;
+  
+  // loop each marker (each bit in the pflags)
+  for (size_t bitPos = 0; bitPos < markers.size(); bitPos++) {
+
+    // Extract bits from the current position from all elements
+    std::vector<bool> bits;
+    for (size_t j = 0; j < pflag_ptr->second->size(); j++) {
+      cy_uint val = dynamic_pointer_cast<IntCol>(pflag_ptr->second)->GetNumericElem(j);
+      bits.push_back((val >> bitPos) & 1);
+    }
+
+    labels.push_back(markers.at(bitPos).id);
+    data.push_back(bits);
+  }    
+  
+  // get the correlation matrix
+  size_t n = data.size();
+  std::vector<std::vector<float>> correlation_matrix(n, std::vector<float>(n, 0));
+  for (size_t i = 0; i < n; i++) {
+    for (size_t j = i + 1; j < n; j++) {
+      correlation_matrix[i][j] = jaccardSimilarity(data.at(i), data.at(j));
+    }
+  }
+  
+  // if csv, print to csv instead of triangle table
+  if (csv) {
+    print_correlation_matrix(labels, correlation_matrix, sort);
+    /*
+      for (int i = 0; i < n; i++) {
+      for (int j = i + 1; j < n; j++) {
+      std::cout << data[i].first << "," << data[j].first << 
+      "," << correlation_matrix[i][j] << std::endl;
+      }
+      }*/
+    return;
+  }
+  
+  // find the best spacing
+  size_t spacing = 8;
+  for (const auto& t : markers)
+    if (t.id.length() > spacing)
+      spacing = t.id.length() + 2;
+  
+  // Print x-axis markers
+  std::cout << std::setw(spacing) << " ";
+  for (size_t i = 0; i < n; i++) {
+    std::cout << std::setw(spacing) << labels.at(i);
+  }
+  std::cout << std::endl;
+
+  // print the matrix
+  for (size_t i = 0; i < n; i++) {
+    
+    // Print y-axis marker
+    std::cout << std::setw(spacing) << labels.at(i);
+    
+    for (size_t j = 0; j < n; j++) {
+      if (j < i) {
+	std::cout << std::setw(spacing) << std::fixed << std::setprecision(4) << correlation_matrix[j][i];
+      } else {
+	std::cout << std::setw(spacing) << " ";
+      }
+    }
+    std::cout << std::endl;
+  }
+
+  
+}
+
+int CellTable::PlotPNG(const std::string& file,
+		       float scale_factor) const {
+  
 #ifdef HAVE_CAIRO
 
-  std::cerr << "...plotting " << file << std::endl;
-  
   std::random_device rd; 
   std::mt19937 gen(rd()); 
   std::uniform_int_distribution<> dis(0,1);
   
-  const float scale_factor = 0.25f;
   const float radius_size = 3.0f;
   const float alpha_val = 0.5f;
   constexpr float TWO_PI = 2.0 * M_PI;
@@ -1177,7 +1259,7 @@ int CellTable::PlotPNG(const std::string& file) const {
   assert(flag_ptr != m_table.end());
   assert(cflag_ptr != m_table.end());        
   
-  // Open the PDF for drawing
+  // Open the PNG for drawing
   const int width  = x_ptr->second->Max();
   const int height = y_ptr->second->Max();    
   
@@ -1263,6 +1345,51 @@ int CellTable::PlotPNG(const std::string& file) const {
 #endif
   
   return 0;
+}
+
+void CellTable::ScramblePflag(int seed, bool lock_flags) {
+
+  auto pflag_ptr = m_table.find("pflag");
+  assert(pflag_ptr != m_table.end());
+
+  // flags are locked, so we are permuting flags
+  if (lock_flags) {
+    dynamic_pointer_cast<IntCol>(pflag_ptr->second)->Scramble(seed);
+    return;
+  }
+
+  // store new flags
+  std::vector<cy_uint> new_flags(pflag_ptr->second->size());
+
+  // make a random number generator
+  std::default_random_engine rng(seed);
+  
+  // flags are not locks, so we are permutting individual bits
+#ifdef USE_64_BIT  
+  for (int bitPos = 0; bitPos < 64; ++bitPos) {
+#else
+  for (int bitPos = 0; bitPos < 32; ++bitPos) {
+#endif    
+    // Extract bits from the current position from all elements
+    std::vector<bool> bits;
+    for (size_t i = 0; i < new_flags.size(); i++) {
+      cy_uint val = dynamic_pointer_cast<IntCol>(pflag_ptr->second)->GetNumericElem(i);
+      bits.push_back((val >> bitPos) & 1);
+    }
+    
+    // Shuffle these bits
+    std::shuffle(bits.begin(), bits.end(), rng);
+    
+    // Set these shuffled bits back to the vector
+    for (size_t i = 0; i < new_flags.size(); ++i) {
+      new_flags[i] &= ~(1u << bitPos);           // Clear the bit at bitPos (should already be cleared)
+      new_flags[i] |= (bits[i] << bitPos);       // Set the bit at bitPos if bits[i] is 1
+    }
+  }
+
+  // assign the new flags
+  m_table["pflag"] = std::make_shared<NumericColumn<cy_uint>>(new_flags);
+  
 }
 
 int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {

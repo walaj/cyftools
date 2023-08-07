@@ -32,6 +32,35 @@ template <typename T> inline std::string AddCommas(T data) {
   return s;
 }
 
+template<typename T>
+T mean(const std::vector<T>& v) {
+  static_assert(std::is_arithmetic<T>::value, "Type must be numerical!");
+  
+  if (v.empty()) return T(0);
+  return std::accumulate(v.begin(), v.end(), T(0)) / v.size();
+}
+
+template<typename T>
+float pearsonCorrelation(const std::vector<T>& v1, const std::vector<T>& v2) {
+  double mean_v1 = mean(v1);
+  double mean_v2 = mean(v2); 
+  
+  double num = 0.0, den_v1 = 0.0, den_v2 = 0.0;
+  for (size_t i = 0; i < v1.size(); i++) {
+    double val_v1 = v1.at(i);
+    double val_v2 = v2.at(i);
+    
+    num += (val_v1 - mean_v1) * (val_v2 - mean_v2);
+    den_v1 += (val_v1 - mean_v1) * (val_v1 - mean_v1);
+    den_v2 += (val_v2 - mean_v2) * (val_v2 - mean_v2);
+    
+  }
+  
+  return static_cast<float>(num / (std::sqrt(den_v1) * std::sqrt(den_v2))); 
+}
+
+double jaccardSimilarity(const std::vector<bool>& v1, const std::vector<bool>& v2);
+
 void add_legend_cairo(cairo_t* crp, int font_size,
 		      int legend_width, int legend_height,
 		      int legend_x, int legend_y,

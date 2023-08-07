@@ -59,7 +59,8 @@ public:
   //////
   // Plotting
   //////
-  int PlotPNG(const std::string& file) const;
+  int PlotPNG(const std::string& file,
+	      float scale_factor) const;
   
   //////
   // Basic table operations
@@ -110,6 +111,8 @@ public:
   //////
   void PrintPearson(bool csv, bool sort) const;
 
+  void PrintJaccardSimilarity(bool csv, bool sort) const;
+  
   //////
   // Image ops
   //////
@@ -119,6 +122,11 @@ public:
   
   // ML ops
   void GMM_EM();
+
+  //////
+  // Null model ops
+  //////
+  void ScramblePflag(int seed, bool lock_flags);
   
   //////
   // Subsetting / filtering ops
@@ -198,8 +206,9 @@ public:
   
   void add_cell_to_table(const Cell& cell, bool nodata, bool nograph);
 
-  void print_correlation_matrix(const std::vector<std::pair<std::string, const ColPtr>>& data,
+  void print_correlation_matrix(const std::vector<std::string>& labels,
 				const std::vector<std::vector<float>>& correlation_matrix, bool sort) const;
+    
   
 #endif    
 };

@@ -8,6 +8,7 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <random>
 
 #include "cysift.h"
 #include "cell_utils.h"
@@ -58,8 +59,6 @@ public:
   
   virtual void SetPrecision(size_t n) = 0;
   
-  virtual float Pearson(const Column& c) const = 0;
-  
   virtual float Mean() const = 0;
   virtual float Min() const = 0;
   virtual float Max() const = 0;
@@ -70,6 +69,7 @@ public:
 
   virtual void resize(size_t n) = 0;
 
+  virtual void Scramble(int seed) = 0;
 };
 
 template <typename T>
@@ -90,6 +90,20 @@ class NumericColumn : public Column {
     
   }
 
+  // copy from a normal vector to a Numeric Column
+  NumericColumn(const std::vector<T>& vec) {
+    
+    if (std::is_same_v<T, cy_uint>) {
+      m_type = ColumnType::INT;
+    } else if (std::is_same_v<T, float>) {
+      m_type = ColumnType::FLOAT;
+    } else {
+      throw std::runtime_error("NumericColumn constructor: arg is neither an int nor a float");      
+    }
+    
+    m_vec = vec;
+  }
+  
   NumericColumn(const T& initial_elem) {
     
     if (std::is_same_v<T, cy_uint>) {
@@ -102,7 +116,7 @@ class NumericColumn : public Column {
     
     m_vec.push_back(initial_elem);
   }
-  
+
   std::shared_ptr<Column> clone() const override {
     return std::make_shared<NumericColumn<T>>(*this);
   }
@@ -113,6 +127,11 @@ class NumericColumn : public Column {
     return m_vec.at(i);
   }
 
+  void Scramble(int seed) override {
+    std::default_random_engine rng(seed);
+    std::shuffle(m_vec.begin(), m_vec.end(), rng);
+  }
+  
   std::string GetStringElem(size_t i) const override {
     if (i >= m_vec.size())
       throw std::out_of_range("Index out of range");
@@ -123,25 +142,6 @@ class NumericColumn : public Column {
     if (i >= m_vec.size())
       throw std::out_of_range("Index out of range");
     m_vec[i] = val;
-  }
-
-  float Pearson(const Column& c) const override {
-    
-    double mean_v1 = c.Mean();
-    double mean_v2 = this->Mean();
-    
-    double num = 0.0, den_v1 = 0.0, den_v2 = 0.0;
-    for (size_t i = 0; i < m_vec.size(); i++) {
-      double val_v1 = c.GetNumericElem(i);
-      double val_v2 = m_vec.at(i);
-      
-      num += (val_v1 - mean_v1) * (val_v2 - mean_v2);
-      den_v1 += (val_v1 - mean_v1) * (val_v1 - mean_v1);
-      den_v2 += (val_v2 - mean_v2) * (val_v2 - mean_v2);
-    }
-    
-    return static_cast<float>(num / (std::sqrt(den_v1) * std::sqrt(den_v2)));
-    
   }
   
   std::shared_ptr<Column> CopyToFloat() const override {
@@ -203,7 +203,7 @@ class NumericColumn : public Column {
   std::string toString() const override {
     const size_t print_lim = 3;
         std::stringstream ss;
-        ss << "NumericColumn<" << typeid(T).name() << ">: Size: " <<
+        ss << "Numeric<" << typeid(T).name() << ">: Size: " <<
 	  m_vec.size() << " [";
         for (size_t i = 0; i < std::min(size(), print_lim); i++) {
 	  if (i > 0) ss << ", ";
@@ -211,6 +211,7 @@ class NumericColumn : public Column {
         }
         if (size() > print_lim) ss << ", ...";
         ss << "]";
+	ss << " Min: " << this->Min() << " - Max: " << this->Max() << " - Mean: " << this->Mean();
         return ss.str();
     }
 
@@ -313,6 +314,10 @@ public:
     return m_vec.at(i);
   }
 
+  void Scramble(int seed) override {
+    std::default_random_engine rng(seed);
+    std::shuffle(m_vec.begin(), m_vec.end(), rng);
+  }
 
   std::shared_ptr<Column> clone() const override {
     return std::make_shared<StringColumn>(*this);
@@ -352,7 +357,6 @@ public:
   // Do nothing for StringColumn (or have dummies)
   void Log10() override {}
   float GetNumericElem(size_t i) const override { return 0; }
-  float Pearson(const Column& c) const override { return 0; }
   float Mean() const override { return 0;   }
   float Min() const override { return 0;   }
   float Max() const override { return 0;   }
@@ -418,12 +422,22 @@ class GraphColumn : public Column {
   GraphColumn(const CellNode& initial_elem) {
     m_vec.push_back(initial_elem);
   }
+
+  void Scramble(int seed) override {
+    std::default_random_engine rng(seed);
+    std::shuffle(m_vec.begin(), m_vec.end(), rng);
+  }
+
   
   std::string GetStringElem(size_t i) const override {
     if (i >= m_vec.size())
       throw std::out_of_range("Index out of range");
     return m_vec.at(i).toString();
   }
+
+  
+  
+
   
   std::shared_ptr<Column> clone() const override {
     return std::make_shared<GraphColumn>(*this);
@@ -471,7 +485,6 @@ class GraphColumn : public Column {
   // do nothing for GraphColumn (or have dummies)
   void Log10() override {}
   float GetNumericElem(size_t i) const override { return 0; }
-  float Pearson(const Column& c) const override { return 0; }
   float Mean() const override { return 0;   }
   float Min() const override { return 0;   }
   float Max() const override { return 0;   }
@@ -554,6 +567,11 @@ class FlagColumn : public Column {
     return m_vec.at(i).test(on, off);
     }*/
 
+  void Scramble(int seed) override {
+    std::default_random_engine rng(seed);
+    std::shuffle(m_vec.begin(), m_vec.end(), rng);
+  }
+  
   bool TestFlagAndOr(cy_uint logor, cy_uint logand, size_t i) const {
     if (i >= m_vec.size())
       throw std::out_of_range("Index out of range");
@@ -600,7 +618,7 @@ class FlagColumn : public Column {
   
   std::string toString() const override {
         std::stringstream ss;
-        ss << "FlagColumn<CellFlag>: [";
+        ss << "Flag: [";
         for (size_t i = 0; i < std::min(size(), (size_t)3); i++) {
 	  if (i > 0) ss << ", ";
 	  ss << m_vec[i];
@@ -613,7 +631,6 @@ class FlagColumn : public Column {
   // do nothing for FlagColumn (or have dummies)
   void Log10() override {}
   float GetNumericElem(size_t i) const override { return 0; }
-  float Pearson(const Column& c) const override { return 0; }
   float Mean() const override { return 0;   }
   float Min() const override { return 0;   }
   float Max() const override { return 0;   }

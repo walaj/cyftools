@@ -292,3 +292,20 @@ void add_legend_cairo(cairo_t* crp, int font_size,
   
 }
   
+double jaccardSimilarity(const std::vector<bool>& v1, const std::vector<bool>& v2) {
+    int intersectionCount = 0;
+    int unionCount = 0;
+
+    for (size_t i = 0; i < v1.size(); i++) {
+        if (v1[i] && v2[i]) {
+            intersectionCount++;
+        }
+        if (v1[i] || v2[i]) {
+            unionCount++;
+        }
+    }
+
+    if (unionCount == 0) return 0.0; // to avoid division by zero
+    
+    return static_cast<double>(intersectionCount) / unionCount;
+}
