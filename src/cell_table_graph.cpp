@@ -688,9 +688,9 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     if (max_radius < r)
       max_radius = r;
 
-#ifdef JKD_TREE  
+#ifdef JKD_TREE
   m_kdtree->rad = max_radius;
-  m_kdtree->rad = max_radius * max_radius;
+  m_kdtree->r2 = max_radius * max_radius;
 #endif
   
   // pre-compute the bools
@@ -731,7 +731,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
 
     // this will be inclusive of this point
     assert(m_kdtree);
-#ifdef JKD_TREE    
+#ifdef JKD_TREE
     std::vector<size_t> inds = m_kdtree->neighborhood_indices(pt);
 #else        
     std::vector<size_t> inds = m_kdtree->neighborhood_indices(pt, max_radius);
@@ -922,11 +922,7 @@ void CellTable::Select(cy_uint por, cy_uint cor,
   if (m_verbose)
     std::cerr << "...building the KDTree" << std::endl;
   BuildKDTree();
-
-#ifdef JKD_TREE  
-  m_kdtree->rad = radius;
-  m_kdtree->r2 = radius * radius;
-#endif  
+  
   if (m_verbose)
     std::cerr << "...starting second loop to include cells within radius of include" << std::endl;
 
@@ -949,11 +945,7 @@ void CellTable::Select(cy_uint por, cy_uint cor,
 
     // this will be inclusive of this point
     assert(m_kdtree);
-#ifdef JKD_TREE
-    std::vector<size_t> inds = m_kdtree->neighborhood_indices(pt);
-#else
     std::vector<size_t> inds = m_kdtree->neighborhood_indices(pt, radius);
-#endif
 
     // loop the inds, and check if neighbors a good cell
     for (const auto& j : inds) {

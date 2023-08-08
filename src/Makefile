@@ -35,7 +35,7 @@ JPEG = -L/opt/homebrew/opt/jpeg/lib -L/opt/homebrew/Cellar/libpng/1.6.39/lib
 TIFFLD = ${JPEG} -llzma $(MYHOME)/software/libtiff-git/lib/libtiff.a -ljpeg -lz -lpng
 
 ## Optional library for KD-tree functions (radial proximity)
-KDTREE = -I$(MYHOME)/git/KDTree -DHAVE_KDTREE 
+KDTREE = -I$(MYHOME)/git/KDTree -DHAVE_KDTREE
 KDLIB = -L $(MYHOME)/git/KDTree/lib -lKDTree -Wl,-rpath,$(MYHOME)/git/KDTree/lib
 
 # cysift specific parameter
