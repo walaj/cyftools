@@ -923,7 +923,7 @@ void CellTable::PrintPearson(bool csv, bool sort) const {
 
   // collect the marker data in one structure
   std::vector<std::string> labels;
-  std::vector<const std::vector<float>> data;
+  std::vector<std::vector<float>> data;
   for (const auto& t : m_header.GetDataTags()) {
     if (t.type == Tag::MA_TAG) {
       auto ptr = m_table.find(t.id);
@@ -1165,7 +1165,7 @@ void CellTable::PrintJaccardSimilarity(bool csv, bool sort) const {
   auto pflag_ptr = m_table.find("pflag");
   assert(pflag_ptr != m_table.end());
   
-  std::vector<const std::vector<bool>> data;
+  std::vector<std::vector<bool>> data;
   std::vector<std::string> labels;
   
   // loop each marker (each bit in the pflags)

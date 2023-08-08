@@ -50,7 +50,7 @@ static CellTable table;
 
 static void build_table();
 
-static const char* shortopts = "jhHNyvmMPr:e:g:G:t:a:i:A:O:d:b:c:s:k:n:r:w:l:L:x:X:o:R:f:D:V:z:";
+static const char* shortopts = "CJjhHNyvmMPr:e:g:G:t:a:i:A:O:d:b:c:s:k:n:r:w:l:L:x:X:o:R:f:D:V:z:";
 static const struct option longopts[] = {
   { "verbose",                    no_argument, NULL, 'v' },
   { "threads",                    required_argument, NULL, 't' },
@@ -681,7 +681,7 @@ static int ldacreatefunc(int argc, char** argv) {
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'o' : arg >> model_out; break;
-
+    case 's' : arg >> opt::seed; break;
       //    case 'm' : arg >> model_in; break;
     case 'n' : arg >> n_topics; break;
     case 'r' : arg >> fields; break;
@@ -746,7 +746,8 @@ static int ldacreatefunc(int argc, char** argv) {
   // create the model 
   table.LDA_create_model(markers,
 			 n_topics,
-			 n_iterations);
+			 n_iterations,
+			 opt::seed);
 
   // write the model
   table.LDA_write_model(model_out);
@@ -867,8 +868,6 @@ static int plotpngfunc(int argc, char** argv) {
   
 }
 
-
-
 static int cleanfunc(int argc, char** argv) {
 
   bool clean_graph = false;
@@ -880,7 +879,8 @@ static int cleanfunc(int argc, char** argv) {
     case 'v' : opt::verbose = true; break;
     case 'm' : clean_markers = true; break;
     case 'M' : clean_meta = true; break;
-    case 'P' : clean_graph = true; clean_markers = true; clean_meta = true; break;      
+    case 'P' : clean_graph = true; break;
+    case 'C' : clean_graph = true; clean_markers = true; clean_meta = true; break;      
     default: die = true;
     }
   }
@@ -894,7 +894,7 @@ static int cleanfunc(int argc, char** argv) {
       "    -m,          Remove all marker data\n"
       "    -M,          Remove all meta data\n"
       "    -P,          Remove all graph data\n"      
-      "    -A,          Remove all data\n"      
+      "    -C,          Remove all marker,meta,graph data\n"      
       "    -v, --verbose             Increase output to stderr\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
@@ -1927,7 +1927,8 @@ static int radialdensfunc(int argc, char** argv) {
   cy_uint logand = 0;
   std::string label;
 
-  bool normalize = false; // normalize to cells count
+  bool normalize_local = false; // normalize to cells count in radius
+  bool normalize_global = false; // normalize to cells count in slide
   std::string file;
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1941,7 +1942,8 @@ static int radialdensfunc(int argc, char** argv) {
     case 'a' : arg >> logand; break;
     case 'l' : arg >> label; break;
     case 'f' : arg >> file; break;
-    case 'j' : normalize = true; break;
+    case 'j' : normalize_local = true; break;
+    case 'J' : normalize_global = true; break;      
     default: die = true;
     }
   }
@@ -1957,7 +1959,8 @@ static int radialdensfunc(int argc, char** argv) {
       "    -o                    Logical OR flags\n"
       "    -a                    Logical AND flags\n"
       "    -l                    Label the column\n"
-      "    -j                    Flag for normalizing to cell count\n"
+      "    -j                    Flag for normalizing to cell count in radius\n"
+      "    -J                    Flag for normalizing to cell count in slide\n"      
       "    -f                    File for multiple labels [r,R,o,a,l]\n"
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
@@ -2008,7 +2011,8 @@ static int radialdensfunc(int argc, char** argv) {
   std::vector<cy_uint> outerV(rsv.size());  
   std::vector<cy_uint> logorV(rsv.size());
   std::vector<cy_uint> logandV(rsv.size());
-  std::vector<int>     normalizeV(rsv.size());    
+  std::vector<int>     normalize_localV(rsv.size());
+  std::vector<int>     normalize_globalV(rsv.size());  
   std::vector<std::string> labelV(rsv.size());
   if (rsv.empty()) {
     innerV = {inner};
@@ -2016,14 +2020,16 @@ static int radialdensfunc(int argc, char** argv) {
     logorV = {logor};
     logandV= {logand};
     labelV = {label};
-    normalizeV={normalize};
+    normalize_localV={normalize_local};
+    normalize_globalV={normalize_global};    
   } else {
     for (size_t i = 0; i < innerV.size(); i++) {
       innerV[i] = rsv.at(i).int_data.at(0);
       outerV[i] = rsv.at(i).int_data.at(1);
       logorV[i] = rsv.at(i).int_data.at(2);
       logandV[i] = rsv.at(i).int_data.at(3);
-      normalizeV[i] = rsv.at(i).int_data.at(4);
+      normalize_localV[i] = rsv.at(i).int_data.at(4);
+      normalize_globalV[i] = rsv.at(i).int_data.at(5);
       labelV[i] = rsv.at(i).label;
     }
   }
@@ -2033,7 +2039,8 @@ static int radialdensfunc(int argc, char** argv) {
 
   table.SetupOutputWriter(opt::outfile);
   
-  table.RadialDensityKD(innerV, outerV, logorV, logandV, labelV, normalizeV);
+  table.RadialDensityKD(innerV, outerV, logorV, logandV, labelV,
+			normalize_localV, normalize_globalV);
 
   table.OutputTable();
   

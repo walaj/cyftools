@@ -100,7 +100,8 @@ public:
 
   int RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
 		      std::vector<cy_uint> logor, std::vector<cy_uint> logand,
-		      std::vector<std::string> label, std::vector<int> normalize);
+		      std::vector<std::string> label, std::vector<int> normalize_local,
+		      std::vector<int> normalize_global);
   
   void TumorCall(int num_neighbors, float frac,
 		 cy_uint orflag, cy_uint andflag, cy_uint dist);
@@ -164,7 +165,8 @@ public:
   
   void LDA_create_model(const std::vector<std::string>& marker_cols,
 			size_t n_topics,
-			size_t n_iterations);
+			size_t n_iterations,
+			int seed);
 
   void LDA_score_cells(const std::string& pdffile,
 		       int topic_highlight,

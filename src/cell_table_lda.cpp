@@ -311,7 +311,8 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
 
 void CellTable::LDA_create_model(const std::vector<std::string>& marker_cols,
 				 size_t n_topics,
-				 size_t n_iterations) {
+				 size_t n_iterations,
+				 int seed) {
 
   size_t n_words = marker_cols.size();
   size_t n_docs = CellCount();
@@ -342,7 +343,8 @@ void CellTable::LDA_create_model(const std::vector<std::string>& marker_cols,
   ldaplusplus::LDA<double> lda = ldaplusplus::LDABuilder<double>()
     .initialize_topics_random(
         X.rows(),   // X.rows() is the number of words in the vocab
-        n_topics  // how many topics we want to infer
+        n_topics,  // how many topics we want to infer
+	seed
     )
     .set_iterations(n_iterations)
     .set_workers(m_threads);

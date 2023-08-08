@@ -1,6 +1,8 @@
 #include "cell_table.h"
 #include "color_map.h"
 
+
+
 #ifdef HAVE_UMAPPP
 #include "umappp/Umap.hpp"
 #include "umappp/NeighborList.hpp"
@@ -607,8 +609,9 @@ void CellTable::BuildKDTree() {
 
 
 int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
-			     std::vector<cy_uint> logor, std::vector<cy_uint> logand,
-			       std::vector<std::string> label, std::vector<int> normalize) {
+			       std::vector<cy_uint> logor, std::vector<cy_uint> logand,
+			       std::vector<std::string> label, std::vector<int> normalize_local,
+			       std::vector<int> normalize_global) {
 #ifdef HAVE_KDTREE
   
   // check the radial geometry parameters
@@ -616,7 +619,9 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   assert(inner.size() == outer.size());
   assert(inner.size() == logor.size());
   assert(inner.size() == logand.size());
-  assert(inner.size() == label.size());    
+  assert(inner.size() == label.size());
+  assert(inner.size() == normalize_local.size());
+  assert(inner.size() == normalize_global.size());  
 
   if (m_verbose)  {
     for (size_t i = 0; i < inner.size(); i++) {
@@ -670,7 +675,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   if (m_verbose)
     std::cerr << "...building the KDTree" << std::endl;
   BuildKDTree();
-
+  
   //
   const auto x_ptr = m_table.find("x");
   const auto y_ptr = m_table.find("y");
@@ -683,7 +688,14 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     if (max_radius < r)
       max_radius = r;
 
+#ifdef JKD_TREE  
+  m_kdtree->rad = max_radius;
+  m_kdtree->rad = max_radius * max_radius;
+#endif
+  
   // pre-compute the bools
+  if (m_verbose)
+    std::cerr << "...pre-computing flag results" << std::endl;
   std::vector<std::vector<int>> flag_result(inner.size(), std::vector<int>(fc->size(), 0));
   for (size_t i = 0; i < fc->size(); i++) {
     CellFlag mflag(fc->GetNumericElem(i));
@@ -693,8 +705,20 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
       }
     }
   }
+
+  // get the global cell counts for each flag
+  std::vector<size_t> flag_count(inner.size());
+  assert(flag_result.size() == inner.size());
+  for (size_t i = 0; i < flag_result.size(); i++) {
+    flag_count[i] = std::accumulate(flag_result[i].begin(), flag_result[i].end(), 0);
+  }
+
+  // total cell count
+  float total_cell_count = CellCount();
   
-    // loop the cells
+  // loop the cells
+  if (m_verbose)
+    std::cerr << "...starting cell loop" << std::endl;
 #pragma omp parallel for num_threads(m_threads)
   for (size_t i = 0; i < fc->size(); i++) {
     
@@ -707,7 +731,13 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
 
     // this will be inclusive of this point
     assert(m_kdtree);
+#ifdef JKD_TREE    
+    std::vector<size_t> inds = m_kdtree->neighborhood_indices(pt);
+#else        
     std::vector<size_t> inds = m_kdtree->neighborhood_indices(pt, max_radius);
+#endif
+    
+    //std::vector<size_t> inds = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};
 
     // loop the nodes connected to each cell
     for (const auto& n : inds) {
@@ -741,9 +771,11 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     // remember, i is iterator over cells, j is over conditions
     for (size_t j = 0; j < area.size(); ++j) {
       if (!inds.empty()) {
-	float value = cell_count[j] * 1000000 / area[j]; // density per 1000 square pixels
-	if (normalize[j] != 0) // normalize to total cell count?
+	float value = cell_count[j] * 100000000 / area[j]; // density per 10000 square pixels
+	if (normalize_local[j] != 0) // normalize to cell count in the radius
 	  value = value / inds.size();
+	if (normalize_global[j] != 0 && flag_count[j] != 0) // normalize to cell count in the image
+	  value = value / flag_count[j] * total_cell_count;
 	dc[j]->SetNumericElem(value, i);
       } else {
 	dc[j]->SetNumericElem(0, i);
@@ -891,10 +923,13 @@ void CellTable::Select(cy_uint por, cy_uint cor,
     std::cerr << "...building the KDTree" << std::endl;
   BuildKDTree();
 
+#ifdef JKD_TREE  
+  m_kdtree->rad = radius;
+  m_kdtree->r2 = radius * radius;
+#endif  
   if (m_verbose)
     std::cerr << "...starting second loop to include cells within radius of include" << std::endl;
 
-  
 #pragma omp parallel for num_threads(m_threads)
   for (size_t i = 0; i < count; i++) {
 
@@ -914,7 +949,11 @@ void CellTable::Select(cy_uint por, cy_uint cor,
 
     // this will be inclusive of this point
     assert(m_kdtree);
+#ifdef JKD_TREE
+    std::vector<size_t> inds = m_kdtree->neighborhood_indices(pt);
+#else
     std::vector<size_t> inds = m_kdtree->neighborhood_indices(pt, radius);
+#endif
 
     // loop the inds, and check if neighbors a good cell
     for (const auto& j : inds) {
