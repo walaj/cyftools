@@ -4,19 +4,25 @@ library(reshape2)
 library(ggplot2)
 
 model_file <- "~/Desktop/lda7M.200r.50its.12t.tumor.json"
-model_file <- "~/Sorger/orion/orion_1_74/all74.10M.ptrdv.20i.12t.json"
+model_file <- c("~/Sorger/orion/tmp/scramble.s0.l42.json",
+                "~/Sorger/orion/tmp/scramble.s0.l100.json",
+                "~/Sorger/orion/tmp/scramble.s0.l200.json")
 
-# Replace "path_to_your_file.json" with the actual path to your JSON file
-json_content <- jsonlite::fromJSON(model_file)
-
-# Convert to data.table
-alpha_dt <- data.table(json_content$LDAModel$alpha)
-beta_dt <- data.table(t(json_content$LDAModel$beta))  # transpose to get one row per array
-setnames(beta_dt, colnames(beta_dt), paste("Topic", seq(ncol(beta_dt))))
-markers <- json_content$LDAModel$markers
-markers_name <- sub("_200r$", "", markers)
-beta_dt[, marker :=  markers_name]
-beta_dt[, model := basename(model_file)]
+beta_dt <- rbindlist(lapply(model_file, function(x) {
+  # Replace "path_to_your_file.json" with the actual path to your JSON file
+  json_content <- jsonlite::fromJSON(x)
+  
+  # Convert to data.table
+  alpha_dt <- data.table(json_content$LDAModel$alpha)
+  beta_dt <-
+    data.table(t(json_content$LDAModel$beta))  # transpose to get one row per array
+  setnames(beta_dt, colnames(beta_dt), paste("Topic", seq(ncol(beta_dt))))
+  markers <- json_content$LDAModel$markers
+  markers_name <- sub("_200r$", "", markers)
+  beta_dt[, marker :=  markers_name]
+  beta_dt[, model := basename(x)]
+  return (beta_dt)
+}))
 
 ##### PLOT
 # Reshape data from wide to long format
@@ -37,15 +43,9 @@ g <- ggplot(beta_long, aes(x = factor(marker), y = Distribution, fill=model)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=6),
         legend.text = element_text(size = 6)) 
 
-pdf("~/Sorger/figs/lda_iter_12.pdf", width=8, height=6, useDingbats = FALSE)
+pdf("~/Sorger/figs/lda_scramble_3seedsonscramble.pdf", width=8, height=6, useDingbats = FALSE)
 print(g)
 dev.off()
-
-
-
-
-
-
 
 
 library(lda)
@@ -111,4 +111,5 @@ ggplot(df, aes(Number_of_Topics)) +
   labs(x = "Number of Topics", y = "Metric Level",
        title = "Model Metrics per Number of Topics")
 
-
+d
+lapply(

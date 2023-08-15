@@ -157,6 +157,24 @@ private:
 };
 
 
+class CellCountProcessor : public CellProcessor {
+
+public:
+
+  void SetParams() {}
+  
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+
+  void EmitCell() const;
+  
+ private:
+
+  std::vector<size_t> m_counts;
+  
+};
+
 class HeadProcessor : public CellProcessor {
 
 public:
@@ -168,6 +186,7 @@ public:
   int ProcessHeader(CellHeader& header) override;
   
   int ProcessLine(Cell& cell) override;
+
   
  private:
   

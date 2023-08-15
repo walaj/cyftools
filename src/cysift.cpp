@@ -86,6 +86,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  roi         - Trim cells to a region of interest within a given polygon\n"
 "  select      - Select by cell phenotype flags\n"
 "  pheno       - Phenotype cells (set the phenotype flags)\n"
+"  cellcount   - Provide total slide cell count for each cell type\n"
 " --- Numeric ---\n"
 "  mean        - Collapse to mean of each column\n"  
 "  divide      - Divide two columns\n"
@@ -113,6 +114,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  hallucinate - Randomly assign cell phenotypes\n"
 "\n";
 
+static int cellcountfunc(int argc, char** argv);
 static int jaccardfunc(int argc, char** argv);
 static int summaryfunc(int argc, char** argv);
 static int hallucinatefunc(int argc, char** argv);
@@ -195,6 +197,8 @@ int main(int argc, char **argv) {
     val = plotpngfunc(argc, argv);
   } else if (opt::module == "radialdens") {
     val = radialdensfunc(argc, argv);
+  } else if (opt::module == "cellcount") {
+    val = cellcountfunc(argc, argv);
   } else if (opt::module == "subsample") {
     val = subsamplefunc(argc, argv);
   } else if (opt::module == "plot") {
@@ -383,6 +387,39 @@ static int jaccardfunc(int argc, char** argv) {
   build_table();
 
   table.PrintJaccardSimilarity(csv_print, sorted);
+
+  return 0;
+}
+
+static int cellcountfunc(int argc, char** argv) {
+
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    default: die = true;
+    }
+  }
+  
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift cellcount [cysfile]\n"
+      "  Compute the number of cells per marker and output as one \"cell\"\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
+      "    -v, --verbose             Increase output to stderr\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+  
+  CellCountProcessor cellp;
+  cellp.SetCommonParams(opt::outfile, cmd_input, opt::verbose); // really shouldn't need any of these  
+
+  if (table.StreamTable(cellp, opt::infile)) 
+    return 1; // non-zero status on StreamTable
+  
+  cellp.EmitCell();
 
   return 0;
 }
@@ -1318,7 +1355,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "spatial" || opt::module == "radialdens" ||
 	 opt::module == "scramble" || opt::module == "scatter" ||
 	 opt::module == "hallucinate" || opt::module == "summary" ||
-	 opt::module == "jaccard" || 
+	 opt::module == "jaccard" || opt::module == "cellcount" ||
 	 opt::module == "select" || opt::module == "pheno")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
     die = true;

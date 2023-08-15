@@ -1101,6 +1101,34 @@ bool CellTable::HasColumn(const std::string& col) const {
   return m_table.find(col) != m_table.end();
 }
 
+
+/*void CellTable::Collapse() {
+
+  // collect the marker data in one structure
+  std::vector<Tag> markers = m_header.GetMarkerTags();
+
+  auto pflag_ptr = m_table.find("pflag");
+
+  int i = 0;
+  std::vector<size_t> count(markers.size());
+  for (const auto& m : markers) {
+
+    // loop each cell and test the flag for marker m (or i)
+    for (int j = 0; j < CellCount(); j++) {
+      const cy_uint f = pflag_ptr->second->GetNumericElem(j);
+      CellFlag flag(f);
+      cy_uint flag_to_test = 2^i;
+      if (f.testAndOr(flag_to_test,0))
+	count[i]++;
+    }
+    i++;
+  }
+  
+  m_table.erase();
+  m_table.add(CellRow())
+  
+}
+*/
 void CellTable::print_correlation_matrix(const std::vector<std::string>& labels,
 					 const std::vector<std::vector<float>>& correlation_matrix,
 					 bool sort) const {

@@ -73,6 +73,8 @@ class CellHeader {
   size_t size() const { return tags.size(); }
 
   bool isConcatenatable(const CellHeader& header) const;
+
+  void ClearMeta();
   
   void SortTags();
   

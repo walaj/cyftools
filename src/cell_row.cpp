@@ -2,6 +2,23 @@
 
 #include "cell_utils.h"
 
+static void printWithoutScientific(double number) {
+    if (std::abs(number - std::round(number)) < 1e-9) {
+        // If the number is very close to an integer, print as an integer
+        std::cout << static_cast<long long>(number);
+    } else {
+        // Else, print with full precision, without trailing zeros
+        std::cout << std::fixed;
+        std::string out = std::to_string(number);
+        out.erase(out.find_last_not_of('0') + 1, std::string::npos);  // Remove trailing zeros
+        if (out.back() == '.') {
+            out.pop_back();  // Remove trailing decimal point if no fractional part
+        }
+        std::cout << out;
+    }
+}
+
+
 std::ostream& operator<<(std::ostream& os, const Cell& cell) {
     os << cell.m_id << "\t"
        << cell.m_cell_flag << "\t"
@@ -22,14 +39,17 @@ std::ostream& operator<<(std::ostream& os, const Cell& cell) {
 void Cell::Print(int round) const {
 
   char d = ',';
-  
+
   std::cout << m_id << d << m_cell_flag << d << m_pheno_flag << d;
   std::cout << std::setprecision(round) << m_x << d <<
     m_y;
 
   // print cols
-  for (const auto& c : m_cols)
-    std::cout << d << c;
+  for (const auto& c : m_cols) {
+    std::cout << d;
+    printWithoutScientific(c);
+    //    std::cout << std::fixed << d << c;
+  }
 
   // print graph
   /////////

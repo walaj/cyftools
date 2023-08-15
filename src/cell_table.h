@@ -82,6 +82,8 @@ public:
   size_t CellCount() const;
 
   void PlotASCII(int width, int height) const;
+
+  void Collapse();
   
   //////
   // Spatial ops

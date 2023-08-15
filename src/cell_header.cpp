@@ -33,6 +33,14 @@ std::ostream& operator<<(std::ostream& os, const Tag& tag) {
   return os;
 }
 
+void CellHeader::ClearMeta() {
+  
+  // remove meta tags
+  tags.erase(std::remove_if(tags.begin(), tags.end(), 
+			    [](const Tag& t) { return t.type == Tag::CA_TAG; }), 
+	     tags.end());
+  
+}
 
 std::vector<Tag> CellHeader::GetDataTags() const {
 

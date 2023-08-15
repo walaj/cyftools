@@ -99,6 +99,72 @@ void AverageProcessor::EmitCell() const {
   OutputLine(cell);
 }
 
+int CellCountProcessor::ProcessHeader(CellHeader& header) {
+  
+  m_header = header;
+
+  // initialize the count vector
+  size_t num_marker_tags = header.GetMarkerTags().size();
+  m_counts = std::vector<size_t>(num_marker_tags);
+
+  m_header.ClearMeta();
+
+  for (const auto& m : header.GetMarkerTags()) {
+    m_header.addTag(Tag(Tag::CA_TAG, m.id + "_count", ""));
+  }
+
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+
+  m_header.SortTags();
+
+  
+  // just in time, make the output stream
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+  
+  return HEADER_NO_ACTION;
+}
+
+int CellCountProcessor::ProcessLine(Cell& cell) {
+
+  for (size_t i = 0; i < m_counts.size(); i++) {
+    CellFlag f(cell.m_pheno_flag);
+    cy_uint to_test = static_cast<cy_uint>(std::pow(2, i));
+    //    std::cerr << " i " << i << " totest " << to_test << " f " << f << " test " << f.testAndOr(to_test,0) << std::endl;
+    if (f.testAndOr(to_test, 0))
+      m_counts[i]++;
+  }
+
+  return CellProcessor::NO_WRITE_CELL;
+}
+
+void CellCountProcessor::EmitCell() const {
+
+  Cell cell;
+
+  // add markers as dummies
+  for (size_t i = 0; i < m_counts.size(); i++)
+    cell.m_cols.push_back(0);
+
+  // add the count data
+  for (size_t i = 0; i < m_counts.size(); i++)
+    cell.m_cols.push_back(m_counts.at(i));
+
+  // zero the hard data since they are meaningless
+  cell.m_x = 0;
+  cell.m_y = 0;  
+  cell.m_pheno_flag = 0;
+  cell.m_cell_flag = 0;
+  cell.m_id = 0;
+
+  // write the one cell
+  OutputLine(cell);
+  
+}
+
 int SummaryProcessor::ProcessHeader(CellHeader& header) {
   m_header = header;
   size_t num_data_tags = header.GetDataTags().size();
