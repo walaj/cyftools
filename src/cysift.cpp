@@ -190,7 +190,7 @@ int main(int argc, char **argv) {
   } else if (opt::module == "ldacreate") {
     val = ldacreatefunc(argc, argv);
   } else if (opt::module == "ldarun") {
-    val = ldarunfunc(argc, argv);    
+    val = ldarunfunc(argc, argv);
   } else if (opt::module == "clean") {
     val = cleanfunc(argc, argv);
   } else if (opt::module == "png") {

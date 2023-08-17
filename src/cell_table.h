@@ -161,6 +161,7 @@ public:
   //////
   // Latent Dirichlet Allocation ops
   //////
+#ifdef HAVE_LDAPLUSPLUS  
   void LDA_load_model(const std::string& model_file);
 
   void LDA_write_model(const std::string& model_out) const;
@@ -173,6 +174,8 @@ public:
   void LDA_score_cells(const std::string& pdffile,
 		       int topic_highlight,
 		       float cont_cutoff); 
+
+#endif
   
  private:
 

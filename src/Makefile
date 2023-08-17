@@ -2,10 +2,12 @@
 CC=g++
 
 MYHOME=$(HOME)
+BREWHOME=/opt/homebrew/opt
+#USE64BIT=-DUSE_64_BIT
 
-# if on O2 and haven't installed the dependencies, can just grab frmo jaw34
-# then just uncommend below
-#MYHOME=/home/jaw34
+######################################
+####### GITHUB SUBCLONE REPOS ########
+######################################
 
 ## Required libraries
 CEREAL = -I../external/cereal/include ## header only
@@ -14,40 +16,59 @@ CEREAL = -I../external/cereal/include ## header only
 ## Could theoretically have KNN only if want KNN graphs but not umap
 UMAP =  -I../external/umappp/include -I../external/CppIrlba/include -DHAVE_UMAPPP -DKNNCOLLE_NO_KMKNN -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
 KNN = -I../external/knncolle/include -DHAVE_KNNCOLLE
-
-EIGEN = -I$(MYHOME)/software/eigen-3.4.0 -DHAVE_EIGEN
-
+EIGEN = -I../external/eigen -DHAVE_EIGEN -Wno-deprecated-declarations
 
 ## Very optional header-only libraries for alternative neighor finding algorithms (e.g. in UMAP, etc)
-#HNSW = -I$(MYHOME)/git/hnswlib
 KMEANS = -I../external/CppKmeans/include -DHAVE_KMEANS
-#ANNOY = -I$(MYHOME)/git/annoy
-
-## Optional header/lib library for spatial latent dirichlet allocation
-LDA = -I$(MYHOME)/git/supervised-lda/include -DHAVE_LDAPLUSPLUS
-LDALIB = -L $(MYHOME)/git/supervised-lda/lib -lldaplusplus -Wl,-rpath,$(MYHOME)/git/supervised-lda/lib
-
-## Optional library for HDF5 output
-HD5 = -I$(MYHOME)/software/hdf5-1.14.1/include -DHAVE_HDF5
-HD5LIB = -L $(MYHOME)/software/hdf5-1.14.1/lib -lhdf5_cpp -lhdf5
-
-## Optional header/liblibrary for image-based functions
-TIFF = -I$(MYHOME)/software/libtiff-git/include -DHAVE_TIFFLIB
-JPEG = -L/opt/homebrew/opt/jpeg/lib -L/opt/homebrew/Cellar/libpng/1.6.39/lib
-TIFFLD = ${JPEG} -llzma $(MYHOME)/software/libtiff-git/lib/libtiff.a -ljpeg -lz -lpng
 
 ## Optional library for KD-tree functions (radial proximity)
-KDTREE = -I$(MYHOME)/git/KDTree -DHAVE_KDTREE
-KDLIB = -L $(MYHOME)/git/KDTree/lib -lKDTree -Wl,-rpath,$(MYHOME)/git/KDTree/lib
+KDTREE = -I../external/KDTree -DHAVE_KDTREE
 
-# cysift specific parameter
-#USE64BIT=-DUSE_64_BIT
+######################################
+####### OTHER OPTIONAL LIBARARIES ####
+######################################
 
-## set the OMP location
-ODIR := /opt/homebrew/opt/libomp/include
-ifeq ($(wildcard $(ODIR)),)  # If dir does not exist, probably on HMS server
-    OMP := -I$(MYHOME)/software/openmpi-4.1.5/include
-    OMPL := -L$(MYHOME)/software/openmpi-4.1.5/lib -lmpi
+## Optional header/lib library for spatial latent dirichlet allocation
+LDA_INCDIR=$(MYHOME)/git/supervised-lda/included
+ifneq ($(wildcard $(LDA_INCDIR)/*),)
+    LDA=-I$(LDA_INCDIR) -DHAVE_LDAPLUSPLUS
+    LDALIB=-L$(MYHOME)/git/supervised-lda/lib -lldaplusplus -Wl,-rpath,$(MYHOME)/git/supervised-lda/lib
+else
+    $(warning ******************************************************************)
+    $(warning Warning: Directory $(LDA_INCDIR) does not exist or is empty. No LDA functionality will be included)
+    $(warning To fix, please compile and include/link https://github.com/angeloskath/supervised-lda)
+    $(warning ******************************************************************)
+endif
+
+## Optional library for HDF5 output
+HD5_INCDIR=$(MYHOME)/software/hdf5-1.14.1/included
+ifneq ($(wildcard $(HD5_INCDIR)/*),)
+    HD5=-I$(HD5_INCDIR) -DHAVE_HDF5
+    HD5LIB = -L $(MYHOME)/software/hdf5-1.14.1/lib -lhdf5_cpp -lhdf5
+else
+    $(warning ******************************************************************)
+    $(warning Warning: Directory $(HD5_INCDIR) does not exist or is empty. Output to HDF5 will not be included)
+    $(warning To fix, please compile and include/link to HDF5 library)
+    $(warning ******************************************************************)
+endif
+
+## Optional header/liblibrary for image-based functions
+TIFF_INCDIR=$(MYHOME)/software/libtiff-git/includedsd
+ifneq ($(wildcard $(TIFF_INCDIR)/*),) 
+    TIFF = -I$(TIFF_INCDIR) -DHAVE_TIFFLIB
+    JPEG = -L/opt/homebrew/opt/jpeg/lib -L/opt/homebrew/Cellar/libpng/1.6.39/lib	
+    TIFFLD = ${JPEG} -llzma $(MYHOME)/software/libtiff-git/lib/libtiff.a -ljpeg -lz -lpng
+else
+    $(warning ******************************************************************)
+    $(warning Warning: Directory $(TIFF_INCDIR) does not exist or is empty. libtiff will not be included)
+    $(warning To fix, please compile and include/link to libtif and jpeg libraries)
+    $(warning ******************************************************************)
+endif
+
+####### HMS SERVER SPECIFIC ######
+ifneq ($(wildcard $(BREWDIR)),)  # If dir does not exist, probably on HMS server
+    OMP = -I$(MYHOME)/software/openmpi-4.1.5/include
+    OMPL= -L$(MYHOME)/software/openmpi-4.1.5/lib -lmpi
 
 	#CAIRO -- module load cairo
     CAIRO=-DHAVE_CAIRO
@@ -56,21 +77,55 @@ ifeq ($(wildcard $(ODIR)),)  # If dir does not exist, probably on HMS server
     CGALLIB = -lgmp
     #BOOST - module load boost
 
+
+####### MAC SPECIFIC #######
 else
 
     ## Optional libaries for OMP multithreading support
-    OMP := -I/opt/homebrew/opt/libomp/include
-    OMPL = -L/opt/homebrew/opt/libomp/lib -lomp
+    OMP_INCDIR=$(BREWHOME)/libomp/include
+    ifneq ($(wildcard $(OMP_INCDIR)/*),) 
+        OMP = -I$(OMP_INCDIR)
+        OMPL= -L$(BREWHOME)/libomp/lib -lomp
+    else
+        $(warning ******************************************************************)
+        $(warning Warning: Directory $(OMP_INCDIR) does not exist or is empty. OMP will not be included)
+        $(warning To fix, please include OMP libraries for multithreading support)
+        $(warning ******************************************************************)
+    endif
 
-    ## Optional library for PDF support
-    CAIRO = -I/opt/homebrew/opt/cairo/include -DHAVE_CAIRO
-    CAIROLIB = -L /opt/homebrew/opt/cairo/lib -lcairo
+    ## Optional library for PDF/PNG support
+    CAIRO_INCDIR=$(BREWHOME)/cairo/include
+    ifneq ($(wildcard $(CAIRO_INCDIR)/*),) 
+        CAIRO = -I$(CAIRO_INCDIR) -DHAVE_CAIROD
+        CAIROLIB = -L$(BREWHOME)/cairo/lib -lcairo
+    else
+        $(warning ******************************************************************)
+        $(warning Warning: Directory $(CAIRO_INCDIR) does not exist or is empty. Cairo will not be included)
+        $(warning To fix, please include/link Cairo libraries)
+        $(warning ******************************************************************)
+    endif
 
-    ## Optional header-only library for Voronoi diagram support
-    CGAL = -I/opt/homebrew/opt/cgal/include -DHAVE_CGAL
+    ## Optional header library for Voronoi support
+    CGAL_INCDIR=$(BREWHOME)/cgal/include
+    ifneq ($(wildcard $(CGAL_INCDIR)/*),) 
+        CGAL = -I$(CGAL_INCDIR) -DHAVE_CGAL
+    else
+        $(warning ******************************************************************)
+        $(warning Warning: Directory $(CGAL_INCDIR) does not exist or is empty. CGAL will not be included)
+        $(warning To fix, please include CGAL libraries)
+        $(warning ******************************************************************)
+    endif
 
     ## Optional library for better hashing
-    BOOST = -I/opt/homebrew/opt/boost/include -DHAVE_BOOST
+    BOOST_INCDIR=$(BREWHOME)/boost/include
+    ifneq ($(wildcard $(BOOST_INCDIR)/*),) 
+        BOOST = -I$(BOOST_INCDIR) -DHAVE_BOOST
+    else
+        $(warning ******************************************************************)
+        $(warning Warning: Directory $(BOOST_INCDIR) does not exist or is empty. boost will not be included)
+        $(warning To fix, please include Boost libraries)
+        $(warning ******************************************************************)
+    endif
 
     #ML includes
     #MLPACK = -I/opt/homebrew/Cellar/mlpack/4.2.0/include -DHAVE_MLPACK
