@@ -8,17 +8,19 @@ MYHOME=$(HOME)
 #MYHOME=/home/jaw34
 
 ## Required libraries
-CEREAL = -I$(MYHOME)/software/cereal-1.3.2/include ## header only
+CEREAL = -I../external/cereal/include ## header only
 
 ## Required header-only libraries for UMAP functionality (all are required)
 ## Could theoretically have KNN only if want KNN graphs but not umap
-UMAP =  -I$(MYHOME)/git/umappp/include -I$(MYHOME)/git/CppIrlba/include -DHAVE_UMAPPP -DKNNCOLLE_NO_KMKNN -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
+UMAP =  -I../external/umappp/include -I../external/CppIrlba/include -DHAVE_UMAPPP -DKNNCOLLE_NO_KMKNN -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
+KNN = -I../external/knncolle/include -DHAVE_KNNCOLLE
+
 EIGEN = -I$(MYHOME)/software/eigen-3.4.0 -DHAVE_EIGEN
-KNN = -I$(MYHOME)/git/knncolle/include -DHAVE_KNNCOLLE
+
 
 ## Very optional header-only libraries for alternative neighor finding algorithms (e.g. in UMAP, etc)
 #HNSW = -I$(MYHOME)/git/hnswlib
-KMEANS = -I$(MYHOME)/git/CppKmeans/include -DHAVE_KMEANS
+KMEANS = -I../external/CppKmeans/include -DHAVE_KMEANS
 #ANNOY = -I$(MYHOME)/git/annoy
 
 ## Optional header/lib library for spatial latent dirichlet allocation

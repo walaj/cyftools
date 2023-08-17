@@ -1,0 +1,15 @@
+[submodule "external/cereal"]
+	path = external/cereal
+	url = https://github.com/USCiLab/cereal
+[submodule "external/umappp"]
+	path = external/umappp
+	url = https://github.com/LTLA/umappp
+[submodule "external/CppIrlba"]
+	path = external/CppIrlba
+	url = https://github.com/LTLA/CppIrlba
+[submodule "external/knncolle"]
+	path = external/knncolle
+	url = https://github.com/LTLA/knncolle
+[submodule "external/CppKmeans"]
+	path = external/CppKmeans
+	url = https://github.com/LTLA/CppKmeans
