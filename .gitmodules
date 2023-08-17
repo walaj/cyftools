@@ -13,3 +13,6 @@
 [submodule "external/CppKmeans"]
 	path = external/CppKmeans
 	url = https://github.com/LTLA/CppKmeans
+[submodule "external/KDTree"]
+	path = external/KDTree
+	url = https://github.com/walaj/KDTree
