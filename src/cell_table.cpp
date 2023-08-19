@@ -281,7 +281,7 @@ void CellTable::HDF5Write(const std::string& file) const {
 }
 
 std::ostream& operator<<(std::ostream& os, const CellTable& table) {
-
+  
   os << "CellID -- " << table.m_table.at("id")->toString() << std::endl;
   os << "Pheno Flag -- "   << table.m_table.at("pflag")->toString() << std::endl;
   os << "Cell Flag -- "   << table.m_table.at("cflag")->toString() << std::endl;  

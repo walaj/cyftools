@@ -53,7 +53,7 @@ void TiffWriter::SetTile(int h, int w) {
 
   // turn off the tiled flag
   if (h == 0 || w == 0) {
-    TIFFSetTiledOff(m_tif.get());
+    //TIFFSetTiledOff(m_tif.get()); // can't access private tiled flag, so this won't compile with my custom libtiff library
     TIFFUnsetField(m_tif.get(), TIFFTAG_TILEWIDTH);
     TIFFUnsetField(m_tif.get(), TIFFTAG_TILELENGTH);    
   }

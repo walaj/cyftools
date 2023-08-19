@@ -21,7 +21,7 @@ class TiffWriter {
   TiffWriter(const char* c);
     
   // destroy
-  ~TiffWriter() {}
+ ~TiffWriter() {}
 
   bool isTiled();
   

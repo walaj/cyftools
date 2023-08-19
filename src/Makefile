@@ -40,30 +40,6 @@ else
     $(warning ******************************************************************)
 endif
 
-## Optional library for HDF5 output
-HD5_INCDIR=$(MYHOME)/software/hdf5-1.14.1/included
-ifneq ($(wildcard $(HD5_INCDIR)/*),)
-    HD5=-I$(HD5_INCDIR) -DHAVE_HDF5
-    HD5LIB = -L $(MYHOME)/software/hdf5-1.14.1/lib -lhdf5_cpp -lhdf5
-else
-    $(warning ******************************************************************)
-    $(warning Warning: Directory $(HD5_INCDIR) does not exist or is empty. Output to HDF5 will not be included)
-    $(warning To fix, please compile and include/link to HDF5 library)
-    $(warning ******************************************************************)
-endif
-
-## Optional header/liblibrary for image-based functions
-TIFF_INCDIR=$(MYHOME)/software/libtiff-git/includedsd
-ifneq ($(wildcard $(TIFF_INCDIR)/*),) 
-    TIFF = -I$(TIFF_INCDIR) -DHAVE_TIFFLIB
-    JPEG = -L/opt/homebrew/opt/jpeg/lib -L/opt/homebrew/Cellar/libpng/1.6.39/lib	
-    TIFFLD = ${JPEG} -llzma $(MYHOME)/software/libtiff-git/lib/libtiff.a -ljpeg -lz -lpng
-else
-    $(warning ******************************************************************)
-    $(warning Warning: Directory $(TIFF_INCDIR) does not exist or is empty. libtiff will not be included)
-    $(warning To fix, please compile and include/link to libtif and jpeg libraries)
-    $(warning ******************************************************************)
-endif
 
 ####### HMS SERVER SPECIFIC ######
 ifneq ($(wildcard $(BREWDIR)),)  # If dir does not exist, probably on HMS server
@@ -77,9 +53,67 @@ ifneq ($(wildcard $(BREWDIR)),)  # If dir does not exist, probably on HMS server
     CGALLIB = -lgmp
     #BOOST - module load boost
 
+    ## Optional library for HDF5 output
+    # HD5_INCDIR=$(MYHOME)/software/hdf5-1.14.1/included
+    # ifneq ($(wildcard $(HD5_INCDIR)/*),)
+    #     HD5=-I$(HD5_INCDIR) -DHAVE_HDF5
+    #     HD5LIB = -L $(MYHOME)/software/hdf5-1.14.1/lib -lhdf5_cpp -lhdf5
+    # else
+    #     $(warning ******************************************************************)
+    #     $(warning Warning: Directory $(HD5_INCDIR) does not exist or is empty. Output to HDF5 will not be included)
+    #     $(warning To fix, please compile and include/link to HDF5 library)
+    #     $(warning ******************************************************************)
+    # endif    
+
+    ## Optional header/liblibrary for image-based functions
+    # TIFF_INCDIR=$(MYHOME)/software/libtiff-git/includedsd
+    # ifneq ($(wildcard $(TIFF_INCDIR)/*),) 
+    #     TIFF = -I$(TIFF_INCDIR) -DHAVE_TIFFLIB
+    #     JPEG = -L/opt/homebrew/opt/jpeg/lib -L/opt/homebrew/Cellar/libpng/1.6.39/lib	
+    #     TIFFLD = ${JPEG} -llzma $(MYHOME)/software/libtiff-git/lib/libtiff.a -ljpeg -lz -lpng
+    # else
+    #     $(warning ******************************************************************)
+    #     $(warning Warning: Directory $(TIFF_INCDIR) does not exist or is empty. libtiff will not be included)
+    #     $(warning To fix, please compile and include/link to libtif and jpeg libraries)
+    #     $(warning ******************************************************************)
+    # endif
 
 ####### MAC SPECIFIC #######
 else
+
+    ## Optional header/liblibrary for image-based functions
+    TIFF_INCDIR=$(BREWHOME)/libtiff/include
+    ifneq ($(wildcard $(TIFF_INCDIR)/*),) 
+        TIFF = -I$(TIFF_INCDIR) -DHAVE_TIFFLIB
+        JPEG_INCDIR=$(BREWHOME)/libjpeg
+        ifneq ($(wildcard $(JPEG_INCDIR)/*),)
+           JPEG = -L$(BREWHOME)/libjpeg/lib -L$(BREWHOME)/libpng/lib -ljpeg -lpng
+        else
+            $(warning ******************************************************************)
+            $(warning Warning: Directory $(JPEG_INCDIR) does not exist or is empty. jpeg support will not be included)
+            $(warning To fix, please compile and include/link to jpeg library)
+            $(warning ******************************************************************)
+        endif
+        #TIFFLD = ${JPEG} -llzma $(MYHOME)/software/libtiff-git/lib/libtiff.a -ljpeg -lz -lpng
+        TIFFLD = ${JPEG} -llzma -lz -L$(BREWHOME)/libtiff/lib -ltiff
+    else
+        $(warning ******************************************************************)
+        $(warning Warning: Directory $(TIFF_INCDIR) does not exist or is empty. libtiff will not be included)
+        $(warning To fix, please compile and include/link to libtif and jpeg libraries)
+        $(warning ******************************************************************)
+    endif
+
+    ## Optional library for HDF5 output
+    HD5_INCDIR=$(BREWHOME)/hdf5/include
+    ifneq ($(wildcard $(HD5_INCDIR)/*),)
+        HD5=-I$(HD5_INCDIR) -DHAVE_HDF5
+        HD5LIB = -L $(BREWHOME)/hdf5/lib -lhdf5_cpp -lhdf5
+    else
+        $(warning ******************************************************************)
+        $(warning Warning: Directory $(HD5_INCDIR) does not exist or is empty. Output to HDF5 will not be included)
+        $(warning To fix, please compile and include/link to HDF5 library)
+        $(warning ******************************************************************)
+    endif
 
     ## Optional libaries for OMP multithreading support
     OMP_INCDIR=$(BREWHOME)/libomp/include

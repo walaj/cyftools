@@ -30,7 +30,7 @@ class Cell {
   // should make these private?
   
   uint32_t m_id;
-
+  
   cy_uint m_pheno_flag;
   cy_uint m_cell_flag;
   

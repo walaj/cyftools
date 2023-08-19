@@ -18,7 +18,6 @@ static void printWithoutScientific(double number) {
     }
 }
 
-
 std::ostream& operator<<(std::ostream& os, const Cell& cell) {
     os << cell.m_id << "\t"
        << cell.m_cell_flag << "\t"
