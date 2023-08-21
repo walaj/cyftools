@@ -46,14 +46,13 @@ ifneq ($(wildcard $(BREWDIR)),)  # If dir does not exist, probably on HMS server
 
             $(warning ******************************************************************)
             $(warning Assuming HMS file system)
+            $(warning Please add the following modules:)
+            $(warning    module load cairo boost)
             $(warning ******************************************************************)
-
 
     OMP = -I$(MYHOME)/software/openmpi-4.1.5/include
     OMPL= -L$(MYHOME)/software/openmpi-4.1.5/lib -lmpi
 
-    #CAIRO -- module load cairo
-    #BOOST - module load boost
     CAIRO=-DHAVE_CAIRO
     CAIROLIB = -lcairo
     CGALLIB = -lgmp
