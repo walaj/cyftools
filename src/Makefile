@@ -3,7 +3,7 @@ CC=g++
 
 MYHOME=$(HOME)
 BREWHOME=/opt/homebrew/opt
-#USE64BIT=-DUSE_64_BIT
+USE64BIT=-DUSE_64_BIT
 
 ######################################
 ####### GITHUB SUBCLONE REPOS ########
@@ -94,7 +94,6 @@ else
             $(warning To fix, please compile and include/link to jpeg library)
             $(warning ******************************************************************)
         endif
-        #TIFFLD = ${JPEG} -llzma $(MYHOME)/software/libtiff-git/lib/libtiff.a -ljpeg -lz -lpng
         TIFFLD = ${JPEG} -llzma -lz -L$(BREWHOME)/libtiff/lib -ltiff
     else
         $(warning ******************************************************************)

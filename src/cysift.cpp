@@ -50,7 +50,7 @@ static CellTable table;
 
 static void build_table();
 
-static const char* shortopts = "CJjhHNyvmMPr:e:g:G:t:a:i:A:O:d:b:c:s:k:n:r:w:l:L:x:X:o:R:f:D:V:z:";
+static const char* shortopts = "CJjhHNyvmMPr:e:g:G:t:a:i:A:O:d:b:c:s:k:n:r:w:l:L:x:X:o:R:f:D:V:z:S:";
 static const struct option longopts[] = {
   { "verbose",                    no_argument, NULL, 'v' },
   { "threads",                    required_argument, NULL, 't' },
@@ -85,6 +85,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  subsample   - Subsample cells randomly\n"
 "  roi         - Trim cells to a region of interest within a given polygon\n"
 "  select      - Select by cell phenotype flags\n"
+"  sampleselect- Select a particular sample from a multi-sample file\n"
 "  pheno       - Phenotype cells (set the phenotype flags)\n"
 "  cellcount   - Provide total slide cell count for each cell type\n"
 " --- Numeric ---\n"
@@ -114,6 +115,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  hallucinate - Randomly assign cell phenotypes\n"
 "\n";
 
+static int sampleselectfunc(int argc, char** argv);
 static int cellcountfunc(int argc, char** argv);
 static int jaccardfunc(int argc, char** argv);
 static int summaryfunc(int argc, char** argv);
@@ -237,6 +239,8 @@ int main(int argc, char **argv) {
     val = spatialfunc(argc, argv);    
   } else if (opt::module == "select") {
     val = selectfunc(argc, argv);
+  } else if (opt::module == "sampleselect") {
+    val = sampleselectfunc(argc, argv);
   } else if (opt::module == "convolve") {
     val = convolvefunc(argc, argv);
   } else if (opt::module == "head") {
@@ -372,14 +376,21 @@ static int jaccardfunc(int argc, char** argv) {
 
   if (die || in_only_process(argc, argv)) {
     
-    const char *USAGE_MESSAGE =
+    const char *USAGE_MESSAGE = 
       "Usage: cysift jaccard [cysfile]\n"
-      "  Compute the Jaccard similarity score for the cell phenotype flags\n"
-      "    cysfile: filepath or a '-' to stream to stdin\n"
-      "    -j                        Output as a csv file\n"
-      "    -s                        Sort the output by Jaccard score\n"
-      "    -v, --verbose             Increase output to stderr\n"
-      "\n";
+      "  Compute the Jaccard similarity score for the cell phenotype flags.\n"
+      "\n"
+      "Arguments:\n"
+      "  [cysfile]                 Input .cys file path or '-' to stream from stdin.\n"
+      "\n"
+      "Optional Options:\n"
+      "  -j                        Output as a CSV file.\n"
+      "  -s                        Sort the output by Jaccard score.\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift jaccard input.cys -j -s\n"
+      "  cysift jaccard - -v\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -402,13 +413,20 @@ static int cellcountfunc(int argc, char** argv) {
   }
   
   if (die || in_out_process(argc, argv)) {
-    
-    const char *USAGE_MESSAGE =
+
+    const char *USAGE_MESSAGE = 
       "Usage: cysift cellcount [cysfile]\n"
-      "  Compute the number of cells per marker and output as one \"cell\"\n"
-      "    cysfile: filepath or a '-' to stream to stdin\n"
-      "    -v, --verbose             Increase output to stderr\n"
-      "\n";
+      "  Compute the number of cells per marker and output as one \"cell\".\n"
+      "\n"
+      "Arguments:\n"
+      "  [cysfile]                 Input .cys file path or '-' to stream from stdin.\n"
+      "\n"
+      "Optional Options:\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift cellcount input.cys\n"
+      "  cysift cellcount - -v\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -444,16 +462,26 @@ static int scatterfunc(int argc, char** argv) {
   }
 
   if (die || in_out_process(argc, argv)) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift scatter [cysfile]\n"
-      "  Randomly assign cell x,y position\n"
-      "    cysfile: filepath or a '-' to stream to stdin\n"
-      "    -w                        Width of the \"slide\" to scatter on\n"
-      "    -l                        Length of the \"slide\" to scatter on\n"      
-      "    -s                        Random seed\n"
-      "    -v, --verbose             Increase output to stderr\n"
-      "\n";
+
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift scatter <input_cysfile> [output_cysfile]\n"
+      "  Randomly assign cell x,y position and output to a .cys file.\n"
+      "\n"
+      "Arguments:\n"
+      "  <input_cysfile>           Input .cys file path or '-' to stream from stdin.\n"
+      "  [output_cysfile]          Output .cys file path or '-' to stream as a cys-formatted stream to stdout.\n"
+      "\n"
+      "Required Options:\n"
+      "  -w <int>                  Width of the \"slide\" to scatter on.\n"
+      "  -l <int>                  Length of the \"slide\" to scatter on.\n"
+      "\n"
+      "Optional Options:\n"
+      "  -s <int>                  Random seed.\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift scatter input.cys output_scattered.cys -w 100 -l 200\n"
+      "  cysift scatter input.cys - -w 100 -l 200 -s 12345 -v\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -496,15 +524,25 @@ static int hallucinatefunc(int argc, char** argv) {
   }
   
   if (die || in_out_process(argc, argv)) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift hallucinate [cysfile]\n"
-      "  Randomly assign cell phenotypes\n"
-      "    cysfile: filepath or a '-' to stream to stdin\n"
-      "    -n                        Number of cell types possible\n"
-      "    -s                        Random seed\n"
-      "    -v, --verbose             Increase output to stderr\n"
-      "\n";
+
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift hallucinate <input_cysfile> [output_cysfile]\n"
+      "  Randomly assign cell phenotypes and output to a .cys file.\n"
+      "\n"
+      "Arguments:\n"
+      "  <input_cysfile>           Input .cys file path or '-' to stream from stdin.\n"
+      "  [output_cysfile]          Output .cys file path or '-' to stream as a cys-formatted stream to stdout.\n"
+      "\n"
+      "Required Options:\n"
+      "  -n <int>                  Number of cell types possible.\n"
+      "\n"
+      "Optional Options:\n"
+      "  -s <int>                  Random seed.\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift hallucinate input.cys output.cys -n 5\n"
+      "  cysift hallucinate input.cys - -n 5 -s 12345 -v\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -536,17 +574,24 @@ static int scramblefunc(int argc, char** argv) {
   }
 
   if (die || in_out_process(argc, argv)) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift scramble [cysfile]\n"
-      "  Scrambles the cell flag labels among cells\n"
-      "        Essentially cell frequencies stay the same and slide morphology,\n"
-      "        but the labels on each cell are scrambled\n"
-      "    cysfile: filepath or a '-' to stream to stdin\n"
-      "    -P                        Flag to lock phenotype flags (just permute which cells they go to)\n"
-      "    -s <int>                  Random seed\n"
-      "    -v, --verbose             Increase output to stderr\n"
-      "\n";
+
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift scramble <input_cysfile> [output_cysfile]\n"
+      "  Scrambles the cell flag labels among cells. Essentially, cell frequencies stay the same\n"
+      "  and slide morphology, but the labels on each cell are scrambled.\n"
+      "\n"
+      "Arguments:\n"
+      "  <input_cysfile>           Input .cys file path or '-' to stream from stdin.\n"
+      "  [output_cysfile]          Output .cys file path or '-' to stream as a cys-formatted stream to stdout.\n"
+      "\n"
+      "Optional Options:\n"
+      "  -P                        Flag to lock phenotype flags (just permute which cells they go to).\n"
+      "  -s <int>                  Random seed.\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift scramble input.cys output_scrambled.cys\n"
+      "  cysift scramble input.cys - -P -s 12345 -v\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -582,16 +627,25 @@ static int convolvefunc(int argc, char** argv) {
 
   if (die || in_out_process(argc, argv) || microns_per_pixel <= 0) {
     
-    const char *USAGE_MESSAGE =
-      "Usage: cysift convolve [cysfile]\n"
-      "  Perform a convolution to produce a TIFF\n"
-      "    cysfile: filepath or a '-' to stream to stdin\n"
-      "    -i                        Input TIFF file to set params for output\n"
-      "    -d                        Number of microns per pixel (e.g. 0.325). Required\n"
-      "    -w [200]                  Width of the convolution box (in pixels)\n"
-      "    -t [1]                    Number of threads\n"      
-      "    -v, --verbose             Increase output to stderr\n"
-      "\n";
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift convolve <input_cysfile> <output_tiff> [options]\n"
+      "  Perform a convolution to produce a TIFF.\n"
+      "\n"
+      "Arguments:\n"
+      "  <input_cysfile>           Input .cys file path or '-' to stream from stdin.\n"
+      "  <output_tiff>             Path to the output TIFF file.\n"
+      "\n"
+      "Required Options:\n"
+      "  -i <tiff_file>            Input TIFF file to set params for output.\n"
+      "  -d <float>                Number of microns per pixel (e.g. 0.325).\n"
+      "  -w <int>                  Width of the convolution box (in pixels). Default: 200.\n"
+      "\n"
+      "Optional Options:\n"
+      "  -t <int>                  Number of threads. Default: 1.\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift convolve input.cys output.tiff -i input_params.tiff -d 0.325 -w 200\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -659,17 +713,24 @@ static int umapfunc(int argc, char** argv) {
 
   if (die || in_out_process(argc, argv)) {
     
-    const char *USAGE_MESSAGE =
-      "Usage: cysift umap [cysfile]\n"
-      "  Construct the UMAP (in marker space)\n"
-      "    cysfile: filepath or a '-' to stream to stdin\n"
-      "    -k [15]                   Number of neighbors\n"
-      "    -t [1]                    Number of threads\n"
-      "    -D <file>                 Optional output to PDF\n"
-      "    -w [1000]                 Width of the PDF\n"
-      "    -l [1000]                 Length of the PDF\n"
-      "    -v, --verbose             Increase output to stderr\n"
-      "\n";
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift umap <input_cysfile> <output_cysfile> [options]\n"
+      "  Construct the UMAP (in marker space) and output to a .cys file with added umap1 and umap2 columns.\n"
+      "\n"
+      "Arguments:\n"
+      "  <input_cysfile>           Input .cys file path or '-' to stream from stdin.\n"
+      "  <output_cysfile>          Output .cys file path with umap1 and umap2 columns added.\n"
+      "\n"
+      "Options:\n"
+      "  -k <int>                  Number of neighbors. Default: 15.\n"
+      "  -t <int>                  Number of threads. Default: 1.\n"
+      "  -D <file>                 Optional output to PDF.\n"
+      "  -w <int>                  Width of the PDF. Default: 1000.\n"
+      "  -l <int>                  Length of the PDF. Default: 1000.\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift umap input.cys output_umap.cys -k 15 -t 2 -D output.pdf -w 1200 -l 800\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -739,18 +800,26 @@ static int ldacreatefunc(int argc, char** argv) {
   }
   
   if (die || in_only_process(argc, argv)) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift ldacreate [cysfile]\n"
-      "  Create a topic-model learning using Latent Dirichlet Allocation\n"
-      "    <file>: filepath or a '-' to stream to stdin\n"
-      "    -r                        Comma-separated list of inputs to LDA model\n"
-      "    -o                        Output model file\n"
-      //      "    -m                        Input model (won't re-run LDA)\n"            
-      "    -n                        Number of topics [10]\n"
-      "    -i                        Max number of iterations [10]\n"
-      "    -t [1]                    Number of threads\n"      
-      "    -v, --verbose             Increase output to stderr\n";
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift ldacreate <input_file> [options]\n"
+      "  Create a topic-model learning using Latent Dirichlet Allocation.\n"
+      "\n"
+      "Arguments:\n"
+      "  <input_file>              Input file path or '-' to stream from stdin.\n"
+      "\n"
+      "Required Options:\n"
+      "  -r <list>                 Comma-separated list of input data columms to LDA model.\n"
+      "  -o <file>                 Output model file.\n"
+      "\n"
+      "Optional Options:\n"
+      "  -n <int>                  Number of topics. Default: 10.\n"
+      "  -i <int>                  Max number of iterations. Default: 10.\n"
+      "  -t <int>                  Number of threads. Default: 1.\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift ldacreate input.cys -r input1,input2,input3 -o model_output -n 15 -i 20\n"
+      "  cysift ldacreate - -r input1,input2 -o model_output -t 4 -v\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -829,16 +898,27 @@ static int ldarunfunc(int argc, char** argv) {
   }
 
   if (die || in_out_process(argc, argv)) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift ldarun [cysfile]\n"
-      "  Score cells using a pre-computed topic-model learning using Latent Dirichlet Allocation\n"
-      "    <file>: filepath or a '-' to stream to stdin\n"
-      "    -i                        Input model (won't re-run LDA)\n"
-      "    -D                        Output a PDF plot of the topics\n"
-      "    -c                        Cont cutoff\n"
-      "    -l                        Highlight topic\n"      
-      "    -v, --verbose             Increase output to stderr\n";
+
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift ldarun <input_cysfile> <output_cysfile> [options]\n"
+      "  Score cells using a pre-computed topic-model learning using Latent Dirichlet Allocation.\n"
+      "\n"
+      "Arguments:\n"
+      "  <input_cysfile>           Input file path or '-' to stream from stdin.\n"
+      "  <output_cysfile>          Output .cys file path with scored cells.\n"
+      "\n"
+      "Required Options:\n"
+      "  -i <model_file>           Input model file (won't re-run LDA).\n"
+      "\n"
+      "Optional Options:\n"
+      "  -D <pngfile>              Output a PNG plot of the topics.\n"
+      "  -c <float>                Display cutoff (between 0 and 1) to only plot topics for a given cell when that topic exceeds this threshold.\n"
+      "  -l <topic_num>            Highlight topic number in the PDF output (only used with -D).\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift ldarun input.cys output_scored.cys -i model_input\n"
+      "  cysift ldarun input.cys output_scored.cys -i model_input -D -l 3 -c 0.1 -v\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -881,12 +961,21 @@ static int plotpngfunc(int argc, char** argv) {
 
   if (die || in_out_process(argc, argv)) {
     
-    const char *USAGE_MESSAGE =
-      "Usage: cysift png [cysfile]\n"
-      "  Plot as a PNG file\n"
-      "    <file>: filepath or a '-' to stream to stdin\n"
-      "    -f <float>                Fractional scale factor (def 0.25)\n"            
-      "    -v, --verbose             Increase output to stderr\n";
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift png <input_cysfile> <output_png>\n"
+      "  Plot the input as a PNG file.\n"
+      "\n"
+      "Arguments:\n"
+      "  <input_cysfile>           Input file path or '-' to stream from stdin.\n"
+      "  <output_png>              Output PNG file path.\n"
+      "\n"
+      "Options:\n"
+      "  -f <float>                Fractional scale factor. Default: 0.25. (1 means each pixel is 1 x-unit; smaller values result in a smaller image)\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift png input.cys output.png -f 0.5\n"
+      "  cysift png - output.png -f 0.75 -v\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -922,17 +1011,27 @@ static int cleanfunc(int argc, char** argv) {
     }
   }
 
+  
   if (die || in_out_process(argc, argv)) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift clean [cysfile]\n"
-      "  Clean up the data to reduce disk space\n"
-      "    <file>: filepath or a '-' to stream to stdin\n"
-      "    -m,          Remove all marker data\n"
-      "    -M,          Remove all meta data\n"
-      "    -P,          Remove all graph data\n"      
-      "    -C,          Remove all marker,meta,graph data\n"      
-      "    -v, --verbose             Increase output to stderr\n";
+
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift clean <input_cysfile> <output_cysfile> [options]\n"
+      "  Clean up the data to reduce disk space.\n"
+      "\n"
+      "Arguments:\n"
+      "  <input_cysfile>           Input file path or '-' to stream from stdin.\n"
+      "  <output_cysfile>          Output .cys file path or '-' to stream as a cys-formatted stream to stdout.\n"
+      "\n"
+      "Options:\n"
+      "  -m                        Remove all marker data.\n"
+      "  -M                        Remove all meta data.\n"
+      "  -P                        Remove all graph data.\n"
+      "  -C                        Remove all marker, meta, and graph data.\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift clean input.cys cleaned_output.cys -m -M\n"
+      "  cysift clean input.cys - -C\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -976,13 +1075,19 @@ static int catfunc(int argc, char** argv) {
   
   // display help if no input
   if (opt::infile_vec.empty() || die) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift cat [cysfile]\n"
-      "  Concatenate together multiple cell tables\n"
-      "    cysfile: filepaths of cell tables\n"
-      "    -v, --verbose             Increase output to stderr\n"
-      "\n";
+
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift cat <cysfile1> <cysfile2> ... [options]\n"
+      "  Concatenate together multiple cell tables and stream to stdout in .cys format.\n"
+      "\n"
+      "Arguments:\n"
+      "  <cysfile1> <cysfile2> ...  Filepaths of cell tables to concatenate.\n"
+      "\n"
+      "Options:\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift cat table1.cys table2.cys > tablecat.cys\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -1026,7 +1131,8 @@ static int catfunc(int argc, char** argv) {
     this_table.setVerbose(opt::verbose);
 
     if (opt::verbose)
-      std::cerr << "...reading and concatenating " << opt::infile_vec.at(sample_num) << std::endl;
+      std::cerr << "...reading and concatenating " << opt::infile_vec.at(sample_num) <<
+	" of " << opt::infile_vec.size() << " files " << std::endl;
     
     // update the offset and sample num
     catp.SetOffset(offset);
@@ -1045,12 +1151,16 @@ static int summaryfunc(int argc, char** argv) {
 
   // display help if no input
   if (die || in_only_process(argc, argv)) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift summary [cysfile]\n"
-      "  Display brief summary of the cell table\n"
-      "    cysfile: filepath or a '-' to stream to stdin\n"
-      "\n";
+
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift summary <cysfile> [options]\n"
+      "  Display a brief summary of the cell table and print to stdout.\n"
+      "\n"
+      "Arguments:\n"
+      "  <cysfile>                 Input .cys file path or '-' to stream from stdin.\n"
+      "\n"
+      "Example:\n"
+      "  cysift summary table1.cys\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -1079,13 +1189,19 @@ static int summaryfunc(int argc, char** argv) {
 
   // display help if no input
   if (die || in_only_process(argc, argv)) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift info [cysfile]\n"
-      "  Display detailed information on the cell table\n"
-      "    cysfile: filepath or a '-' to stream to stdin\n"
-      "    -v, --verbose             Increase output to stderr\n"
-      "\n";
+
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift info <cysfile> [options]\n"
+      "  Display detailed information on the cell table and print to stdout.\n"
+      "\n"
+      "Arguments:\n"
+      "  <cysfile>                 Input .cys file path or '-' to stream from stdin.\n"
+      "\n"
+      "Options:\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift info table1.cys\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -1101,7 +1217,6 @@ static int summaryfunc(int argc, char** argv) {
 
 static int cutfunc(int argc, char** argv) {
 
-  bool strict_cut = false;
   std::string cut; // list of markers, csv separated, to cut on
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1109,23 +1224,29 @@ static int cutfunc(int argc, char** argv) {
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'x' : arg >> cut; break;
-    case 'X' : strict_cut = true; arg >> cut; break;
-    case 'n' : arg >> opt::n; break;
-    case 'h' : opt::header = true; break;
-    case 'H' : opt::header_only = true; break;
     default: die = true;
     }
   }
 
   if (die || in_out_process(argc, argv)) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift cut [cysfile] <marker1,markers2>\n"
-      "  Cut the file to only certain markers\n"
-      "    <file>: filepath or a '-' to stream to stdin\n"
-      "    -x, --cut                 Comma-separated list of markers to cut to\n"
-      "    -X, --strict-cut          Comma-separated list of markers to cut to\n"      
-      "    -v, --verbose             Increase output to stderr\n";
+
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift cut <input_cysfile> <output_cysfile> -x <marker1,marker2,...> [options]\n"
+      "  Cut the file to only certain markers and output to a .cys file or stream to stdout.\n"
+      "\n"
+      "Arguments:\n"
+      "  <input_cysfile>           Input .cys file path or '-' to stream from stdin.\n"
+      "  <output_cysfile>          Output .cys file path or '-' to stream as a cys-formatted stream to stdout.\n"
+      "\n"
+      "Required Options:\n"
+      "  -x, --cut <markers>       Comma-separated list of markers to cut to.\n"
+      "\n"
+      "Optional Options:\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift cut input.cys output_cut.cys -x marker1,marker2\n"
+      "  cysift cut input.cys - -x marker1,marker2,marker3 -v\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -1165,13 +1286,22 @@ static int meanfunc(int argc, char** argv) {
   }
   
   if (die || in_out_process(argc, argv)) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift mean [cysfile] <options>\n"
-      "  Calculate the mean of each data column\n"
-      "  cysfile: filepath or a '-' to stream to stdin\n"
-      "  -v, --verbose             Increase output to stderr"
-      "\n";
+
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift mean <input_cysfile> <output_cysfile> [options]\n"
+      "  Calculate the mean of each data column and output to a .cys file or stream to stdout.\n"
+      "  The output will contain a single 'cell' with the means for each column.\n"
+      "\n"
+      "Arguments:\n"
+      "  <input_cysfile>           Input .cys file path or '-' to stream from stdin.\n"
+      "  <output_cysfile>          Output .cys file path or '-' to stream as a cys-formatted stream to stdout.\n"
+      "\n"
+      "Options:\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift mean input.cys output_mean.cys\n"
+      "  cysift mean input.cys - -v\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -1356,6 +1486,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "scramble" || opt::module == "scatter" ||
 	 opt::module == "hallucinate" || opt::module == "summary" ||
 	 opt::module == "jaccard" || opt::module == "cellcount" ||
+	 opt::module == "sampleselect" || 
 	 opt::module == "select" || opt::module == "pheno")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
     die = true;
@@ -1580,10 +1711,68 @@ static int headfunc(int argc, char** argv) {
   
 }
 
+ static int sampleselectfunc(int argc, char** argv) {
 
-static int subsamplefunc(int argc, char** argv) {
+   int samplenum = -1;
+   std::string tmpstring;
+   std::string samplestring;
+   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+     std::istringstream arg(optarg != NULL ? optarg : "");
+     switch (c) {
+     case 'v' : opt::verbose = true; break;
+     case 's' :
+       arg >> samplenum;
+       // add to existing
+       if (samplestring.length()) {
+	 tmpstring.clear();
+	 arg >> tmpstring;
+	 samplestring = tmpstring + "," + samplestring;
+       } else {
+	 arg >> samplestring;
+       }
+       break;
+     default: die = true;
+    }
+   }
 
+   std::unordered_set<uint32_t> samples;
+   std::stringstream ss(samplestring);
+   std::string token;
+   while (std::getline(ss, token, ',')) {
+     int sam = std::stoi(token);
+     assert(sam >= 0);
+     samples.insert(sam);
+   }
+   
+   // Process any remaining no-flag options
+   if (die || in_out_process(argc, argv) || samples.size() == 0) {
+     
+     const char *USAGE_MESSAGE =
+       "Usage: cysift sampleselect [cysfile] <options>\n"
+       "  Selects a particular sample from the cell quantification table\n"
+       "    cysfile: filepath or a '-' to stream to stdin\n"
+       "    -s                        Sample number to select on\n"
+       "    -v, --verbose             Increase output to stderr"
+       "\n";
+     std::cerr << USAGE_MESSAGE;
+     return 1;
+   }
+
+  SubsampleProcessor subs;
+  subs.SetCommonParams(opt::outfile, cmd_input, opt::verbose);      
+  subs.SetParams(1, opt::seed, samples); // will just ignore seed. Rate is 1
+  table.StreamTable(subs, opt::infile);
+
+  return 0;
+  
+ }
+
+ 
+ 
+ static int subsamplefunc(int argc, char** argv) {
+   
   float rate = 0;
+
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -1629,8 +1818,8 @@ static int subsamplefunc(int argc, char** argv) {
   } else {
 
     SubsampleProcessor subs;
-    subs.SetCommonParams(opt::outfile, cmd_input, opt::verbose);      
-    subs.SetParams(rate, opt::seed);
+    subs.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+    subs.SetParams(rate, opt::seed, std::unordered_set<uint32_t>()); // the -1 is so that all samples are selected
     table.StreamTable(subs, opt::infile);
     
   }
@@ -2089,14 +2278,39 @@ static int radialdensfunc(int argc, char** argv) {
     return 0;*/
 }
 
+static void cysift_cat(const std::vector<std::string>& inputFiles, const std::string& outputFile) {
+    std::ofstream os(outputFile, std::ios::binary);
+    cereal::PortableBinaryOutputArchive oarchive(os);
+
+    for (size_t i = 0; i < inputFiles.size(); ++i) {
+        std::ifstream is(inputFiles[i], std::ios::binary);
+        cereal::PortableBinaryInputArchive iarchive(is);
+
+	std::cerr << " WORKING ON " << i << " " << inputFiles[i] << std::endl;
+	
+        CellHeader header;
+        if (i == 0) {  // For the first file, serialize the header to the output
+	  std::cerr << " deserializing header " << std::endl;
+            iarchive(header);
+	  std::cerr << " erializing header " << std::endl;	    
+            oarchive(header);
+        } else {  // For subsequent files, skip the header
+            iarchive(header);
+        }
+
+        // Read, then immediately write each cell to the output
+        Cell cell;
+        while (is) {
+	  //std::cerr << "reading " << std::endl;
+            iarchive(cell);
+            oarchive(cell);
+        }
+    }
+}
+ 
 int debugfunc(int argc, char** argv) {
 
-  return 1;
-
-}
-
-static int cerealfunc(int argc, char** argv) {
-  
+  std::string samples;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -2105,20 +2319,85 @@ static int cerealfunc(int argc, char** argv) {
     }
   }
 
+  optind++;
+  
+  // Process any remaining no-flag options
+  while (optind < argc) {
+    opt::infile_vec.push_back(argv[optind]);
+    optind++;
+  }
+
+  //
+  if (opt::verbose)
+    for (const auto& v : opt::infile_vec)
+      std::cerr << "...set to read " << v << std::endl;
+  
+  // display help if no input
+  if (opt::infile_vec.empty() || die) {
+
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift cat <cysfile1> <cysfile2> ... [options]\n"
+      "  Concatenate together multiple cell tables and stream to stdout in .cys format.\n"
+      "\n"
+      "Arguments:\n"
+      "  <cysfile1> <cysfile2> ...  Filepaths of cell tables to concatenate.\n"
+      "\n"
+      "Options:\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift cat table1.cys table2.cys > tablecat.cys\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  cysift_cat(opt::infile_vec, "-");
+  return 1;
+
+}
+
+static int cerealfunc(int argc, char** argv) {
+
+  uint32_t sampleid = static_cast<uint32_t>(-1);
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 's' : arg >> sampleid; break;
+    case 'v' : opt::verbose = true; break;
+    default: die = true;
+    }
+  }
+
+  if (sampleid == static_cast<uint32_t>(-1)) {
+    die = true;
+  }
+  
   if (die || in_out_process(argc, argv)) {
     
+    
     const char *USAGE_MESSAGE =
-      "Usage: cysift cys [cysfile]\n"
-      "  Create a .cys formatted file from a csv file\n" 
-      "    cysfile: filepath or a '-' to stream to stdin\n"
-      "    -v, --verbose         Increase output to stderr\n"      
-      "\n";
+      "Usage: cysift <csvfile> [cysfile]\n"
+      "  Convert a CSV file to a .cys formatted file or stream.\n"
+      "\n"
+      "Arguments:\n"
+      "  <csvfile>                 Input CSV file path.\n"
+      "  [cysfile]                 Output .cys file path or '-' to stream as a cys-formatted stream to stdout.\n"
+      "\n"
+      "Required Options:\n"
+      "  -s, --sampleid <int>      Provide a unique sample id (>= 0).\n"
+      "\n"
+      "Optional Options:\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift input.csv output.cys\n"
+      "  cysift input.csv - -s 12345\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
   CerealProcessor cerp;
-  cerp.SetParams(opt::outfile, cmd_input);
+  cerp.SetParams(opt::outfile, cmd_input, sampleid);
 
   table.StreamTableCSV(cerp, opt::infile);
 
@@ -2292,7 +2571,10 @@ static bool in_out_process(int argc, char** argv) {
   // there should be only 2 non-flag input
   if (count > 2)
     return true;
-
+  // die if no inputs provided
+  if (count == 0)
+    return true;
+  
   if (!check_readable(opt::infile) && opt::infile != "-") {
     std::cerr << "Error: File " << opt::infile << " not readable/exists" << std::endl;
     return true;
@@ -2320,7 +2602,11 @@ static bool in_only_process(int argc, char** argv) {
   // there should be only 1 non-flag input
   if (count > 1)
     return true;
-
+  
+  // die if no inputs provided
+  if (count == 0)
+    return true;
+  
   if (!check_readable(opt::infile) && opt::infile != "-") {
     std::cerr << "Error: File " << opt::infile << " not readable/exists" << std::endl;
     return true;

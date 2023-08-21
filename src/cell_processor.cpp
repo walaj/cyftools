@@ -296,14 +296,26 @@ int SubsampleProcessor::ProcessLine(Cell& line) {
     std::cerr << "...sampled cell " << AddCommas(m_count) << std::endl;
   }
 
-  if (m_dis(m_gen) <= m_rate) {
+  // kludgy, but this processor will EITHER sample select OR
+  // do a rate subsampling, but not both...
+  if (m_samplenum.size() > 0) {
+    if (m_samplenum.count(line.get_sample_id())) {
+      m_kept++;
+
+      if (m_kept % 100000 == 0 && m_verbose) {
+	std::cerr << "...kept cell " << AddCommas(m_kept) << std::endl;
+      }
+      
+    }
+  }
+  
+  else if (m_dis(m_gen) <= m_rate) {
     m_kept++;
 
     if (m_kept % 100000 == 0 && m_verbose) {
       std::cerr << "...kept cell " << AddCommas(m_kept) << " giving rate of " <<
 	static_cast<float>(m_kept)/m_count << std::endl;
     }
-
     
     return WRITE_CELL;
     
@@ -1021,7 +1033,8 @@ int CerealProcessor::ProcessHeader(CellHeader& header) {
 
 int CerealProcessor::ProcessLine(const std::string& line) {
 
-  Cell row(line, m_header);
+  Cell row(line, m_header, m_cellid, m_sampleid);
+  m_cellid++;
 
   // serialize it
   (*m_archive)(row);

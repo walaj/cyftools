@@ -55,11 +55,10 @@ class CellProcessor {
       m_os = std::make_unique<std::ofstream>(m_output_file, std::ios::binary);
       m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(*m_os);
     }
-
     assert(m_archive);
   }
   
-  void OutputLine(const Cell& cell) const {
+  void OutputLine(const Cell& cell) const { 
     assert(m_archive);
     (*m_archive)(cell);
   }
@@ -508,9 +507,10 @@ class SubsampleProcessor : public CellProcessor {
 
 public:
 
-  void SetParams(float rate, int seed) {
+  void SetParams(float rate, int seed, std::unordered_set<uint32_t> samplenum) {
     m_rate = rate;
     m_seed = seed;
+    m_samplenum = samplenum;
   }
 
   int ProcessHeader(CellHeader& header) override;
@@ -519,6 +519,7 @@ public:
 
 private:
 
+  std::unordered_set<uint32_t> m_samplenum;
   float m_rate = 0;
 
   size_t m_count = 0;
@@ -577,9 +578,11 @@ class CerealProcessor : public LineProcessor {
  public:
   
   void SetParams(const std::string& filename,
-		 const std::string& cmd) {
+		 const std::string& cmd,
+		 uint32_t sampleid) {
     m_filename = filename;
     m_cmd = cmd;
+    m_sampleid = sampleid;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -589,7 +592,8 @@ class CerealProcessor : public LineProcessor {
 
 private:
 
-  int cellid;
+  uint32_t m_cellid = 0;
+  uint32_t m_sampleid = 0;  
   std::vector<float> vec1;
 
   std::string m_cmd;

@@ -137,6 +137,8 @@ class CellHeader {
     }
   
   std::vector<Tag> tags;
+
+  size_t num_rows = 0;  // Number of rows in the data
   
 };
 
