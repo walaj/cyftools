@@ -42,7 +42,7 @@ endif
 
 
 ####### HMS SERVER SPECIFIC ######
-ifneq ($(wildcard $(BREWDIR)),)  # If dir does not exist, probably on HMS server
+ifeq ($(wildcard $(BREWDIR)),)  # If dir does not exist, probably on HMS server
 
             $(warning ******************************************************************)
             $(warning Assuming HMS file system)
@@ -103,7 +103,7 @@ else
         EIGEN=-I$(EIGEN_INCDIR) -DHAVE_EIGEN
     else
         $(warning ******************************************************************)
-        $(warning Warning: Directory $(EIGEN_INCDIR) does not exist or is empty.
+        $(warning Warning: Directory $(EIGEN_INCDIR) does not exist or is empty.)
         $(warning To fix, please include Eigen header library)
         $(warning ******************************************************************)
     endif
