@@ -1,7 +1,7 @@
 #CC = /opt/homebrew/Cellar/gcc/12.2.0/bin/g++-12
 CC=g++
 
-MYHOME=$(HOME)
+MYHOME=/home/jaw34
 BREWHOME=/opt/homebrew/opt
 USE64BIT=-DUSE_64_BIT
 
@@ -16,7 +16,7 @@ CEREAL = -I../external/cereal/include ## header only
 ## Could theoretically have KNN only if want KNN graphs but not umap
 UMAP =  -I../external/umappp/include -I../external/CppIrlba/include -DHAVE_UMAPPP -DKNNCOLLE_NO_KMKNN -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
 KNN = -I../external/knncolle/include -DHAVE_KNNCOLLE
-EIGEN = -I../external/eigen -DHAVE_EIGEN -Wno-deprecated-declarations
+#EIGEN = -I../external/eigen -DHAVE_EIGEN -Wno-deprecated-declarations
 
 ## Very optional header-only libraries for alternative neighor finding algorithms (e.g. in UMAP, etc)
 KMEANS = -I../external/CppKmeans/include -DHAVE_KMEANS
@@ -29,7 +29,7 @@ KDTREE = -I../external/KDTree -DHAVE_KDTREE
 ######################################
 
 ## Optional header/lib library for spatial latent dirichlet allocation
-LDA_INCDIR=$(MYHOME)/git/supervised-lda/included
+LDA_INCDIR=$(MYHOME)/git/supervised-lda/include
 ifneq ($(wildcard $(LDA_INCDIR)/*),)
     LDA=-I$(LDA_INCDIR) -DHAVE_LDAPLUSPLUS
     LDALIB=-L$(MYHOME)/git/supervised-lda/lib -lldaplusplus -Wl,-rpath,$(MYHOME)/git/supervised-lda/lib
@@ -43,40 +43,24 @@ endif
 
 ####### HMS SERVER SPECIFIC ######
 ifneq ($(wildcard $(BREWDIR)),)  # If dir does not exist, probably on HMS server
+
+            $(warning ******************************************************************)
+            $(warning Assuming HMS file system)
+            $(warning ******************************************************************)
+
+
     OMP = -I$(MYHOME)/software/openmpi-4.1.5/include
     OMPL= -L$(MYHOME)/software/openmpi-4.1.5/lib -lmpi
 
-	#CAIRO -- module load cairo
+    #CAIRO -- module load cairo
+    #BOOST - module load boost
     CAIRO=-DHAVE_CAIRO
-    #CGAL=-I$(MYHOME)/software/CGAL-5.5.2/include -DHAVE_CGAL
     CAIROLIB = -lcairo
     CGALLIB = -lgmp
-    #BOOST - module load boost
+    EIGEN=-I$(MYHOME)/software/eigen-3.4.0/ -DHAVE_EIGEN
 
-    ## Optional library for HDF5 output
-    # HD5_INCDIR=$(MYHOME)/software/hdf5-1.14.1/included
-    # ifneq ($(wildcard $(HD5_INCDIR)/*),)
-    #     HD5=-I$(HD5_INCDIR) -DHAVE_HDF5
-    #     HD5LIB = -L $(MYHOME)/software/hdf5-1.14.1/lib -lhdf5_cpp -lhdf5
-    # else
-    #     $(warning ******************************************************************)
-    #     $(warning Warning: Directory $(HD5_INCDIR) does not exist or is empty. Output to HDF5 will not be included)
-    #     $(warning To fix, please compile and include/link to HDF5 library)
-    #     $(warning ******************************************************************)
-    # endif    
+    #CGAL=-I$(MYHOME)/software/CGAL-5.5.2/include -DHAVE_CGAL
 
-    ## Optional header/liblibrary for image-based functions
-    # TIFF_INCDIR=$(MYHOME)/software/libtiff-git/includedsd
-    # ifneq ($(wildcard $(TIFF_INCDIR)/*),) 
-    #     TIFF = -I$(TIFF_INCDIR) -DHAVE_TIFFLIB
-    #     JPEG = -L/opt/homebrew/opt/jpeg/lib -L/opt/homebrew/Cellar/libpng/1.6.39/lib	
-    #     TIFFLD = ${JPEG} -llzma $(MYHOME)/software/libtiff-git/lib/libtiff.a -ljpeg -lz -lpng
-    # else
-    #     $(warning ******************************************************************)
-    #     $(warning Warning: Directory $(TIFF_INCDIR) does not exist or is empty. libtiff will not be included)
-    #     $(warning To fix, please compile and include/link to libtif and jpeg libraries)
-    #     $(warning ******************************************************************)
-    # endif
 
 ####### MAC SPECIFIC #######
 else
@@ -113,6 +97,18 @@ else
         $(warning To fix, please compile and include/link to HDF5 library)
         $(warning ******************************************************************)
     endif
+
+    ## Required library for Eigen support
+    EIGEN_INCDIR=$(BREWHOME)/eigen/include/eigen3/
+    ifneq ($(wildcard $(HD5_INCDIR)/*),)
+        EIGEN=-I$(EIGEN_INCDIR) -DHAVE_EIGEN
+    else
+        $(warning ******************************************************************)
+        $(warning Warning: Directory $(EIGEN_INCDIR) does not exist or is empty.
+        $(warning To fix, please include Eigen header library)
+        $(warning ******************************************************************)
+    endif
+
 
     ## Optional libaries for OMP multithreading support
     OMP_INCDIR=$(BREWHOME)/libomp/include
