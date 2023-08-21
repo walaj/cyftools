@@ -16,6 +16,3 @@
 [submodule "external/KDTree"]
 	path = external/KDTree
 	url = https://github.com/walaj/KDTree
-[submodule "external/eigen"]
-	path = external/eigen
-	url = https://gitlab.com/libeigen/eigen
