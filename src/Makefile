@@ -226,7 +226,6 @@ SRCS = cysift.cpp \
        tiff_image.cpp \
        tiff_cp.cpp \
        color_map.cpp \
-       kdtree.cpp \
        cell_selector.cpp \
        cell_synth.cpp
 
