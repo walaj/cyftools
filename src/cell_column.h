@@ -49,7 +49,7 @@ public:
   
   virtual void Log10() = 0;
   
-  virtual float GetNumericElem(size_t i) const = 0;
+  //virtual float GetNumericElem(size_t i) const = 0;
   
   virtual std::string GetStringElem(size_t i) const = 0;
   
@@ -80,7 +80,7 @@ class NumericColumn : public Column {
   
   NumericColumn() {
     
-    if (std::is_same_v<T, cy_uint>) {
+    if (std::is_same_v<T, uint32_t> || std::is_same_v<T, uint64_t>) {
       m_type = ColumnType::INT;
     } else if (std::is_same_v<T, float>) {
       m_type = ColumnType::FLOAT;
@@ -121,7 +121,7 @@ class NumericColumn : public Column {
     return std::make_shared<NumericColumn<T>>(*this);
   }
 
-  float GetNumericElem(size_t i) const override {
+  T GetNumericElem(size_t i) const {
     if (i >= m_vec.size())
       throw std::out_of_range("Index out of range");
     return m_vec.at(i);
@@ -274,6 +274,10 @@ class NumericColumn : public Column {
       return m_vec;
     }
 
+  std::vector<T> copyData() const {
+    return m_vec;
+  }
+
   void reserve(size_t n) override {
     m_vec.clear();
     m_vec.reserve(n);
@@ -299,6 +303,8 @@ protected:
 
     std::optional<size_t> m_precision;
 };
+
+/*
 
 class StringColumn : public Column {
 public:
@@ -356,7 +362,6 @@ public:
   
   // Do nothing for StringColumn (or have dummies)
   void Log10() override {}
-  float GetNumericElem(size_t i) const override { return 0; }
   float Mean() const override { return 0;   }
   float Min() const override { return 0;   }
   float Max() const override { return 0;   }
@@ -484,7 +489,6 @@ class GraphColumn : public Column {
 
   // do nothing for GraphColumn (or have dummies)
   void Log10() override {}
-  float GetNumericElem(size_t i) const override { return 0; }
   float Mean() const override { return 0;   }
   float Min() const override { return 0;   }
   float Max() const override { return 0;   }
@@ -540,19 +544,13 @@ class GraphColumn : public Column {
   std::vector<CellNode> m_vec;
 
 };
-
+*/
+/*
 class FlagColumn : public Column {
 
  public:
  
   FlagColumn() = default;
-
-  /*FlagColumn(const std::shared_ptr<StringColumn> st) {
-    this->reserve(st->size());
-    for (size_t i = 0; i < st->size(); i++) {
-      this->PushElem(CellFlag(st->GetStringElem(i)));
-    }
-    }*/
 
   FlagColumn(const std::shared_ptr<NumericColumn<cy_uint>> st) {
     this->reserve(st->size());
@@ -560,12 +558,6 @@ class FlagColumn : public Column {
       this->PushElem(CellFlag(st->GetNumericElem(i)));
     }
   }
-
-  /*  bool TestFlag(cy_uint on, cy_uint off, size_t i) const {
-    if (i >= m_vec.size())
-      throw std::out_of_range("Index out of range");
-    return m_vec.at(i).test(on, off);
-    }*/
 
   void Scramble(int seed) override {
     std::default_random_engine rng(seed);
@@ -630,7 +622,6 @@ class FlagColumn : public Column {
 
   // do nothing for FlagColumn (or have dummies)
   void Log10() override {}
-  float GetNumericElem(size_t i) const override { return 0; }
   float Mean() const override { return 0;   }
   float Min() const override { return 0;   }
   float Max() const override { return 0;   }
@@ -686,14 +677,17 @@ class FlagColumn : public Column {
   std::vector<CellFlag> m_vec;
   
 };
+*/
 
 // aliases
 using IntCol = NumericColumn<cy_uint>;
+using IDCol = NumericColumn<uint64_t>;
 using FloatCol = NumericColumn<float>;
 
-using GraphColPtr = std::shared_ptr<GraphColumn>;
+using IDColPtr    = std::shared_ptr<IDCol>;
+//using GraphColPtr = std::shared_ptr<GraphColumn>;
 using IntColPtr   = std::shared_ptr<IntCol>;
 using FloatColPtr = std::shared_ptr<FloatCol>;
-using StringColPtr= std::shared_ptr<StringColumn>;
-using FlagColPtr  = std::shared_ptr<FlagColumn>;
+//using StringColPtr= std::shared_ptr<StringColumn>;
+//using FlagColPtr  = std::shared_ptr<FlagColumn>;
 using ColPtr      = std::shared_ptr<Column>;

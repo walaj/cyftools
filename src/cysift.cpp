@@ -8,6 +8,7 @@
 #include <regex>
 
 #include "cell_row.h"
+#include "cell_selector.h"
 
 #ifdef HAVE_TIFFLIB
 #include "tiff_reader.h"
@@ -42,15 +43,14 @@ namespace opt {
 
 // process in and outfile cmd arguments
 static bool in_out_process(int argc, char** argv);
-
-// process in cmd arguments
+static bool out_only_process(int argc, char** argv);
 static bool in_only_process(int argc, char** argv);
 
 static CellTable table;
 
 static void build_table();
 
-static const char* shortopts = "CJjhHNyvmMPr:e:g:G:t:a:i:A:O:d:b:c:s:k:n:r:w:l:L:x:X:o:R:f:D:V:z:S:";
+static const char* shortopts = "CJjhHNyvmMPr:e:g:G:p:t:a:i:A:O:d:b:c:s:k:n:r:w:l:L:x:X:o:R:f:D:V:z:S:";
 static const struct option longopts[] = {
   { "verbose",                    no_argument, NULL, 'v' },
   { "threads",                    required_argument, NULL, 't' },
@@ -93,7 +93,9 @@ static const char *RUN_USAGE_MESSAGE =
 "  divide      - Divide two columns\n"
 "  log10       - Apply a base-10 logarithm transformation to the data\n"
 "  jaccard     - Calculate the Jaccard similarty coeffiecient for cell flags\n"
-"  pearson     - Calculate the Pearson correlation between marker intensities\n"  
+"  pearson     - Calculate the Pearson correlation between marker intensities\n"
+" --- Clustering ---\n"
+"  dbscan      - Cluster cells based on the DBSCAN method\n"
 " --- PDF/PNG ---\n"
 "  png         - Plot PNG\n"
   //"  plot       - Generate an ASCII style plot\n"
@@ -101,7 +103,7 @@ static const char *RUN_USAGE_MESSAGE =
 " --- Graph ops ---\n"
 "  delaunay    - Calculate the Delaunay triangulation\n"
 "  umap        - Construct the marker space UMAP\n"
-"  spatial     - Construct the spatial KNN graph\n"
+  //"  spatial     - Construct the spatial KNN graph\n"
 "  tumor       - Set the tumor flag using KNN approach\n"
 "  radialdens  - Calculate density of cells within a radius\n"  
 " --- Convolution ---\n"
@@ -113,8 +115,11 @@ static const char *RUN_USAGE_MESSAGE =
 "  scramble    - Randomly permute the phenotype flags\n"
 "  scatter     - Randomly assign x and y positions throughout the slide\n"
 "  hallucinate - Randomly assign cell phenotypes\n"
+"  synth       - Various approaches for creating synthetic data\n"  
 "\n";
 
+static int syntheticfunc(int argc, char** argv);
+static int dbscanfunc(int argc, char** argv);
 static int sampleselectfunc(int argc, char** argv);
 static int cellcountfunc(int argc, char** argv);
 static int jaccardfunc(int argc, char** argv);
@@ -153,7 +158,7 @@ static int cutfunc(int argc, char** argv);
 static int umapfunc(int argc, char** argv);
 static int radiusfunc(int argc, char** argv);
 static int selectfunc(int argc, char** argv);
-static int spatialfunc(int argc, char** argv); 
+//static int spatialfunc(int argc, char** argv); 
 static int phenofunc(int argc, char** argv);
 
 static void parseRunOptions(int argc, char** argv);
@@ -235,8 +240,8 @@ int main(int argc, char **argv) {
     return (catfunc(argc, argv));
   } else if (opt::module == "umap") {
     val = umapfunc(argc, argv);
-  } else if (opt::module == "spatial") {
-    val = spatialfunc(argc, argv);    
+    //  } else if (opt::module == "spatial") {
+    //val = spatialfunc(argc, argv);    
   } else if (opt::module == "select") {
     val = selectfunc(argc, argv);
   } else if (opt::module == "sampleselect") {
@@ -251,6 +256,10 @@ int main(int argc, char **argv) {
     val = delaunayfunc(argc, argv);
   } else if (opt::module == "reheader") {
     val = reheaderfunc(argc, argv);
+  } else if (opt::module == "synth") {
+    val = syntheticfunc(argc, argv);
+  } else if (opt::module == "dbscan") {
+    val = dbscanfunc(argc, argv);
   } else if (opt::module == "pheno") {
     val = phenofunc(argc, argv);
   } else if (opt::module == "summary") {
@@ -358,6 +367,146 @@ static int reheaderfunc(int argc, char** argv) {
   */
 
   return 0;
+}
+
+static int dbscanfunc(int argc, char** argv) {
+  
+  // flag selection
+  cy_uint por = static_cast<cy_uint>(-1);
+  cy_uint pand = static_cast<cy_uint>(-1);
+  bool pnot = false;
+
+  cy_uint cor = static_cast<cy_uint>(-1);
+  cy_uint cand = static_cast<cy_uint>(-1);
+  bool cnot = false;
+
+  // field selection
+  bool or_toggle = false;
+  std::string sholder;
+  float holder;
+
+  // dbscan params
+  float epsilon = 100.0f;
+  int min_size = 25;
+  int min_cluster_size = 100;
+  
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'o' : arg >> por; break;
+    case 'a' : arg >> pand; break;
+    case 'N' : pnot = true; break;
+    case 'O' : arg >> cor; break;
+    case 'A' : arg >> cand; break;
+    case 'M' : cnot = true; break;
+    case 'v' : opt::verbose = true; break;
+    case 'e' : arg >> epsilon; break;
+    case 's' : arg >> min_size; break;
+    case 'c' : arg >> min_cluster_size; break;            
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv) || min_size < 0) {
+    
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift dbscan [cysfile]\n"
+      "  Cluster cells based on the DBSCAN algorithm\n"
+      "\n"
+      "Arguments:\n"
+      "  [cysfile]                 Input .cys file path or '-' to stream from stdin.\n"
+      "\n"
+      "Optional Options:\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "    -o                    Cell phenotype: Logical OR flags\n"
+      "    -a                    Cell phenotype: Logical AND flags\n"
+      "    -N                    Cell phenotype: Not flag\n"
+      "    -O                    Cell flag: Logical OR flags\n"
+      "    -A                    Cell flag: Logical AND flags\n"
+      "    -M                    Cell flag: Not flag\n"
+      "    -e                    Epsilon parameter for DBSCAN\n"
+      "    -s                    Min size parameter for DBSCAN\n"
+      "    -c                    Min cluster size (otherwise mark as zero)\n"
+      "\n"
+      "Example:\n"
+      "  cysift dbscan input.cys output.cys\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  CellSelector select(por, pand, pnot,
+		      cor, cand, cnot);
+  
+  build_table();
+
+  table.SetupOutputWriter(opt::outfile);
+  
+  table.clusterDBSCAN(select, epsilon, min_size, min_cluster_size);
+  
+  table.OutputTable();
+  
+  return 0;
+  
+}
+
+static int syntheticfunc(int argc, char** argv) {
+
+  string module;
+  int width = 1000;
+  int height = 1000;
+  int num_clusters = 10;
+  int num_points = 100;
+  double sigma = 100;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 's' : arg >> opt::seed; break;
+    case 'm' : arg >> module; break;
+    case 'w' : arg >> width; break;
+    case 'l' : arg >> height; break;
+    case 'p' : arg >> num_points; break;
+    case 'n' : arg >> num_clusters; break;
+    case 'e' : arg >> sigma; break;
+    default: die = true;
+    }
+  }
+
+  if (die || out_only_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift synthetic [cysfile]\n"
+      "  Various modules for creating synthetic data\n"
+      "\n"
+      "Arguments:\n"
+      "  [cysfile]                 Output .cys file path or '-' to stream to stdout.\n"
+      "\n"
+      "Optional Options:\n"
+      "  -s <int>                  Random seed.\n"
+      "  -w <int>                  Width of synthetic cysfile\n"
+      "  -l <int>                  Length of synthetic cysfile\n"
+      "  -p <int>                  Number of points per cluster\n"
+      "  -n <int>                  Number of clusters\n"
+      "  -e <float>                Sigma parameter on cluster distribution\n"            
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift synthetic -m cluster\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+
+  CellSynth synth(width, height);
+
+  synth.SetSeed(opt::seed);
+  
+  synth.Clusters(num_clusters, num_points, sigma, 1);
+
+  synth.WriteTable(opt::outfile);
+
+  return 0;
+  
 }
 
 static int jaccardfunc(int argc, char** argv) {
@@ -950,11 +1099,13 @@ static int plotpngfunc(int argc, char** argv) {
 #ifdef HAVE_CAIRO
   
   float scale_factor = 0.25f;
+  string colname;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'f' : arg >> scale_factor; break;
+    case 'm' : arg >> colname; break;      
     default: die = true;
     }
   }
@@ -971,6 +1122,7 @@ static int plotpngfunc(int argc, char** argv) {
       "\n"
       "Options:\n"
       "  -f <float>                Fractional scale factor. Default: 0.25. (1 means each pixel is 1 x-unit; smaller values result in a smaller image)\n"
+      "  -m <string>               Column name to color by\n"                 
       "  -v, --verbose             Increase output to stderr.\n"
       "\n"
       "Example:\n"
@@ -983,7 +1135,7 @@ static int plotpngfunc(int argc, char** argv) {
   // stream into memory
   build_table();
   
-  table.PlotPNG(opt::outfile, scale_factor);
+  table.PlotPNG(opt::outfile, scale_factor, colname);
   
   return 0;
 
@@ -1482,11 +1634,12 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "delaunay" || opt::module == "head" || 
 	 opt::module == "mean" || opt::module == "ldacreate" ||
 	 opt::module == "ldarun" || opt::module == "png" || 
-	 opt::module == "spatial" || opt::module == "radialdens" ||
+	 opt::module == "radialdens" ||
 	 opt::module == "scramble" || opt::module == "scatter" ||
 	 opt::module == "hallucinate" || opt::module == "summary" ||
 	 opt::module == "jaccard" || opt::module == "cellcount" ||
-	 opt::module == "sampleselect" || 
+	 opt::module == "synth" || 
+	 opt::module == "sampleselect" || opt::module == "dbscan" || 
 	 opt::module == "select" || opt::module == "pheno")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
     die = true;
@@ -1923,7 +2076,7 @@ static int cropfunc(int argc, char** argv) {
   return 0;
   
 }
-
+/*
 static int spatialfunc(int argc, char** argv) {
 
   int n = 10;
@@ -1966,16 +2119,17 @@ static int spatialfunc(int argc, char** argv) {
 
   return 0;
 }
-
+*/
+ 
 static int selectfunc(int argc, char** argv) {
 
   // flag selection
   cy_uint plogor = 0;
-  cy_uint plogand = 0;
+  cy_uint plogand = static_cast<cy_uint>(-1);
   bool plognot = false;
 
   cy_uint clogor = 0;
-  cy_uint clogand = 0;
+  cy_uint clogand = static_cast<cy_uint>(-1);
   bool clognot = false;
 
   // field selection
@@ -2013,6 +2167,8 @@ static int selectfunc(int argc, char** argv) {
     }
   }
 
+  CellSelector cellselect(plogor, plogand, plognot, clogor, clogand, clognot);
+  
   if (field_vec.size() > 1) {
 
     // make sure fields and criteria line up
@@ -2073,7 +2229,7 @@ static int selectfunc(int argc, char** argv) {
   if (radius <= 0) {
     SelectProcessor select;
     select.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-    select.SetFlagParams(plogor, plogand, plognot, clogor, clogand, clognot); 
+    select.SetFlagParams(cellselect); //plogor, plogand, plognot, clogor, clogand, clognot); 
     select.SetFieldParams(criteria, or_toggle);
     
     // process
@@ -2087,14 +2243,13 @@ static int selectfunc(int argc, char** argv) {
 
   table.SetupOutputWriter(opt::outfile);
   
-  table.Select(plogor, clogor, plogand, clogand,
-	       plognot, clognot,
+  table.Select(cellselect, 
 	       criteria,
 	       or_toggle,
 	       radius);
 
   table.OutputTable();
-  
+
   return 0;
 }
 
@@ -2222,12 +2377,8 @@ static int radialdensfunc(int argc, char** argv) {
       rsv.push_back(RadialSelector(line));
     }
     
-    if (opt::verbose) {
-      for (const auto& rr : rsv)
-	std::cerr << rr << std::endl;
-    }
   }
-
+ 
   
   // streaming way
   //RadialProcessor radp;
@@ -2616,3 +2767,27 @@ static bool in_only_process(int argc, char** argv) {
 
 }
 
+static bool out_only_process(int argc, char** argv) {
+  
+  optind++;
+  // Process any remaining no-flag options
+  size_t count = 0;
+  while (optind < argc) {
+    if (opt::outfile.empty()) {
+      opt::outfile = argv[optind];
+    }
+    count++;
+    optind++;
+  }
+  
+  // there should be only 1 non-flag input
+  if (count > 1)
+    return true;
+  
+  // die if no inputs provided
+  if (count == 0)
+    return true;
+  
+  return opt::outfile.empty();
+
+}

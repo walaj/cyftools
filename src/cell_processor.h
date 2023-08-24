@@ -3,6 +3,7 @@
 #include "cell_header.h"
 #include "cell_row.h"
 #include "cysift.h"
+#include "cell_selector.h"
 #include "polygon.h"
 
 #include <string>
@@ -350,16 +351,9 @@ class CountProcessor : public CellProcessor {
 class SelectProcessor : public CellProcessor {
   
  public:
-
-  void SetFlagParams(cy_uint plogor, cy_uint plogand, bool plognot,
-		 cy_uint clogor, cy_uint clogand, bool clognot) {
-    m_por   = plogor;
-    m_pand  = plogand;
-    m_pnot  = plognot;
-    m_cor  = clogor;
-    m_cand = clogand;
-    m_cnot = clognot;
-    
+  
+  void SetFlagParams(CellSelector select) {
+    m_select = select;
   }
 
   void SetFieldParams(const SelectOpMap criteria, bool or_toggle) {
@@ -373,18 +367,8 @@ class SelectProcessor : public CellProcessor {
   
  private:
 
-  // or flags
-  cy_uint m_por;
-  cy_uint m_cor;
+  CellSelector m_select;
   
-  // and flags
-  cy_uint m_pand;
-  cy_uint m_cand;  
-
-  // should we NOT the output
-  bool m_pnot;
-  bool m_cnot;  
-
   // field selectors
   SelectOpMap m_criteria;
   SelectOpNumMap m_criteria_int;  

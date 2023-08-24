@@ -1,11 +1,21 @@
 #include "cell_table.h"
 #include "csv.h"
 #include "color_map.h"
+#include "cell_selector.h"
 
 #include <random>
 #include <array>
 #include <cstdlib>
 #include <delaunator.hpp>
+
+#ifdef HAVE_MLPACK
+#include <mlpack/core.hpp>
+#include <mlpack/methods/dbscan/dbscan.hpp>
+#endif
+
+#ifdef HAVE_DBSCAN
+#include "dbscan.h"
+#endif
 
 #ifdef HAVE_BOOST
 #include <boost/functional/hash.hpp>
@@ -97,7 +107,48 @@ bool CellTable::ContainsColumn(const std::string& name) const {
   return m_table.count(name) > 0;
 }
 
-void CellTable::HDF5Write(const std::string& file) const {
+
+CellTable::CellTable(size_t num_cells) {
+
+  // make the ID
+  m_id_ptr = std::make_shared<IntCol>();
+  m_id_ptr->resize(num_cells);
+  //std::shared_ptr<NumericColumn<uint64_t>> id = make_shared<NumericColumn<uint64_t>>();
+  //id->resize(num_cells);
+
+  // instantiate with ids
+  for (size_t i = 0; i < num_cells; i++) {
+    uint64_t mid = static_cast<uint64_t>(0) << 32 | (i+1); // 0 is sample id
+    m_id_ptr->SetNumericElem(mid, i);
+  }
+  //m_table["id"] = id;
+  
+  // make the flag columns
+  m_pflag_ptr = std::make_shared<IntCol>();
+  m_cflag_ptr = std::make_shared<IntCol>();
+  m_pflag_ptr->resize(num_cells);
+  m_cflag_ptr->resize(num_cells);  
+  //std::shared_ptr<NumericColumn<cy_uint>> pflag = make_shared<NumericColumn<cy_uint>>();
+  //std::shared_ptr<NumericColumn<cy_uint>> cflag = make_shared<NumericColumn<cy_uint>>();
+  //pflag->resize(num_cells);
+  //cflag->resize(num_cells);
+  //m_table["pflag"] = pflag;
+  //m_table["cflag"] = cflag;
+
+  // make the x and y columns
+  m_x_ptr = std::make_shared<FloatCol>();
+  m_y_ptr = std::make_shared<FloatCol>();
+  m_x_ptr->resize(num_cells);
+  m_y_ptr->resize(num_cells);  
+  //std::shared_ptr<NumericColumn<float>> x = make_shared<FloatCol>();
+  //std::shared_ptr<NumericColumn<float>> y = make_shared<FloatCol>();  
+  //x->resize(num_cells);
+  //y->resize(num_cells);
+  //m_table["x"] = pflag;
+  //m_table["y"] = cflag;
+}
+
+/*void CellTable::HDF5Write(const std::string& file) const {
 
 #ifdef HAVE_HDF5
   
@@ -153,8 +204,9 @@ void CellTable::HDF5Write(const std::string& file) const {
   for (const auto& t : obs_strings) {
     const auto& ptr = m_table.find(std::string(t));
     assert(ptr != m_table.end());
-    for (size_t i = 0; i < ptr->second->size(); i++) {
-      flat_data_meta.push_back(ptr->second->GetNumericElem(i));
+    const FloatColPtr fp = dynamic_pointer_cast<FloatCol>(ptr->second);
+    for (size_t i = 0; i < fp->size(); i++) {
+      flat_data_meta.push_back(fp->getData().at(i));
     }
   }
   
@@ -167,8 +219,9 @@ void CellTable::HDF5Write(const std::string& file) const {
   for (const auto& t : var_strings) {
     const auto& ptr = m_table.find(std::string(t));
     assert(ptr != m_table.end());
+    const FloatColPtr fp = dynamic_pointer_cast<FloatCol>(ptr->second);    
     for (size_t i = 0; i < ptr->second->size(); i++) {
-      flat_data.push_back(ptr->second->GetNumericElem(i));
+      flat_data.push_back(fp->getData().at(i));
     }
   }
 
@@ -178,9 +231,10 @@ void CellTable::HDF5Write(const std::string& file) const {
   // setup for cellid
   std::vector<const char*> id_data;
   std::vector<std::unique_ptr<char[]>> unique_id_data;
-  const auto& ptr = m_table.find("id");
-  for (size_t i = 0; i < ptr->second->size(); i++) {
-    std::string str = "cellid_" + std::to_string(static_cast<uint32_t>(ptr->second->GetNumericElem(i)));
+  assert(m_table.find("id") != m_table.end());
+  const IDColPtr ptr = dynamic_pointer_cast<IDCol>(m_table.at("id"));
+  for (size_t i = 0; i < ptr->size(); i++) {
+    std::string str = "cellid_" + std::to_string(static_cast<uint32_t>(ptr->getData().at(i) & 0xFFFFFFFF));
     std::unique_ptr<char[]> cstr(new char[str.length() + 1]);
     //std::strcpy(cstr.get(), str.c_str());
     std::strncpy(cstr.get(), str.c_str(), str.size() + 1);
@@ -214,9 +268,12 @@ void CellTable::HDF5Write(const std::string& file) const {
     H5::DataSet obs_dataset(group.createDataSet(o, H5::PredType::NATIVE_FLOAT, obs_dataspace));
     std::vector<float> odata;
     const auto ptr = m_table.find(o);
+    assert(ptr != m_table.end());
+    const FloatColPtr fp = dynamic_pointer_cast<FloatCol>(ptr->second);
     odata.reserve(CellCount());
-    for (size_t i = 0; i < CellCount(); i++)
-      odata.push_back(ptr->second->GetNumericElem(i));
+    size_t nn = CellCount();
+    for (size_t i = 0; i < nn; i++)
+      odata.push_back(fp->getData().at(i));
     obs_dataset.write(odata.data(), H5::PredType::NATIVE_FLOAT);
   }
 
@@ -255,17 +312,16 @@ void CellTable::HDF5Write(const std::string& file) const {
   H5::DataSet uns_dataset(unsgroup.createDataSet("all_markers", strdatatype, uns_dataspace));
   uns_dataset.write(var.data(), strdatatype);
   
-  /*hsize_t obs_dims[1] = {obs.size()};
-  H5::DataSpace obs_dataspace(1, obs_dims);
-  H5::DataSet obs_dataset = h5file.createDataSet("/obs", strdatatype, obs_dataspace);  
-  obs_dataset.write(obs_data.data(), strdatatype);
+  // hsize_t obs_dims[1] = {obs.size()};
+  // H5::DataSpace obs_dataspace(1, obs_dims);
+  // H5::DataSet obs_dataset = h5file.createDataSet("/obs", strdatatype, obs_dataspace);  
+  // obs_dataset.write(obs_data.data(), strdatatype);
 
-  // write obs (numeric)
-  hsize_t obs_data_dims[2] = {CellCount(), obs.size()};
-  H5::DataSpace obs_data_dataspace(1, obs_data_dims);
-  H5::DataSet obs_data_dataset = h5file.createDataSet("/obs_data", H5::PredType::NATIVE_FLOAT, obs_dataspace);
-  obs_data_dataset.write(flat_data_meta.data(), H5::PredType::NATIVE_FLOAT);
-  */
+  // // write obs (numeric)
+  // hsize_t obs_data_dims[2] = {CellCount(), obs.size()};
+  // H5::DataSpace obs_data_dataspace(1, obs_data_dims);
+  // H5::DataSet obs_data_dataset = h5file.createDataSet("/obs_data", H5::PredType::NATIVE_FLOAT, obs_dataspace);
+  // obs_data_dataset.write(flat_data_meta.data(), H5::PredType::NATIVE_FLOAT);
   
   // write X (numeric)
   H5::DataSpace dataspace(2, x_dims);
@@ -278,19 +334,32 @@ void CellTable::HDF5Write(const std::string& file) const {
   std::cerr << "Warning: Not able to read/write HDF5 file without including / linking HD5 library with build (and need -DHAVE_HDF5)" << std::endl;
 #endif
   
-}
+}*/
 
 std::ostream& operator<<(std::ostream& os, const CellTable& table) {
-  
-  os << "CellID -- " << table.m_table.at("id")->toString() << std::endl;
-  os << "Pheno Flag -- "   << table.m_table.at("pflag")->toString() << std::endl;
-  os << "Cell Flag -- "   << table.m_table.at("cflag")->toString() << std::endl;  
-  os << "X -- "      << table.m_table.at("x")->toString() << std::endl;
-  os << "Y -- "      << table.m_table.at("y")->toString() << std::endl;      
+
+  // make the cell and sample ids
+  //IntColPtr id_ptr = dynamic_pointer_cast<NumericColumn<uint64_t>>(table.m_table.at("id"));
+  std::shared_ptr<NumericColumn<uint32_t>> sid = make_shared<NumericColumn<uint32_t>>();
+  std::shared_ptr<NumericColumn<uint32_t>> cid = make_shared<NumericColumn<uint32_t>>();
+  cid->reserve(table.size());
+  sid->reserve(table.size());
+  for (const auto& c : table.m_id_ptr->getData()) {
+    sid->PushElem(static_cast<uint32_t>(c >> 32));
+    cid->PushElem(static_cast<uint32_t>(c & 0xFFFFFFFF));
+  }
+
+  os << "CellID -- "   << cid->toString() << std::endl;
+  os << "SampleID -- " << sid->toString() << std::endl;
+  os << "RawID -- " << table.m_id_ptr->toString() << std::endl;
+  os << "Pheno Flag -- "   << table.m_pflag_ptr->toString() << std::endl;
+  os << "Cell Flag -- "    << table.m_cflag_ptr->toString() << std::endl;
+  os << "X -- "      << table.m_x_ptr->toString() << std::endl;
+  os << "Y -- "      << table.m_y_ptr->toString() << std::endl;
   
   for (const auto& t : table.m_header.GetDataTags()) {
     
-    auto col_ptr = table.m_table.at(t.id);
+    const FloatColPtr col_ptr = table.m_table.at(t.id);
     std::string ctype;
 
     switch (t.type) {
@@ -308,27 +377,197 @@ std::ostream& operator<<(std::ostream& os, const CellTable& table) {
 void CellTable::add_cell_to_table(const Cell& cell, bool nodata, bool nograph) {
 
   // add fixed data
-  static_cast<IntCol*>(m_table["id"].get())->PushElem(cell.m_id);
-  static_cast<IntCol*>(m_table["pflag"].get())->PushElem(cell.m_pheno_flag);
-  static_cast<IntCol*>(m_table["cflag"].get())->PushElem(cell.m_cell_flag);  
-  static_cast<FloatCol*>(m_table["x"].get())->PushElem(cell.m_x);
-  static_cast<FloatCol*>(m_table["y"].get())->PushElem(cell.m_y);
+  m_id_ptr->PushElem(cell.id);
+  m_pflag_ptr->PushElem(cell.pflag);
+  m_cflag_ptr->PushElem(cell.cflag);
+  m_x_ptr->PushElem(cell.x);
+  m_y_ptr->PushElem(cell.y);
+  //static_cast<NumericColumn<uint64_t>*>(m_table["id"].get())->PushElem(cell.id);
+  //static_cast<IntCol*>(m_table["pflag"].get())->PushElem(cell.pflag);
+  //static_cast<IntCol*>(m_table["cflag"].get())->PushElem(cell.cflag);  
+  //static_cast<FloatCol*>(m_table["x"].get())->PushElem(cell.x);
+  //static_cast<FloatCol*>(m_table["y"].get())->PushElem(cell.y);
 
   // add the info data
   if (!nodata) {
     size_t i = 0;
     for (const auto& t : m_header.GetDataTags()) {
-      static_cast<FloatCol*>(m_table[t.id].get())->PushElem(cell.m_cols.at(i));
+      //static_cast<FloatCol*>(m_table[t.id].get())->PushElem(cell.cols.at(i));
+      m_table[t.id]->PushElem(cell.cols.at(i));
       i++;
     }
   }
   
   // add the graph data
-  if (!nograph) {
+  /*  if (!nograph) {
     CellNode node(cell.m_spatial_ids, cell.m_spatial_dist);
     static_cast<GraphColumn*>(m_table["spat"].get())->PushElem(node);
+    }*/
+  
+}
+
+struct vec2f {
+    float x, y;
+    float& operator[](int idx) {
+        if (idx == 0) return x;
+        else if (idx == 1) return y;
+        throw std::out_of_range("Index out of range for vec2f");
+    }
+    const float& operator[](int idx) const {
+        if (idx == 0) return x;
+        else if (idx == 1) return y;
+        throw std::out_of_range("Index out of range for vec2f");
+    }
+};
+
+void CellTable::clusterDBSCAN(CellSelector select,
+			      float epsilon,
+			      size_t min_size,
+			      size_t min_cluster_size
+			      ) {
+
+  validate();
+  
+  // fill the coordinate vector
+  /*FloatColPtr x_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("x"));
+  FloatColPtr y_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("y"));  
+  IntColPtr pflag_ptr = dynamic_pointer_cast<IntCol>(m_table.at("pflag"));
+  IntColPtr cflag_ptr = dynamic_pointer_cast<IntCol>(m_table.at("cflag"));
+  IDColPtr id_ptr     = dynamic_pointer_cast<IDCol>(m_table.at("id"));
+  */
+  
+#ifdef HAVE_MLPACK
+
+  std::vector<double> xvec(m_x_ptr->getData().begin(),m_x_ptr->getData().end());
+  std::vector<double> yvec(m_y_ptr->getData().begin(),m_y_ptr->getData().end());
+  
+  // Convert std::vector to Armadillo row vectors.
+  arma::rowvec x_row(CellCount());
+  arma::rowvec y_row(CellCount());
+
+  size_t count = 0;
+  std::vector<size_t> idx(CellCount());
+  for (size_t i = 0; i < m_pflag_ptr->size(); i++) {
+    // only select on certain cells
+    if (select.TestFlags(m_pflag_ptr->getData().at(i),
+			 m_cflag_ptr->getData().at(i))) {
+      x_row(count) = m_x_ptr->getData().at(i);
+      y_row(count) = m_y_ptr->getData().at(i);
+      idx[count] = i;
+      count++;
+    }
+  }
+  x_row.resize(count);
+  y_row.resize(count);
+  idx.resize(count);
+  
+  // Combine the two row vectors into a matrix.
+  arma::mat dataset(2, x_row.size());
+  dataset.row(0) = x_row;
+  dataset.row(1) = y_row;
+
+  if (m_verbose)
+    std::cerr << "...running dbscan (mlpack) on " << AddCommas(x_row.size()) <<
+      " cells. Epsilon: " << epsilon << " Min points: " <<
+      min_size << " min cluster size: " << min_cluster_size << std::endl;
+  
+  // Perform DBSCAN clustering.
+  arma::Row<size_t> assignments(idx.size(), arma::fill::zeros); // to store cluster assignments
+  
+  // The parameters are: epsilon (radius of neighborhood), minimum points in neighborhood
+  const bool batchmode = false;
+  mlpack::DBSCAN<> dbscan(epsilon, min_size, batchmode);
+  dbscan.Cluster(dataset, assignments);
+  
+  // histogram the data
+  std::unordered_map<size_t, size_t> cluster_hist;
+  for (const auto& a : assignments) {
+    cluster_hist[a]++;
   }
   
+  // store the clusters data
+  FloatColPtr fc = std::make_shared<FloatCol>();
+  fc->resize(CellCount()); // resize zeros as well
+  for (const auto& cc : fc->getData())
+    assert(cc == 0);
+  
+  // make the assignments
+  std::unordered_set<size_t> assignment_set;
+  assert(idx.size() == assignments.size());
+  for (size_t i = 0; i < idx.size(); i++) {
+
+    // don't add if not a big cluster
+    if (cluster_hist[assignments[i]] < min_cluster_size) {
+      fc->SetValueAt(idx[i], 0);
+    // otherwise add the cluster to m_table
+    } else {
+      if (assignments[i] == SIZE_MAX) {
+	fc->SetValueAt(idx[i], -1);
+      } else {
+	fc->SetValueAt(idx[i], assignments[i] + 1);	
+	assignment_set.insert(assignments[i]); // just to keep track of number of assignments
+      }
+    }
+    
+  }
+  
+  if (m_verbose)
+    std::cerr << "...produced " << AddCommas(assignment_set.size()) << " clusters" << std::endl;
+
+  Tag ttag1(Tag::CA_TAG, "dbscan_cluster","");
+  assert(fc->size() == CellCount());
+  AddColumn(ttag1, fc);
+
+#elifdef HAVE_DBSCAN
+  
+  // build the data struct
+  std::vector<vec2f> data;
+  auto dbscan = DBSCAN<vec2f, float>();
+  std::vector<size_t> idx;
+  for (size_t i = 0; i < m_x_ptr->size(); ++i) {
+
+    // only select on certain cells
+    if (select.TestFlags(m_pflag_ptr->getData().at(i),
+			 m_cflag_ptr->getData().at(i))) {
+      data.push_back({m_x_ptr->getData().at(i), m_y_ptr->getData().at(i)});
+      idx.push_back(i);
+    }
+  }
+  
+  if (m_verbose)
+    std::cerr << "...running dbscan (SimpleDBSCAN) on " << AddCommas(data.size()) <<
+      " cells. Epsilon: " << epsilon << " Min points: " <<
+      min_size << std::endl;
+  
+  dbscan.Run(&data, 2, epsilon, min_size);
+  
+  auto noise = dbscan.Noise;
+  auto clusters = dbscan.Clusters;
+  
+  // store the clusters data
+  FloatColPtr fc = std::make_shared<FloatCol>();
+  fc->resize(CellCount());
+  
+  // zero the cluster vec
+  for (size_t i = 0; i < fc->size(); i++)
+    fc->SetValueAt(i, 0);
+    
+    // assign the clusters to the column
+    for (size_t clusterIdx = 0; clusterIdx < clusters.size(); ++clusterIdx) {
+      for (const auto& pointIdx : clusters[clusterIdx]) {
+      fc->SetValueAt(idx[pointIdx], clusterIdx + 1);
+    }
+  }
+
+  if (m_verbose)
+    std::cerr << "...produced " << AddCommas(clusters.size()) << " clusters" << std::endl;
+
+  Tag ttag1(Tag::CA_TAG, "dbscan_cluster","");
+  AddColumn(ttag1, fc);
+
+#else
+  std::cerr << "...mlpack header library and/or SimpleDBSCAN not available. Need to include this during compilation" << std::endl;
+#endif  
 }
 
 void CellTable::Subsample(int n, int s) {
@@ -371,16 +610,17 @@ void CellTable::Subsample(int n, int s) {
 
 size_t CellTable::CellCount() const {
 
-  std::optional<size_t> prev_size;
+  validate();
+  size_t prev_size = m_x_ptr->size();
   size_t n = 0;
 
   // loop the table and find the maximum length
   for (const auto &c : m_table) {
     size_t current_size = c.second->size();
 
-    if (prev_size.has_value() && current_size != prev_size.value()) {
+    if (current_size != prev_size) {
       std::cerr << "Warning: Column sizes do not match. Column: " <<
-	c.first << " prev size " << prev_size.value() <<
+	c.first << " prev size " << prev_size <<
 	" current_size " << current_size << std::endl;
     }
     
@@ -406,6 +646,8 @@ void CellTable::SetupOutputWriter(const std::string& file) {
 #ifdef HAVE_TIFFLIB
 void CellTable::Convolve(TiffWriter* otif, int boxwidth, float microns_per_pixel) {
 
+  validate();
+
   int xwidth, ywidth;
   assert(otif);
   TIFFGetField(otif->get(), TIFFTAG_IMAGEWIDTH, &xwidth);
@@ -413,16 +655,14 @@ void CellTable::Convolve(TiffWriter* otif, int boxwidth, float microns_per_pixel
   
   TiffImage tif(xwidth, ywidth, 16);
   
-  // Store points in an unordered set for fast lookup.
-  FloatColPtr x_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("x"));
-  FloatColPtr y_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("y"));  
-  
   if (m_verbose)
-    std::cerr << "...generating the integral sum image. Cell table has " << AddCommas(x_ptr->size()) << " cells" << std::endl;
+    std::cerr << "...generating the integral sum image. Cell table has " << AddCommas(m_x_ptr->size()) << " cells" << std::endl;
+
+  // Store points in an unordered set for fast lookup.  
   vector<vector<int>> dp(xwidth+1, vector<int>(ywidth+1, 0));  
-  for (size_t i = 0; i < x_ptr->size(); i++) {
-    int xp = static_cast<int>(x_ptr->GetNumericElem(i) / microns_per_pixel);
-    int yp = static_cast<int>(y_ptr->GetNumericElem(i) / microns_per_pixel);
+  for (size_t i = 0; i < m_x_ptr->size(); i++) {
+    int xp = static_cast<int>(m_x_ptr->GetNumericElem(i) / microns_per_pixel);
+    int yp = static_cast<int>(m_y_ptr->GetNumericElem(i) / microns_per_pixel);
     if (xp > xwidth) {
       std::cerr << "calculated pixel xpos " << xp << " out of bounds of image width " << xwidth << " with microns_per_pixel " << microns_per_pixel << std::endl;
       assert(false);
@@ -468,11 +708,9 @@ void CellTable::Convolve(TiffWriter* otif, int boxwidth, float microns_per_pixel
 
 void CellTable::sortxy(bool reverse) {
 
-  // fill the coordinate vector
-  FloatColPtr x_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("x"));
-  FloatColPtr y_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("y"));  
+  validate();
   
-  std::vector<size_t> indices(x_ptr->size()); // index vector
+  std::vector<size_t> indices(m_x_ptr->size()); // index vector
   std::iota(indices.begin(), indices.end(), 0); // fill with 0, 1, ..., n-1
 
   if (m_verbose)
@@ -481,15 +719,15 @@ void CellTable::sortxy(bool reverse) {
   // sort indices based on comparing values in (x,y)
   if (reverse) {
     std::sort(indices.begin(), indices.end(),
-	      [&x_ptr, &y_ptr](size_t i1, size_t i2) {
-		return std::hypot(x_ptr->GetNumericElem(i1), y_ptr->GetNumericElem(i1)) > 
-		  std::hypot(x_ptr->GetNumericElem(i2), y_ptr->GetNumericElem(i2));
+	      [this](size_t i1, size_t i2) {
+		return std::hypot(m_x_ptr->getData().at(i1), m_y_ptr->getData().at(i1)) > 
+		       std::hypot(m_x_ptr->getData().at(i2), m_y_ptr->getData().at(i2));
 	      });
   } else {
     std::sort(indices.begin(), indices.end(),
-	      [&x_ptr, &y_ptr](size_t i1, size_t i2) {
-		return std::hypot(x_ptr->GetNumericElem(i1), y_ptr->GetNumericElem(i1)) <
-		  std::hypot(x_ptr->GetNumericElem(i2), y_ptr->GetNumericElem(i2));
+	      [this](size_t i1, size_t i2) {
+		return std::hypot(m_x_ptr->getData().at(i1), m_y_ptr->getData().at(i1)) <
+		       std::hypot(m_x_ptr->getData().at(i2), m_y_ptr->getData().at(i2));
 	      });
   }
 
@@ -519,7 +757,7 @@ void CellTable::sort(const std::string& field, bool reverse) {
   }
     
   // fill the coordinate vector
-  FloatColPtr c_ptr = dynamic_pointer_cast<FloatCol>(it->second);
+  FloatColPtr c_ptr = it->second; //dynamic_pointer_cast<FloatCol>(it->second);
   
   std::vector<size_t> indices(c_ptr->size()); // index vector
   std::iota(indices.begin(), indices.end(), 0); // fill with 0, 1, ..., n-1
@@ -531,12 +769,12 @@ void CellTable::sort(const std::string& field, bool reverse) {
   if (reverse) {
     std::sort(indices.begin(), indices.end(),
 	      [&c_ptr](size_t i1, size_t i2) {
-		return c_ptr->GetNumericElem(i1) > c_ptr->GetNumericElem(i2);
+		return c_ptr->getData().at(i1) > c_ptr->getData().at(i2);
 	      });
   } else {
     std::sort(indices.begin(), indices.end(),
 	      [&c_ptr](size_t i1, size_t i2) {
-		return c_ptr->GetNumericElem(i1) < c_ptr->GetNumericElem(i2);
+		return c_ptr->getData().at(i1) < c_ptr->getData().at(i2);
 	      });
   }
   
@@ -557,10 +795,8 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
 #ifndef HAVE_BOOST
   std::cerr << "Warning: Will run but may be signifiacntly slower without including Boost library (uses Boost hash function for speed)" << std::endl;
 #endif
-  
-  // fill the coordinate vector
-  FloatColPtr x_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("x"));
-  FloatColPtr y_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("y"));  
+
+  validate();
 
   float xmax = 0;
   float ymax = 0;  
@@ -569,8 +805,8 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
   std::vector<double> coords(ncells * 2);
   
   for (size_t i = 0; i < ncells; i++) {
-    coords[i*2  ] = x_ptr->GetNumericElem(i);
-    coords[i*2+1] = y_ptr->GetNumericElem(i);
+    coords[i*2  ] = m_x_ptr->getData().at(i);
+    coords[i*2+1] = m_y_ptr->getData().at(i);
     if (coords[i*2] > xmax)
       xmax = coords[i*2];
     if (coords[i*2+1] > ymax)
@@ -665,8 +901,8 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
   }
   
   // setup columns to store the delaunay components
-  std::shared_ptr<IntCol> d_label = std::make_shared<IntCol>();
-  std::shared_ptr<IntCol> d_size = std::make_shared<IntCol>();
+  FloatColPtr d_label = std::make_shared<FloatCol>();
+  FloatColPtr d_size  = std::make_shared<FloatCol>();
   
   // count the number of nodes for each component
   std::unordered_map<int, size_t> dcount;
@@ -675,9 +911,8 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
   }
   
   // fill the data into the columns
-  for (size_t i = 0; i < x_ptr->size(); i++) {
-    //Point p = {x_ptr->GetNumericElem(i),y_ptr->GetNumericElem(i)};
-    JPoint p = {x_ptr->GetNumericElem(i),y_ptr->GetNumericElem(i)};    
+  for (size_t i = 0; i < m_x_ptr->size(); i++) {
+    JPoint p = {m_x_ptr->getData().at(i),m_y_ptr->getData().at(i)};    
     
     // find the point in the component labels
     auto idd = pointToComponentId.find(p);
@@ -776,7 +1011,7 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
     
     std::vector<Point> points(ncells);
     for (size_t i = 0; i < ncells; ++i) {
-      points[i] = Point(x_ptr->GetNumericElem(i), y_ptr->GetNumericElem(i));
+      points[i] = Point(m_x_ptr->getData().at(i), m_y_ptr->getData().at(i));
     }
     
     DelaunayData dt;
@@ -825,7 +1060,6 @@ void CellTable::Delaunay(const std::string& pdf_delaunay,
     std::cerr << "Warning: Cairo PDF library and CGAL geometry libraries needs to be included/linked during cysift build for Voronoi output. Otherwise no PDF will be output." << std::endl;
 #endif    
   }
-
   
   return;
   
@@ -843,15 +1077,11 @@ void CellTable::OutputTable() {
   // create the cells and print
   size_t numRows = CellCount();
 
-  auto id_ptr = m_table.at("id");
-  auto cflag_ptr = m_table.at("cflag");
-  auto pflag_ptr = m_table.at("pflag");  
-  auto x_ptr = m_table.at("x");
-  auto y_ptr = m_table.at("y");
-  auto g_ptr = m_table.find("spat");
+  validate();
 
-  std::vector<ColPtr> col_ptr;
+  std::vector<FloatColPtr> col_ptr;
   for (const auto& t : m_header.GetDataTags()) {
+    assert(m_table.find(t.id) != m_table.end());
     col_ptr.push_back(m_table.at(t.id));
   }
 
@@ -859,27 +1089,27 @@ void CellTable::OutputTable() {
 
     Cell cell;
     
-    cell.m_id   = static_cast<IntCol*>(id_ptr.get())->GetNumericElem(i);
-    cell.m_cell_flag = static_cast<IntCol*>(cflag_ptr.get())->GetNumericElem(i);
-    cell.m_pheno_flag = static_cast<IntCol*>(pflag_ptr.get())->GetNumericElem(i);
-    cell.m_x    = static_cast<FloatCol*>(x_ptr.get())->GetNumericElem(i);
-    cell.m_y    = static_cast<FloatCol*>(y_ptr.get())->GetNumericElem(i);
+    cell.id         = m_id_ptr->getData().at(i);
+    cell.cflag      = m_cflag_ptr->getData().at(i); 
+    cell.pflag      = m_pflag_ptr->getData().at(i);
+    cell.x          = m_x_ptr->getData().at(i); 
+    cell.y          = m_y_ptr->getData().at(i); 
 
     // if there are any filters, pass if not in the set
     if (m_cells_to_write.size())  {
-      if (!m_cells_to_write.count(cell.m_id))
+      if (!m_cells_to_write.count(cell.id))
 	continue;
     }
-    
+
     for (const auto& c : col_ptr) {
-      cell.m_cols.push_back(static_cast<FloatCol*>(c.get())->GetNumericElem(i));
+      cell.cols.push_back(c->getData().at(i));
     }
-    
+
     // fill the Cell graph
-    if (g_ptr != m_table.end()) {
+    /*    if (g_ptr != m_table.end()) {
       const CellNode& n = static_cast<GraphColumn*>(g_ptr->second.get())->GetNode(i);
       n.FillSparseFormat(cell.m_spatial_ids, cell.m_spatial_dist);
-    }
+      }*/
     
     // write it
     (*m_archive)(cell);
@@ -890,22 +1120,16 @@ void CellTable::OutputTable() {
 
 void CellTable::Crop(float xlo, float xhi, float ylo, float yhi) {
   
-  // Find the x and y columns in the table
-  auto x_it = m_table.find("x");
-  auto y_it = m_table.find("y");
-
+  validate();
+  
   // total number of rows of table
   size_t nc = CellCount();
-
-  // error checking
-  if (x_it == m_table.end() || y_it == m_table.end()) 
-    throw std::runtime_error("x or y column not found in the table");
   
   std::vector<size_t> valid_indices;
   for (size_t i = 0; i < nc; ++i) {
     
-    float x_value = x_it->second->GetNumericElem(i);
-    float y_value = y_it->second->GetNumericElem(i);    
+    float x_value = m_x_ptr->getData().at(i);
+    float y_value = m_y_ptr->getData().at(i);    
     
     if (x_value >= xlo && x_value <= xhi &&
 	y_value >= ylo && y_value <= yhi) {
@@ -928,7 +1152,7 @@ void CellTable::PrintPearson(bool csv, bool sort) const {
     if (t.type == Tag::MA_TAG) {
       auto ptr = m_table.find(t.id);
       assert(ptr != m_table.end());
-      data.push_back(dynamic_pointer_cast<FloatCol>(ptr->second)->getData());
+      data.push_back(ptr->second->getData());
       labels.push_back(ptr->first);
     }
   }    
@@ -999,20 +1223,19 @@ void CellTable::PlotASCII(int width, int height) const {
   }
 
   // find the max size of the original cell table
-  auto x_ptr = m_table.at("x");
-  auto y_ptr = m_table.at("y");
+  validate();
   
-  float x_min = x_ptr->Min();
-  float x_max = x_ptr->Max();
-  float y_min = y_ptr->Min();
-  float y_max = y_ptr->Max();
+  float x_min = m_x_ptr->Min();
+  float x_max = m_x_ptr->Max();
+  float y_min = m_y_ptr->Min();
+  float y_max = m_y_ptr->Max();
   
   // scale it to fit on the plot
   size_t nc = CellCount();
   std::vector<std::pair<int, int>> scaled_coords;
   for (size_t i = 0; i < nc; i++) {
-    float x_ = x_ptr->GetNumericElem(i);
-    float y_ = y_ptr->GetNumericElem(i);    
+    float x_ = m_x_ptr->getData().at(i);
+    float y_ = m_y_ptr->getData().at(i);    
     
     int x = static_cast<int>((x_ - x_min) / (x_max - x_min) * (width  - 2)) + 1;
     int y = static_cast<int>((y_ - y_min) / (y_max - y_min) * (height - 2)) + 1;
@@ -1051,8 +1274,43 @@ void CellTable::PlotASCII(int width, int height) const {
   
 }
 
+void CellTable::DeleteColumn(const std::string& col) {
+
+  if (m_table.find(col) == m_table.end()) {
+    throw std::runtime_error("Trying to delete column that doesn't exists: " + col);
+  }
+  
+  m_table.erase(col);
+  
+}
+
+void CellTable::AddICPXYColumn(ColPtr value,
+			       const std::string& type) {
+
+  if (value->size() != CellCount()) {
+    throw std::runtime_error("Adding column of incorrect size");
+  }
+  
+  // add to the table
+  if (type == "x") {
+    m_x_ptr = std::dynamic_pointer_cast<FloatCol>(value);
+  } else if (type == "y") {
+    m_y_ptr = std::dynamic_pointer_cast<FloatCol>(value);
+  } else if (type == "id") {
+    m_id_ptr = std::dynamic_pointer_cast<IDCol>(value);
+  } else if (type == "pflag") {
+    m_pflag_ptr = std::dynamic_pointer_cast<IntCol>(value);
+  } else if (type == "cflag") {
+    m_cflag_ptr = std::dynamic_pointer_cast<IntCol>(value);
+  } else {
+    assert(false);
+  }
+  
+  return;
+}
+
 void CellTable::AddColumn(const Tag& tag,
-			  ColPtr value) {
+			  FloatColPtr value) {
   
   if (value->size() != CellCount()) {
     throw std::runtime_error("Adding column of incorrect size");
@@ -1075,15 +1333,16 @@ void CellTable::AddColumn(const Tag& tag,
 void CellTable::SubsetROI(const std::vector<Polygon> &polygons) {
 
   size_t nc = CellCount();
+  validate();
   
   // Initialize the "sparoi" column
   FloatColPtr new_data = std::make_shared<FloatCol>();
   new_data->reserve(nc);
-  
+
   // Loop the table and check if the cell is in the ROI
   for (size_t i = 0; i < nc; i++) {
-    float x_ = m_table.at("x")->GetNumericElem(i);
-    float y_ = m_table.at("y")->GetNumericElem(i);    
+    float x_ = m_x_ptr->getData().at(i);
+    float y_ = m_y_ptr->getData().at(i);    
 
     // Loop through all polygons and check if the point is inside any of them
     for (const auto &polygon : polygons) {
@@ -1115,7 +1374,7 @@ bool CellTable::HasColumn(const std::string& col) const {
 
     // loop each cell and test the flag for marker m (or i)
     for (int j = 0; j < CellCount(); j++) {
-      const cy_uint f = pflag_ptr->second->GetNumericElem(j);
+      const cy_uint f = pflag_ptr->second->getData().at(j);
       CellFlag flag(f);
       cy_uint flag_to_test = 2^i;
       if (f.testAndOr(flag_to_test,0))
@@ -1161,13 +1420,11 @@ void CellTable::print_correlation_matrix(const std::vector<std::string>& labels,
 void CellTable::initialize_cols() {
   
   // initialize cell id
-  m_table["id"] = std::make_shared<IntCol>();
-  m_table["pflag"] = std::make_shared<IntCol>();
-  m_table["cflag"] = std::make_shared<IntCol>();    
-  m_table["x"] = std::make_shared<FloatCol>();
-  m_table["y"] = std::make_shared<FloatCol>();
-
-  m_table["spat"] = std::make_shared<GraphColumn>();
+  m_id_ptr = std::make_shared<IDCol>();
+  m_cflag_ptr = std::make_shared<IntCol>();
+  m_pflag_ptr = std::make_shared<IntCol>();
+  m_x_ptr = std::make_shared<FloatCol>();
+  m_y_ptr = std::make_shared<FloatCol>();  
   
   // initialize other data
   for (const auto& t : m_header.GetDataTags()) {
@@ -1189,9 +1446,7 @@ void CellTable::PrintJaccardSimilarity(bool csv, bool sort) const {
   // collect the marker data in one structure
   std::vector<Tag> markers = m_header.GetMarkerTags();
 
-  // get the pflags
-  auto pflag_ptr = m_table.find("pflag");
-  assert(pflag_ptr != m_table.end());
+  validate();
   
   std::vector<std::vector<bool>> data;
   std::vector<std::string> labels;
@@ -1201,8 +1456,8 @@ void CellTable::PrintJaccardSimilarity(bool csv, bool sort) const {
 
     // Extract bits from the current position from all elements
     std::vector<bool> bits;
-    for (size_t j = 0; j < pflag_ptr->second->size(); j++) {
-      cy_uint val = dynamic_pointer_cast<IntCol>(pflag_ptr->second)->GetNumericElem(j);
+    for (size_t j = 0; j < m_pflag_ptr->size(); j++) {
+      cy_uint val = m_pflag_ptr->getData().at(j);
       bits.push_back((val >> bitPos) & 1);
     }
 
@@ -1265,7 +1520,9 @@ void CellTable::PrintJaccardSimilarity(bool csv, bool sort) const {
 }
 
 int CellTable::PlotPNG(const std::string& file,
-		       float scale_factor) const {
+		       float scale_factor,
+		       const std::string& colname
+		       ) const {
   
 #ifdef HAVE_CAIRO
 
@@ -1278,18 +1535,11 @@ int CellTable::PlotPNG(const std::string& file,
   constexpr float TWO_PI = 2.0 * M_PI;
   
   // get the x y coordinates of the cells
-  const auto x_ptr = m_table.find("x");
-  const auto y_ptr = m_table.find("y");
-  const auto flag_ptr = m_table.find("pflag");
-  const auto cflag_ptr = m_table.find("cflag");    
-  assert(x_ptr != m_table.end());
-  assert(y_ptr != m_table.end());
-  assert(flag_ptr != m_table.end());
-  assert(cflag_ptr != m_table.end());        
+  validate();
   
   // Open the PNG for drawing
-  const int width  = x_ptr->second->Max();
-  const int height = y_ptr->second->Max();    
+  const int width  = m_x_ptr->Max();
+  const int height = m_y_ptr->Max();    
   
   // open PNG for drawing
   cairo_surface_t *surfacep = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width*scale_factor, height*scale_factor);
@@ -1301,28 +1551,30 @@ int CellTable::PlotPNG(const std::string& file,
   for (size_t j = 0; j < CellCount(); j++) { // loop the cells
     
     // Draw the arc segment
-    const float x = x_ptr->second->GetNumericElem(j);
-    const float y = y_ptr->second->GetNumericElem(j);
-    const cy_uint f = flag_ptr->second->GetNumericElem(j);
-    const cy_uint cf = cflag_ptr->second->GetNumericElem(j);      
+    const float x = m_x_ptr->getData().at(j);
+    const float y = m_y_ptr->getData().at(j);
+
+    const cy_uint pf = m_pflag_ptr->getData().at(j);
+    const cy_uint cf = m_cflag_ptr->getData().at(j);
     
     float start_angle = 0.0;
     
-    CellFlag flag(f);
+    CellFlag pflag(pf);
     CellFlag cflag(cf);
     
     Color c;
-    if (flag.testAndOr(4416,0) && flag.testAndOr(32768,0)) // T-cell - PD-1+ 
+    
+    if (pflag.testAndOr(4416,0) && pflag.testAndOr(32768,0)) // T-cell - PD-1+ 
       c = color_red;
-    else if (flag.testAndOr(4416,0) && !flag.testAndOr(32768,0)) // T-cell - PD-1-
+    else if (pflag.testAndOr(4416,0) && !pflag.testAndOr(32768,0)) // T-cell - PD-1-
       c = color_light_red;
-    else if (flag.testAndOr(1024,0)) // B-cell
+    else if (pflag.testAndOr(1024,0)) // B-cell
       c = color_purple;
-    else if (flag.testAndOr(0,18432) || flag.testAndOr(0,133120)) // PD-L1 POS tumor cell
+    else if (pflag.testAndOr(0,18432) || pflag.testAndOr(0,133120)) // PD-L1 POS tumor cell
       c = color_dark_green;
-    else if (flag.testAndOr(147456,0)) // PD-L1 NEG tumor cell
+    else if (pflag.testAndOr(147456,0)) // PD-L1 NEG tumor cell
       c = color_light_green;
-    else if (flag.testAndOr(2048,0)) // PD-L1 any cell
+    else if (pflag.testAndOr(2048,0)) // PD-L1 any cell
       c = color_cyan;      
     else
       c = color_gray;
@@ -1333,7 +1585,7 @@ int CellTable::PlotPNG(const std::string& file,
     cairo_fill(crp);
     
     // red radius
-    /*    if (flag.testAndOr(147456,0) && j % 100000 == 0) { //dis(gen) < 0.00002)  {
+    /*    if (pflag.testAndOr(147456,0) && j % 100000 == 0) { //dis(gen) < 0.00002)  {
       cairo_set_source_rgb(crp, 1, 0, 0);
       cairo_set_line_width(crp, 4);
       cairo_arc(crp, x*scale_factor, y*scale_factor, 200.0f/0.325f*scale_factor, 0, 2*M_PI);
@@ -1377,17 +1629,16 @@ int CellTable::PlotPNG(const std::string& file,
 
 void CellTable::ScramblePflag(int seed, bool lock_flags) {
 
-  auto pflag_ptr = m_table.find("pflag");
-  assert(pflag_ptr != m_table.end());
-
+  validate();
+  
   // flags are locked, so we are permuting flags
   if (lock_flags) {
-    dynamic_pointer_cast<IntCol>(pflag_ptr->second)->Scramble(seed);
+    m_pflag_ptr->Scramble(seed);
     return;
   }
 
   // store new flags
-  std::vector<cy_uint> new_flags(pflag_ptr->second->size());
+  std::vector<cy_uint> new_flags(m_pflag_ptr->size());
 
   // make a random number generator
   std::default_random_engine rng(seed);
@@ -1397,11 +1648,12 @@ void CellTable::ScramblePflag(int seed, bool lock_flags) {
   for (int bitPos = 0; bitPos < 64; ++bitPos) {
 #else
   for (int bitPos = 0; bitPos < 32; ++bitPos) {
-#endif    
+#endif
+    
     // Extract bits from the current position from all elements
     std::vector<bool> bits;
     for (size_t i = 0; i < new_flags.size(); i++) {
-      cy_uint val = dynamic_pointer_cast<IntCol>(pflag_ptr->second)->GetNumericElem(i);
+      cy_uint val = m_pflag_ptr->getData().at(i);
       bits.push_back((val >> bitPos) & 1);
     }
     
@@ -1416,7 +1668,8 @@ void CellTable::ScramblePflag(int seed, bool lock_flags) {
   }
 
   // assign the new flags
-  m_table["pflag"] = std::make_shared<NumericColumn<cy_uint>>(new_flags);
+  m_pflag_ptr = std::make_shared<NumericColumn<cy_uint>>(new_flags);
+  validate();
   
 }
 
@@ -1592,3 +1845,17 @@ void CellTable::GMM_EM() {
 #endif 
 }
 
+ void CellTable::validate() const {
+
+   assert(m_x_ptr);
+   assert(m_y_ptr);
+   assert(m_pflag_ptr);
+   assert(m_cflag_ptr);
+   assert(m_id_ptr);
+
+   assert(m_x_ptr->size() == m_y_ptr->size());
+   assert(m_x_ptr->size() == m_pflag_ptr->size());
+   assert(m_x_ptr->size() == m_cflag_ptr->size());
+   assert(m_x_ptr->size() == m_id_ptr->size());         
+   
+ }

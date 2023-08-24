@@ -18,43 +18,40 @@ static void printWithoutScientific(double number) {
     }
 }
 
-void Cell::set_sample_id(uint32_t id) {
-  uint32_t currentCellID = static_cast<uint32_t>(m_id & 0xFFFFFFFF);
-  m_id = static_cast<uint64_t>(id) << 32 | currentCellID; 
+void Cell::set_sample_id(uint32_t new_id) {
+  uint32_t currentCellID = static_cast<uint32_t>(id & 0xFFFFFFFF);
+  id = static_cast<uint64_t>(new_id) << 32 | currentCellID; 
 }
 
-void Cell::set_cell_id(uint32_t id) {
-  uint32_t currentSampleID = static_cast<uint32_t>(m_id >> 32);
-  m_id = static_cast<uint64_t>(currentSampleID) << 32 | id;
+void Cell::set_cell_id(uint32_t new_id) {
+  uint32_t currentSampleID = static_cast<uint32_t>(id >> 32);
+  id = static_cast<uint64_t>(currentSampleID) << 32 | id;
 }
 
 uint32_t Cell::get_sample_id() const {
-    return static_cast<uint32_t>(m_id >> 32);
+    return static_cast<uint32_t>(id >> 32);
 }
 
 uint32_t Cell::get_cell_id() const {
-    return static_cast<uint32_t>(m_id & 0xFFFFFFFF);
+    return static_cast<uint32_t>(id & 0xFFFFFFFF);
 }
 
 std::ostream& operator<<(std::ostream& os, const Cell& cell) {
 
-  uint32_t sampleID = static_cast<uint32_t>(cell.m_id >> 32); // Extract the first 32 bits
-  uint32_t cellID = static_cast<uint32_t>(cell.m_id & 0xFFFFFFFF); // Extract the second 32 bits
+  uint32_t sampleID = static_cast<uint32_t>(cell.id >> 32); // Extract the first 32 bits
+  uint32_t cellID = static_cast<uint32_t>(cell.id & 0xFFFFFFFF); // Extract the second 32 bits
   
     os << sampleID << "\t"
        << cellID << "\t"
-       << cell.m_cell_flag << "\t"
-       << cell.m_pheno_flag << "\t"      
-       << cell.m_x << "\t"
-       << cell.m_y << "\t";
+       << cell.cflag << "\t"
+       << cell.pflag << "\t"      
+       << cell.x << "\t"
+       << cell.y << "\t";
 
-    for (const auto &value : cell.m_cols) {
+    for (const auto &value : cell.cols) {
         os << value << "\t";
     }
 
-    os << "Graph size: " <<
-      cell.m_spatial_ids.size() << " " <<
-      cell.m_spatial_dist.size();
     return os;
 }
 
@@ -62,25 +59,23 @@ void Cell::Print(int round) const {
 
   char d = ',';
 
-  uint32_t sampleID = static_cast<uint32_t>(m_id >> 32); // Extract the first 32 bits
-  uint32_t cellID = static_cast<uint32_t>(m_id & 0xFFFFFFFF); // Extract the second 32 bits
+  uint32_t sampleID = static_cast<uint32_t>(id >> 32); // Extract the first 32 bits
+  uint32_t cellID = static_cast<uint32_t>(id & 0xFFFFFFFF); // Extract the second 32 bits
   
-  std::cout << sampleID << d << cellID << d << m_cell_flag << d << m_pheno_flag << d;
-  std::cout << std::setprecision(round) << m_x << d <<
-    m_y;
+  std::cout << sampleID << d << cellID << d << cflag << d << pflag << d;
+  std::cout << std::setprecision(round) << x << d << y;
 
   // print cols
-  for (const auto& c : m_cols) {
+  for (const auto& c : cols) {
     std::cout << d;
     printWithoutScientific(c);
-    //    std::cout << std::fixed << d << c;
   }
 
   // print graph
   /////////
 
   // print delimiter if graph non-empty
-  if (m_spatial_ids.size())
+  /* if (m_spatial_ids.size())
     std::cout << d;
 
   // [print
@@ -89,7 +84,8 @@ void Cell::Print(int round) const {
       "&" << m_spatial_flags.at(i);
     if (i != m_spatial_ids.size() - 1)
       std::cout << ";";
-  }
+      }
+  */
   
   std::cout << std::endl;
 }
@@ -104,34 +100,36 @@ Cell::Cell(const std::string& row, const CellHeader& header,
     throw std::runtime_error("CSV file should have at least three columns: id, x, y");
   }
 
-  m_pheno_flag = 0;
-  m_cell_flag = 0;  
+  pflag = 0;
+  cflag = 0;
   
   set_cell_id(cellid);
   set_sample_id(sampleid);
 
   // 1st and 2nd entry is x,y position
-  m_x = std::strtof(tokens.at(0).c_str(), nullptr);
-  m_y = std::strtof(tokens.at(1).c_str(), nullptr);
+  x = std::strtof(tokens.at(0).c_str(), nullptr);
+  y = std::strtof(tokens.at(1).c_str(), nullptr);
 
   // stop with as many columns as are in the header
-  size_t cols = header.GetDataTags().size();
+  size_t num_cols = header.GetDataTags().size();
   
   // assume rest of the tags are column data
   size_t i = 0;
   while (i < tokens.size() - 2) {
 
     // let user know if they are short on header specs
-    if (i >= cols) {
-      std::cerr << "warning: more data columns " << tokens.size() << " in file than specified in header " << cols << std::endl;
+    if (i >= num_cols) {
+      std::cerr << "warning: more data columns " <<
+	tokens.size() << " in file than specified in header " <<
+	num_cols << std::endl;
       break;
     }
-    m_cols.push_back(std::strtof(tokens.at(i + 2).c_str(), nullptr));
+    cols.push_back(std::strtof(tokens.at(i + 2).c_str(), nullptr));
     i++;
   }
 
   // let user know if they are short on data
-  if (i < cols)
-    std::cerr << "warning: only read in the available columns " << i << " but header specified " << cols << std::endl;
+  if (i < num_cols)
+    std::cerr << "warning: only read in the available columns " << i << " but header specified " << num_cols << std::endl;
   
 }

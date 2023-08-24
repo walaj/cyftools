@@ -7,41 +7,27 @@ std::ostream& operator<<(std::ostream& os, const CellFlag& cellFlag) {
 
 bool CellFlag::testAndOr(cy_uint logor, cy_uint logand) const {
 
-  //bool resultN;
-  //bool result;
-  //std::bitset<64> bs(bitmap);
+  // no conditions specified, so return true
+  if (static_cast<cy_uint>(-1) == logor &&
+      static_cast<cy_uint>(-1) == logand)
+    return true;
   
-  // new way
-  bool orCondition = logor == 0 || (bitmap & logor) != 0; // True if logor not specified or any OR flags are turned on
+  // First, test the OR condition
+  bool orCondition = logor == 0 ||
+    static_cast<cy_uint>(-1) || (bitmap & logor) != 0; 
 
+  // If OR is true and nothing to test for and, return true
+  /*  bool andNotSpecified = logand == static_cast<cy_uint>(-1) ||
+    (logand == 0)
+  if (orCondition && ( || logand == 0)
+  */
+  // if the OR condition is true, then test the AND condition
   if (orCondition) {
     bool andCondition = (bitmap & logand) == logand; // True if all AND flags are turned on
     return andCondition || logand == 0; // return true if all AND flags are turned on or if logand not specified
   }
 
   return false;
-  /*
-  // old way
-  std::bitset<BITMAP_SIZE> orBitset(logor);
-  std::bitset<BITMAP_SIZE> andBitset(logand);
-
-  bool orCondition = (bs & orBitset).any(); // True if any OR flags are turned on
-  bool andCondition = (bs & andBitset) == andBitset; // True if all AND flags are turned on
-
-  if (logor == 0) // don't gate on OR if not specified
-    orCondition = true;
-
-  if (orCondition && andCondition) {
-    return true;
-  } else if (orCondition && !andBitset.any()) {
-    return true;
-  } else {
-    return false;
-  }
-
-  //std::cerr << " OLD " << result << " NEW " << resultN << " flag " << bitmap << " logor " << logor << " logand " << logand << std::endl;
-  return false;
-  */
 }
 
 std::string CellFlag::toBitString() const {

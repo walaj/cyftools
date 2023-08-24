@@ -6,6 +6,7 @@
 #include "cell_header.h"
 #include "cell_processor.h"
 #include "cysift.h"
+#include "cell_synth.h"
 
 // to-do - back this out, shouldn't have this here
 #include "cell_processor.h"
@@ -14,12 +15,14 @@
 #include <cereal/archives/portable_binary.hpp>
 #include <cereal/archives/json.hpp>
 
+
+
 // forward declarations
 class Polygon;
 class LDAModel;
 class KDTree;
 class TiffWriter;
-
+class CellSelector;
 
 class CellTable {
   
@@ -32,6 +35,9 @@ public:
     : m_cmd(cmd), m_threads(threads) {}
   
   CellTable() {}
+
+  // new table, with zerod data
+  CellTable(size_t num_cells);
   
   //////
   // Getters/setters
@@ -60,19 +66,29 @@ public:
   // Plotting
   //////
   int PlotPNG(const std::string& file,
-	      float scale_factor) const;
+	      float scale_factor,
+	      const std::string& colname
+	      ) const;
   
   //////
   // Basic table operations
   //////
+  void validate() const;
+  
   size_t size() const { return m_table.size(); }
 
   void sortxy(bool reverse);
 
   void sort(const std::string& field, bool reverse);
   
-  void AddColumn(const Tag& tag, ColPtr value);
+  void AddColumn(const Tag& tag, FloatColPtr value);
 
+  void DeleteColumn(const std::string& col);
+  
+  void AddICPXYColumn(ColPtr value,
+		      const std::string& type);
+  
+  
   bool HasColumn(const std::string& col) const;
 
   friend std::ostream& operator<<(std::ostream& os, const CellTable& table);
@@ -110,6 +126,15 @@ public:
   
 
   //////
+  // Clustering ops
+  //////
+  void clusterDBSCAN(CellSelector select,
+		     float epsilon,
+		     size_t min_size,
+		     size_t min_cluster_size
+		     ); 
+  
+  //////
   // Numeric ops
   //////
   void PrintPearson(bool csv, bool sort) const;
@@ -144,9 +169,7 @@ public:
   
   void Cut(const std::set<std::string>& tokens);
 
-  void Select(cy_uint por, cy_uint cor,
-	      cy_uint pand, cy_uint cand,
-	      bool pnot, bool cnot,
+  void Select(CellSelector select, 
 	      SelectOpMap criteria,
 	      bool or_toggle,
 	      float radius);
@@ -176,11 +199,17 @@ public:
 		       float cont_cutoff); 
 
 #endif
-  
+
  private:
 
-  unordered_map<string, ColPtr> m_table;
+  unordered_map<string, FloatColPtr> m_table;
 
+  FloatColPtr m_x_ptr;
+  FloatColPtr m_y_ptr;
+  IntColPtr m_pflag_ptr;
+  IntColPtr m_cflag_ptr;
+  IDColPtr m_id_ptr;
+  
   // the cysift command
   std::string m_cmd;
 

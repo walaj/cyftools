@@ -1,6 +1,6 @@
 #include "cell_table.h"
 #include "color_map.h"
-
+#include "cell_selector.h"
 
 
 #ifdef HAVE_UMAPPP
@@ -65,12 +65,11 @@ void CellTable::UMAP(int num_neighbors) {
     
     auto it = m_table.find(t.id);
     if (it != m_table.end()) {
-      auto column_ptr = it->second;
-      auto numeric_column_ptr = std::dynamic_pointer_cast<FloatCol>(column_ptr);
+      FloatColPtr numeric_column_ptr = it->second;
       assert(numeric_column_ptr);
       
       // Check if the column is a NumericColumn
-      const auto& data = numeric_column_ptr->getData();
+      const auto& data = it->second->getData();
       concatenated_data.insert(concatenated_data.end(), data.begin(), data.end());
     }
   }
@@ -149,8 +148,8 @@ void CellTable::UMAP(int num_neighbors) {
   assert(max_abs > 0);
     
   // transfer to Column
-  std::shared_ptr<FloatCol> comp1 = make_shared<FloatCol>(); 
-  std::shared_ptr<FloatCol> comp2 = make_shared<FloatCol>();
+  FloatColPtr comp1 = make_shared<FloatCol>(); 
+  FloatColPtr comp2 = make_shared<FloatCol>();
 
   comp1->resize(nobs); 
   comp2->resize(nobs); 
@@ -173,7 +172,6 @@ void CellTable::UMAP(int num_neighbors) {
   
 }
 
-
 void CellTable::UMAPPlot(const std::string& file, int width, int height) const {
 
   if (m_table.find("umap1") == m_table.end() ||
@@ -182,13 +180,11 @@ void CellTable::UMAPPlot(const std::string& file, int width, int height) const {
     return;
   }
 
-
   ColorMap colormap;
   
-  
 #ifdef HAVE_CAIRO
-  FloatColPtr u1_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("umap1"));
-  FloatColPtr u2_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("umap2"));  
+  FloatColPtr u1_ptr = m_table.at("umap1");
+  FloatColPtr u2_ptr = m_table.at("umap2");
   assert(u1_ptr->size() == u2_ptr->size());
 
   // clusters from kmeans
@@ -259,7 +255,7 @@ void CellTable::UMAPPlot(const std::string& file, int width, int height) const {
   for (size_t i = 0; i < u1_ptr->size(); i++) {
     Color c = colormap.at(clusters.at(i) % 12);
     cairo_set_source_rgba(cr, c.redf(), c.greenf(), c.bluef(), 0.3);
-    cairo_arc(cr, u1_ptr->GetNumericElem(i)*cwidth/2+cwidth/2, u2_ptr->GetNumericElem(i)*cwidth/2+cwidth/2, 0.5, 0.0, 2.0 * M_PI);
+    cairo_arc(cr, u1_ptr->getData().at(i)*cwidth/2+cwidth/2, u2_ptr->getData().at(i)*cwidth/2+cwidth/2, 0.5, 0.0, 2.0 * M_PI);
     cairo_fill(cr);
   }
 
@@ -274,7 +270,7 @@ void CellTable::UMAPPlot(const std::string& file, int width, int height) const {
   
 }
 
-void CellTable::KNN_spatial(int num_neighbors, int dist) {
+/*void CellTable::KNN_spatial(int num_neighbors, int dist) {
 
 #ifdef HAVE_KNNCOLLE
   
@@ -288,25 +284,28 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
   std::vector<float> concatenated_data;
   
   const int ndim = 2;
+
+  assert(m_table.find("x") != m_table.end());
+  assert(m_table.find("y") != m_table.end());
+  const FloatColPtr x_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("x"));
+  const FloatColPtr y_ptr = dynamic_pointer_cast<FloatCol>(m_table.at("y"));
   
-  auto x_ptr = m_table.at("x");
-  auto y_ptr = m_table.at("y");
-  
-  const auto& x_data = std::dynamic_pointer_cast<FloatCol>(x_ptr)->getData(); // just a ptr, not a copy
+  const auto& x_data = x_ptr->getData(); // just a ptr, not a copy
   if (m_verbose) 
-    std::cerr << "...adding " << AddCommas(x_data.size()) << " points on x" << std::endl;
+    std::cerr << "...adding " << AddCommas(x_ptr->size()) << " points on x" << std::endl;
   concatenated_data.insert(concatenated_data.end(), x_data.begin(), x_data.end());
   
-  const auto& y_data = std::dynamic_pointer_cast<FloatCol>(y_ptr)->getData();
+  const auto& y_data = y_ptr->getData();
   if (m_verbose) 
-    std::cerr << "...adding " << AddCommas(y_data.size()) << " points on y" << std::endl;
+    std::cerr << "...adding " << AddCommas(y_ptr->size()) << " points on y" << std::endl;
    concatenated_data.insert(concatenated_data.end(), y_data.begin(), y_data.end());
    
    // convert to row major?
    column_to_row_major(concatenated_data, nobs, ndim);
    
    // get the cell id colums
-   auto id_ptr = m_table.at("id");
+   assert(m_table.find("id") != m_table.end());
+   const IDColPtr id_ptr = dynamic_pointer_cast<IDCol>(m_table.at("id"));
    
    if (m_verbose)
      std::cerr << "...setting up KNN graph (spatial) on " << AddCommas(nobs) << " points" << std::endl;
@@ -319,7 +318,8 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
   // store the final graph
   auto graph = std::make_shared<GraphColumn>();
   graph->resize(nobs);
-
+  
+  
   // track number of cases where all N nearest neighbors are within the
   // distance cutoff, implying that there are likely additional cells within
   // the desired radius that are cutoff
@@ -338,11 +338,14 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
   size_t numRows = CellCount();
 
   // setup for converting to Cell
-  auto cflag_ptr = m_table.at("cflag");
-  auto pflag_ptr = m_table.at("pflag");  
-  std::vector<ColPtr> col_ptr;
+  assert(m_table.find("cflag") != m_table.end());
+  assert(m_table.find("pflag") != m_table.end());
+  const IntColPtr cflag_ptr = dynamic_pointer_cast<IntCol>(m_table.at("cflag"));
+  const IntColPtr pflag_ptr = dynamic_pointer_cast<IntCol>(m_table.at("pflag"));  
+  std::vector<FloatColPtr> col_ptr;
   for (const auto& t : m_header.GetDataTags()) {
-    col_ptr.push_back(m_table.at(t.id));
+    assert(m_table.find(t.id) != m_table.end());
+    col_ptr.push_back(dynamic_pointer_cast<FloatCol>(m_table.at(t.id)));
   }
   
 #pragma omp parallel for num_threads(m_threads)
@@ -388,36 +391,37 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
     // add the pheno flags
     std::vector<cy_uint> pflag_vec(neigh.size());
     for (size_t j = 0; j < neigh.size(); j++) {
-      pflag_vec[j] = static_cast<IntCol*>(pflag_ptr.get())->GetNumericElem(neigh.at(j).first);
+      pflag_vec[j] = static_cast<IntCol*>(pflag_ptr.get())->getData().at(neigh.at(j).first);
     }
 
     assert(pflag_vec.size() == neigh.size());
     
     // Now, set the node pointer to CellID rather than 0-based
     for (auto& cc : neigh) {
-      cc.first = id_ptr->GetNumericElem(cc.first);
+      cc.first = id_ptr->getData().at(cc.first);
     }
     node = CellNode(neigh, pflag_vec);
 
     // build the Cell object
     ////////////////////////
     Cell cell;
-    cell.m_id   = static_cast<IntCol*>(id_ptr.get())->GetNumericElem(i);
-    cell.m_pheno_flag = static_cast<IntCol*>(pflag_ptr.get())->GetNumericElem(i);
-    cell.m_cell_flag = static_cast<IntCol*>(cflag_ptr.get())->GetNumericElem(i);    
-    cell.m_x    = static_cast<FloatCol*>(x_ptr.get())->GetNumericElem(i);
-    cell.m_y    = static_cast<FloatCol*>(y_ptr.get())->GetNumericElem(i);
+    cell.id          = id_ptr->getData().at(i);
+    cell.pflag  = pflag_ptr->getData().at(i);
+    cell.cflag   = cflag_ptr->getData().at(i);
+    cell.x           = x_ptr->getData().at(i);
+    cell.y           = y_ptr->getData().at(i);    
 
     // fill the Cell data columns
     for (const auto& c : col_ptr) {
-      cell.m_cols.push_back(static_cast<FloatCol*>(c.get())->GetNumericElem(i));
+      cell.cols.push_back(c->getData().at(i));
     }
 
     // fill the Cell graph data
-    node.FillSparseFormat(cell.m_spatial_ids, cell.m_spatial_dist);
-    assert(pflag_vec.size() == cell.m_spatial_ids.size());
-    cell.m_spatial_flags = pflag_vec;
-
+    //node.FillSparseFormat(cell.m_spatial_ids, cell.m_spatial_dist);
+    //assert(pflag_vec.size() == cell.m_spatial_ids.size());
+    //cell.m_spatial_flags = pflag_vec;
+    
+    
     // Add the cell to the thread-local buffer.
 #ifdef __clang__
     cell_buffer.push_back(cell);
@@ -467,8 +471,8 @@ void CellTable::KNN_spatial(int num_neighbors, int dist) {
   std::cerr << "Warning: KNN spatial function requires including header library knncolle (https://github.com/LTLA/knncolle)" <<
     " and preprocessor directive -DHAVE_KNNCOLLE" << std::endl;
 #endif
-  
-}
+
+}*/
 
 void CellTable::TumorCall(int num_neighbors, float frac,
 			  cy_uint orflag, cy_uint andflag, cy_uint dist) {
@@ -485,18 +489,14 @@ void CellTable::TumorCall(int num_neighbors, float frac,
   std::vector<float> concatenated_data;
   
   const int ndim = 2;
+  validate();
   
-  auto x_ptr = m_table.at("x");
-  auto y_ptr = m_table.at("y");
-  auto pflag_ptr = m_table.at("pflag");
-  auto cflag_ptr = m_table.at("cflag");
-  
-  const auto& x_data = std::dynamic_pointer_cast<FloatCol>(x_ptr)->getData(); // just a ptr, not a copy
+  const std::vector<float>& x_data = m_x_ptr->getData(); // just a ptr, not a copy
   if (m_verbose) 
     std::cerr << "...adding " << AddCommas(x_data.size()) << " points on x" << std::endl;
   concatenated_data.insert(concatenated_data.end(), x_data.begin(), x_data.end());
-  
-  const auto& y_data = std::dynamic_pointer_cast<FloatCol>(y_ptr)->getData();
+
+  const std::vector<float>& y_data = m_y_ptr->getData(); // just a ptr, not a copy
   if (m_verbose) 
     std::cerr << "...adding " << AddCommas(y_data.size()) << " points on y" << std::endl;
    concatenated_data.insert(concatenated_data.end(), y_data.begin(), y_data.end());
@@ -539,7 +539,7 @@ void CellTable::TumorCall(int num_neighbors, float frac,
     // add the pheno flags
     std::vector<cy_uint> pflag_vec(neigh.size());
     for (size_t j = 0; j < neigh.size(); j++) {
-      pflag_vec[j] = static_cast<IntCol*>(pflag_ptr.get())->GetNumericElem(neigh.at(j).first);
+      pflag_vec[j] = m_pflag_ptr->getData().at(neigh.at(j).first);
     }
 
     assert(pflag_vec.size() == neigh.size());
@@ -556,7 +556,7 @@ void CellTable::TumorCall(int num_neighbors, float frac,
 	tumor_cell_count++;
     }
     if (tumor_cell_count / static_cast<float>(node.size()) >= frac)
-      static_cast<IntCol*>(cflag_ptr.get())->SetNumericElem(1, i);
+      m_cflag_ptr->SetNumericElem(1, i);
     
   }// end for
 
@@ -570,16 +570,15 @@ void CellTable::TumorCall(int num_neighbors, float frac,
 void CellTable::BuildKDTree() {
 
 #ifdef HAVE_KDTREE
+
+  validate();
   
   pointVec points;
-  const auto x_ptr = m_table.find("x");
-  const auto y_ptr = m_table.find("y");
-  assert(x_ptr != m_table.end());
-  assert(y_ptr != m_table.end());
-
+  
   // build the points vector
-  for (size_t i = 0; i < CellCount(); i++) {
-    points.push_back({ x_ptr->second->GetNumericElem(i), y_ptr->second->GetNumericElem(i)});
+  size_t nn = CellCount();
+  for (size_t i = 0; i < nn; i++) {
+    points.push_back({ m_x_ptr->getData().at(i), m_y_ptr->getData().at(i)});
   }
   
   m_kdtree = new KDTree(points);
@@ -625,18 +624,12 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
 
   if (m_verbose)  {
     for (size_t i = 0; i < inner.size(); i++) {
-      std::cerr << "In " << inner.at(i) << " Out " << outer.at(i) <<
-	" log " << logor.at(i) << " logand " << logand.at(i) << " label " << label.at(i) << std::endl;
+      std::cerr << "Radius: [" << std::setw(4) << inner.at(i) << "," << std::setw(4) << outer.at(i) <<
+	"] OR: " << std::setw(7) << logor.at(i) << " AND: " << std::setw(7) << logand.at(i) << " - " << label.at(i) << std::endl;
     }
   }
 
-  // get the flag column
-  shared_ptr<IntCol> fc = std::dynamic_pointer_cast<IntCol>(m_table["pflag"]);
-  assert(fc);
-  assert(fc->size());
-
-  // check sizes are good
-  assert(fc->size() == CellCount());
+  validate();
 
   // check if already exists in the table
   for (const auto& l : label) {
@@ -649,20 +642,16 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   std::vector<std::shared_ptr<FloatCol>> dc(inner.size());
   for(auto& ptr : dc) {
     ptr = std::make_shared<FloatCol>();
-    ptr->resize(fc->size());
+    ptr->resize(m_pflag_ptr->size());
   }
-
-  // get the cell id colums
-  auto id_ptr = m_table.at("id"); 
-  assert(id_ptr->size() == fc->size());
 
   // flip it so that the id points to the zero-based index
   /*  std::unordered_map<uint32_t, size_t> inverse_lookup;
   if (m_verbose)
     std::cerr << "...done loading, doing the flip" << std::endl;
   uint32_t max_cell_id = 0;
-  for (size_t i = 0; i < id_ptr->size(); ++i) {
-    uint32_t value = id_ptr->GetNumericElem(i);
+  for (size_t i = 0; i < m_id_ptr->size(); ++i) {
+    uint32_t value = m_id_ptr->getData().at(i);
     inverse_lookup[value] = i;
     if (value > max_cell_id)
       max_cell_id = value;
@@ -676,12 +665,6 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     std::cerr << "...building the KDTree" << std::endl;
   BuildKDTree();
   
-  //
-  const auto x_ptr = m_table.find("x");
-  const auto y_ptr = m_table.find("y");
-  assert(x_ptr != m_table.end());
-  assert(y_ptr != m_table.end());
-
   // get max radius to compute on
   cy_uint max_radius = 0;
   for (const auto& r : outer)
@@ -696,9 +679,9 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   // pre-compute the bools
   if (m_verbose)
     std::cerr << "...pre-computing flag results" << std::endl;
-  std::vector<std::vector<int>> flag_result(inner.size(), std::vector<int>(fc->size(), 0));
-  for (size_t i = 0; i < fc->size(); i++) {
-    CellFlag mflag(fc->GetNumericElem(i));
+  std::vector<std::vector<int>> flag_result(inner.size(), std::vector<int>(m_pflag_ptr->size(), 0));
+  for (size_t i = 0; i < m_pflag_ptr->size(); i++) {
+    CellFlag mflag(m_pflag_ptr->getData().at(i));
     for (size_t j = 0; j < inner.size(); j++) {
       if ( (!logor[j] && !logand[j]) || mflag.testAndOr(logor[j], logand[j])) {
 	flag_result[j][i] = 1; 
@@ -717,16 +700,17 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   float total_cell_count = CellCount();
   
   // loop the cells
+  size_t countr = 0; // for progress reporting
   if (m_verbose)
     std::cerr << "...starting cell loop" << std::endl;
 #pragma omp parallel for num_threads(m_threads)
-  for (size_t i = 0; i < fc->size(); i++) {
+  for (size_t i = 0; i < m_pflag_ptr->size(); i++) {
     
     // initialize the counts for each radial condition
     std::vector<float> cell_count(inner.size());
 
-    float x1 = x_ptr->second->GetNumericElem(i);
-    float y1 = y_ptr->second->GetNumericElem(i);
+    float x1 = m_x_ptr->getData().at(i);
+    float y1 = m_y_ptr->getData().at(i);
     point_t pt = { x1, y1 }; 
 
     // this will be inclusive of this point
@@ -742,8 +726,8 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     // loop the nodes connected to each cell
     for (const auto& n : inds) {
 
-      float x2 = x_ptr->second->GetNumericElem(n);
-      float y2 = y_ptr->second->GetNumericElem(n);
+      float x2 = m_x_ptr->getData().at(n); 
+      float y2 = m_y_ptr->getData().at(n); 
       float dx = x2 - x1;
       float dy = y2 - y1;
       float dist = std::sqrt(dx*dx + dy*dy);
@@ -753,7 +737,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
       // n.first is cell_id of connected cell to this cell
       for (size_t j = 0; j < inner.size(); j++) {
 	//std::cerr << "inner " << inner[j] << " outer " << outer[j] << std::endl;
-	//std::cerr << flag_result[j][n] << " logor " << logor[j] << " logand " << logand[j] << " flag " << fc->GetNumericElem(n) << std::endl;
+	//std::cerr << flag_result[j][n] << " logor " << logor[j] << " logand " << logand[j] << " flag " << m_pflag_ptr->getData().at(n) << std::endl;
 	if (flag_result[j][n])
 	  cell_count[j] += ((dist >= inner[j]) && (dist <= outer[j]));
       }
@@ -786,10 +770,10 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     // build the Cell object
     ////////////////////////
     Cell cell;
-    cell.m_id   = id_ptr->GetNumericElem(i);
-    cell.m_flag = fc->GetNumericElem(i);
-    cell.m_x    = x_ptr->second->GetNumericElem(i);
-    cell.m_y    = y_ptr->second->GetNumericElem(i);
+    cell.m_id   = m_id_ptr->getData().at(i);
+    cell.m_flag = m_pflag_ptr->getData().at(i);
+    cell.m_x    = m_x_pyr->second->getData().at(i);
+    cell.m_y    = m_y_ptr->second->getData().at(i);
 
     // fill the Cell data columns
     std::vector<ColPtr> col_ptr;
@@ -798,7 +782,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     }
 
     for (const auto& c : col_ptr) {
-      cell.m_cols.push_back(c->GetNumericElem(i));
+      cell.m_cols.push_back(c->getData().at(i));
     }
 
     // fill the Cell graph data
@@ -809,14 +793,18 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     (*m_archive)(cell);
     */
     if (m_verbose && i % 5000 == 0) {
-      std::cerr << "...radial density: computing on cell " << AddCommas(i) << " and thread " << omp_get_thread_num() <<
-	" and found densities ";
+      countr += 5000;
+      std::cerr << std::fixed << "...rad dens: working cell " << std::setw(11) << AddCommas(i) 
+          << " thread " << std::setw(2) << omp_get_thread_num() 
+          << " %done: " << std::setw(3) << static_cast<int>(static_cast<float>(countr) / m_pflag_ptr->size() * 100) 
+          << " densities: ";
+      
       for (size_t j = 0; j < dc.size(); j++) {
-	std::cerr << dc.at(j)->GetNumericElem(i) << " ";
+	std::cerr << std::setw(8) << static_cast<int>(dc.at(j)->getData().at(i)) << " ";
 	if (j > 5)
 	  break;
       }
-      std::cerr << std::endl;
+      std::cerr << " ... " << std::endl;
     }
     
   } // end the main cell loop
@@ -840,22 +828,15 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   return 0;
 }
 
-void CellTable::Select(cy_uint por, cy_uint cor,
-		       cy_uint pand, cy_uint cand,
-		       bool pnot, bool cnot,
+void CellTable::Select(CellSelector select, 
 		       SelectOpMap criteria,
 		       bool or_toggle,
 		       float radius) {
   
   // add a dummy to ensure that OutputTable recognizes that m_cells_to_write is non-empty
   m_cells_to_write.insert(-1);
+  validate();
   
-  IntCol* cflag_ptr = static_cast<IntCol*>(m_table.at("cflag").get());
-  IntCol* pflag_ptr = static_cast<IntCol*>(m_table.at("pflag").get());
-  IntCol* celli_ptr = static_cast<IntCol*>(m_table.at("id").get());    
-  FloatCol* x_ptr = static_cast<FloatCol*>(m_table.at("x").get());
-  FloatCol* y_ptr = static_cast<FloatCol*>(m_table.at("y").get());  
-
   if (m_verbose)
     std::cerr << "...starting loop to tag cells as include/exclude" << std::endl;
   
@@ -868,16 +849,12 @@ void CellTable::Select(cy_uint por, cy_uint cor,
     // FLAGS
     ///////
     // NB: even if flags are all empty, default should be to trigger a "write_cell = true"
-    CellFlag pflag(pflag_ptr->GetNumericElem(i));
-    CellFlag cflag(cflag_ptr->GetNumericElem(i));
-    bool pflags_met = pflag.testAndOr(por, pand);
-    bool cflags_met = cflag.testAndOr(cor, cand);  
-  
-    // if flags met, print the cell
-    if ( (pflags_met != pnot) && (cflags_met != cnot)) {
+    CellFlag pflag(m_pflag_ptr->getData().at(i));
+    CellFlag cflag(m_cflag_ptr->getData().at(i));
+    if (select.TestFlags(pflag, cflag)) {
       write_cell = true;
     }
-
+    
     ///////
     // FIELD
     ///////
@@ -887,17 +864,11 @@ void CellTable::Select(cy_uint por, cy_uint cor,
     for (const auto& c : criteria) {
 
       // to-do -- will segfault if column not in table
-      FloatCol* ptr = static_cast<FloatCol*>(m_table.at(c.first).get());
+      FloatColPtr ptr = m_table.at(c.first);
       
-      float value = ptr->GetNumericElem(i);
+      float value = ptr->getData().at(i);
     
       for (const auto& cc : c.second) { // loop the vector of {optype, float}
-	
-	/*      std::cerr << "m_or_toggle " << m_or_toggle <<
-		" criteria int " << c.first << " optype equal? " <<
-		(cc.first == optype::EQUAL_TO) << " numeric " << cc.second <<
-		" value " << value << " write_cell before " << write_cell << std::endl;
-	*/
 	
 	switch (cc.first) { // switching on the optype
 	case optype::GREATER_THAN: write_cell          = write_cell = or_toggle ? (write_cell || (value >  cc.second)) : (write_cell && (value >  cc.second));  break;
@@ -911,10 +882,9 @@ void CellTable::Select(cy_uint por, cy_uint cor,
     } // end criteria loop
 
     if (flag_write_cell && write_cell)
-      m_cells_to_write.insert(celli_ptr->GetNumericElem(i));
+      m_cells_to_write.insert(m_id_ptr->getData().at(i));
     
   } // end cell loop
-
 
   // second loop to actually write
   
@@ -933,14 +903,14 @@ void CellTable::Select(cy_uint por, cy_uint cor,
       std::cerr << "...working on cell " << AddCommas(i) << std::endl;
     
     // if this cell is write, no KD lookup needed
-    int this_cid = celli_ptr->GetNumericElem(i);
+    int this_cid = m_id_ptr->getData().at(i);
     if (m_cells_to_write.count(this_cid)) {
       continue;
     }
     
     // find the point
-    float x1 = x_ptr->GetNumericElem(i);
-    float y1 = y_ptr->GetNumericElem(i);
+    float x1 = m_x_ptr->getData().at(i);
+    float y1 = m_y_ptr->getData().at(i);
     point_t pt = { x1, y1 };
 
     // this will be inclusive of this point
@@ -949,7 +919,7 @@ void CellTable::Select(cy_uint por, cy_uint cor,
 
     // loop the inds, and check if neighbors a good cell
     for (const auto& j : inds) {
-      int neigh_cid = celli_ptr->GetNumericElem(j);
+      int neigh_cid = m_id_ptr->getData().at(j);
       if (m_cells_to_write.count(neigh_cid)) {
 	m_cells_to_write.insert(this_cid);
 	continue;

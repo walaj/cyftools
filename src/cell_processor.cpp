@@ -2,6 +2,7 @@
 #include "polygon.h"
 #include "cell_utils.h"
 #include "cell_flag.h"
+#include "cell_selector.h"
 
 #include "cell_row.h"
 
@@ -73,8 +74,8 @@ int AverageProcessor::ProcessHeader(CellHeader& header) {
 
 int AverageProcessor::ProcessLine(Cell& cell) {
 
-  for (size_t i = 0; i < cell.m_cols.size(); i++) {
-    sums[i] += cell.m_cols.at(i);
+  for (size_t i = 0; i < cell.cols.size(); i++) {
+    sums[i] += cell.cols.at(i);
   }
   n++;
 
@@ -93,7 +94,7 @@ void AverageProcessor::EmitCell() const {
     }
   }
 
-  cell.m_cols = means;
+  cell.cols = means;
 
   // write the one cell
   OutputLine(cell);
@@ -131,7 +132,7 @@ int CellCountProcessor::ProcessHeader(CellHeader& header) {
 int CellCountProcessor::ProcessLine(Cell& cell) {
 
   for (size_t i = 0; i < m_counts.size(); i++) {
-    CellFlag f(cell.m_pheno_flag);
+    CellFlag f(cell.pflag);
     cy_uint to_test = static_cast<cy_uint>(std::pow(2, i));
     //    std::cerr << " i " << i << " totest " << to_test << " f " << f << " test " << f.testAndOr(to_test,0) << std::endl;
     if (f.testAndOr(to_test, 0))
@@ -147,18 +148,18 @@ void CellCountProcessor::EmitCell() const {
 
   // add markers as dummies
   for (size_t i = 0; i < m_counts.size(); i++)
-    cell.m_cols.push_back(0);
+    cell.cols.push_back(0);
 
   // add the count data
   for (size_t i = 0; i < m_counts.size(); i++)
-    cell.m_cols.push_back(m_counts.at(i));
+    cell.cols.push_back(m_counts.at(i));
 
   // zero the hard data since they are meaningless
-  cell.m_x = 0;
-  cell.m_y = 0;  
-  cell.m_pheno_flag = 0;
-  cell.m_cell_flag = 0;
-  cell.m_id = 0;
+  cell.x = 0;
+  cell.y = 0;  
+  cell.pflag = 0;
+  cell.cflag = 0;
+  cell.id = 0;
 
   // write the one cell
   OutputLine(cell);
@@ -183,47 +184,47 @@ int SummaryProcessor::ProcessLine(Cell& cell) {
   m_count++;
 
   // fixed mins
-  if (cell.m_x < m_min[0])
-    m_min[0] = cell.m_x;
-  if (cell.m_y < m_min[1])
-    m_min[1] = cell.m_y;
-  if (cell.m_pheno_flag < m_min[2])
-    m_min[2] = cell.m_pheno_flag;
-  if (cell.m_cell_flag < m_min[3])
-    m_min[3] = cell.m_cell_flag;
-  if (cell.m_id < m_min[4])
-    m_min[4] = cell.m_id;
+  if (cell.x < m_min[0])
+    m_min[0] = cell.x;
+  if (cell.y < m_min[1])
+    m_min[1] = cell.y;
+  if (cell.pflag < m_min[2])
+    m_min[2] = cell.pflag;
+  if (cell.cflag < m_min[3])
+    m_min[3] = cell.cflag;
+  if (cell.id < m_min[4])
+    m_min[4] = cell.id;
 
   // fixed maxs
-  if (cell.m_x > m_max[0])
-    m_max[0] = cell.m_x;
-  if (cell.m_y > m_max[1])
-    m_max[1] = cell.m_y;
-  if (cell.m_pheno_flag > m_max[2])
-    m_max[2] = cell.m_pheno_flag;
-  if (cell.m_cell_flag > m_max[3])
-    m_max[3] = cell.m_cell_flag;
-  if (cell.m_id > m_max[4])
-    m_max[4] = cell.m_id;
+  if (cell.x > m_max[0])
+    m_max[0] = cell.x;
+  if (cell.y > m_max[1])
+    m_max[1] = cell.y;
+  if (cell.pflag > m_max[2])
+    m_max[2] = cell.pflag;
+  if (cell.cflag > m_max[3])
+    m_max[3] = cell.cflag;
+  if (cell.id > m_max[4])
+    m_max[4] = cell.id;
 
   // fixed means
   // assert is to make sure we don't have numeric overflow
   assert(m_mean[0] >= 0); // x and y should be > 0
   assert(m_mean[1] >= 0);
   assert(m_mean[4] >= 0);  
-  assert(std::numeric_limits<float>::max() - m_mean[0] > cell.m_x);
-  assert(std::numeric_limits<float>::max() - m_mean[1] > cell.m_y);
-  assert(std::numeric_limits<float>::max() - m_mean[4] > cell.m_id);
+  assert(std::numeric_limits<float>::max() - m_mean[0] > cell.x);
+  assert(std::numeric_limits<float>::max() - m_mean[1] > cell.y);
+  assert(std::numeric_limits<float>::max() - m_mean[4] > cell.id);
   
-  m_mean[0] += cell.m_x;
-  m_mean[1] += cell.m_y;
-  m_mean[4] += cell.m_id;
+  m_mean[0] += cell.x;
+  m_mean[1] += cell.y;
+  m_mean[4] += cell.id;
 
   // update remaining columns
-  for (size_t i = 0; i < cell.m_cols.size(); i++) {
+  for (size_t i = 0; i < cell.cols.size(); i++) {
     if (m_mean.at(i+5) > 0)
-      assert(std::numeric_limits<float>::max() - m_mean.at(i+5) > cell.m_cols.at(i));
-    m_mean[i+5] += cell.m_cols.at(i);
+      assert(std::numeric_limits<float>::max() - m_mean.at(i+5) > cell.cols.at(i));
+    m_mean[i+5] += cell.cols.at(i);
   }
 
   return NO_WRITE_CELL;
@@ -332,19 +333,10 @@ int SelectProcessor::ProcessLine(Cell& cell) {
   // FLAGS
   ///////
   // NB: even if flags are all empty, default should be to trigger a "write_cell = true"
-  
-  // get the flag value from the line
-  CellFlag pflag(cell.m_pheno_flag);
-  CellFlag cflag(cell.m_cell_flag);  
-  
-  // test it and print line if so
-  bool pflags_met = pflag.testAndOr(m_por, m_pand);
-  bool cflags_met = cflag.testAndOr(m_cor, m_cand);  
 
   // if flags met, print the cell
-  if ( (pflags_met != m_pnot) && (cflags_met != m_cnot)) {
+  if ( m_select.TestFlags(cell.pflag, cell.cflag)) { 
     write_cell = true;
-    //std::cerr << " writing cell " << std::endl;
   }
 
   ///////
@@ -355,8 +347,8 @@ int SelectProcessor::ProcessLine(Cell& cell) {
   
   for (const auto& c : m_criteria_int) {
     
-    assert(c.first < cell.m_cols.size());
-    float value = cell.m_cols.at(c.first);
+    assert(c.first < cell.cols.size());
+    float value = cell.cols.at(c.first);
     
     for (const auto& cc : c.second) { // loop the vector of {optype, float}
 
@@ -424,22 +416,22 @@ int HallucinateProcessor::ProcessLine(Cell& cell) {
 
   // just transfer to a new set of columns,
   // not including what is to be cut
-  std::vector<float> m_cols_new;
-  assert(cell.m_cols.size() >= m_to_remove.size());
-  m_cols_new.reserve(cell.m_cols.size() - m_to_remove.size() + m_nphenotypes);
+  std::vector<float> cols_new;
+  assert(cell.cols.size() >= m_to_remove.size());
+  cols_new.reserve(cell.cols.size() - m_to_remove.size() + m_nphenotypes);
 
   // add back the old non-marker data
-  for (size_t i = 0; i < cell.m_cols.size(); i++) {
+  for (size_t i = 0; i < cell.cols.size(); i++) {
     if (!m_to_remove.count(i)) {
-      m_cols_new.push_back(cell.m_cols.at(i));
+      cols_new.push_back(cell.cols.at(i));
     }
   }
 
   // the hallucinated data is just zeros in the markers
-  for (size_t i = 0; i < cell.m_cols.size(); i++) {
-    m_cols_new.push_back(0);
+  for (size_t i = 0; i < cell.cols.size(); i++) {
+    cols_new.push_back(0);
   }
-  cell.m_cols = m_cols_new;
+  cell.cols = cols_new;
 
   
   assert(m_nphenotypes > 0);
@@ -447,7 +439,7 @@ int HallucinateProcessor::ProcessLine(Cell& cell) {
   // Generate random flag to turn on
   CellFlag flag;
   flag.setFlagOn(m_distrib(m_gen));
-  cell.m_pheno_flag = flag.toBase10();
+  cell.pflag = flag.toBase10();
 
   return WRITE_CELL;
 }
@@ -492,8 +484,8 @@ int ScatterProcessor::ProcessHeader(CellHeader& header) {
 
 int ScatterProcessor::ProcessLine(Cell& cell) {
 
-  cell.m_x = m_wdistrib(m_gen);
-  cell.m_y = m_hdistrib(m_gen);  
+  cell.x = m_wdistrib(m_gen);
+  cell.y = m_hdistrib(m_gen);  
 
   return WRITE_CELL;
 }
@@ -552,16 +544,16 @@ int CutProcessor::ProcessLine(Cell& cell) {
 
   // just transfer to a new set of columns,
   // not including what is to be cut
-  std::vector<float> m_cols_new;
-  assert(cell.m_cols.size() >= m_to_remove.size());
-  m_cols_new.reserve(cell.m_cols.size() - m_to_remove.size());
+  std::vector<float> cols_new;
+  assert(cell.cols.size() >= m_to_remove.size());
+  cols_new.reserve(cell.cols.size() - m_to_remove.size());
   
-  for (size_t i = 0; i < cell.m_cols.size(); i++) {
+  for (size_t i = 0; i < cell.cols.size(); i++) {
     if (!m_to_remove.count(i)) {
-      m_cols_new.push_back(cell.m_cols.at(i));
+      cols_new.push_back(cell.cols.at(i));
     }
   }
-  cell.m_cols = m_cols_new;
+  cell.cols = cols_new;
   
   return WRITE_CELL;
 }
@@ -629,25 +621,25 @@ int DivideProcessor::ProcessLine(Cell& cell) {
   m_count++;
 
   assert(m_numer >= 0 && m_denom >= 0);
-  assert(m_existing_column == -1 || m_existing_column < cell.m_cols.size());
-  assert(m_numer < cell.m_cols.size() && m_denom < cell.m_cols.size());
+  assert(m_existing_column == -1 || m_existing_column < cell.cols.size());
+  assert(m_numer < cell.cols.size() && m_denom < cell.cols.size());
 
   // divide by zero
-  if (cell.m_cols.at(m_denom) == 0) {
+  if (cell.cols.at(m_denom) == 0) {
     if (m_existing_column >= 0)
-      cell.m_cols[m_existing_column] = m_div_zero;
+      cell.cols[m_existing_column] = m_div_zero;
     else
-      cell.m_cols.push_back(m_div_zero);
+      cell.cols.push_back(m_div_zero);
     return WRITE_CELL;
   }
   
-  float val = cell.m_cols.at(m_numer) / cell.m_cols.at(m_denom);
+  float val = cell.cols.at(m_numer) / cell.cols.at(m_denom);
 
   // store the value
   if (m_existing_column >= 0)
-    cell.m_cols[m_existing_column] = val;
+    cell.cols[m_existing_column] = val;
   else
-    cell.m_cols.push_back(val);
+    cell.cols.push_back(val);
 
   return WRITE_CELL;
   
@@ -683,17 +675,17 @@ int LogProcessor::ProcessHeader(CellHeader& header) {
 int LogProcessor::ProcessLine(Cell& cell) {
 
   m_count++;
-  for (size_t i = 0; i < cell.m_cols.size(); i++) {
+  for (size_t i = 0; i < cell.cols.size(); i++) {
     if (m_to_log.count(i)) {
-      if (cell.m_cols[i] > 0) {
-	cell.m_cols[i] = std::log10(cell.m_cols.at(i));
+      if (cell.cols[i] > 0) {
+	cell.cols[i] = std::log10(cell.cols.at(i));
       } else {
 	
 	if (!m_bool_warning_emitted) {
 	  std::vector<Tag> tags = m_header.GetDataTags();
 	  m_bool_warning_emitted = true;
 	  std::cerr << "Warning: encountered zero or negative number to log on " <<
-	    "line " << m_count << " with value " << cell.m_cols[i] << " on column " <<
+	    "line " << m_count << " with value " << cell.cols[i] << " on column " <<
 	    tags.at(i).id << " - removing this line in output. This warning " <<
 	    "will emit only once per file" << std::endl;
 	}
@@ -770,23 +762,23 @@ int CleanProcessor::ProcessLine(Cell& cell) {
 
   // just transfer to a new set of columns,
   // not including what is to be cut
-  std::vector<float> m_cols_new;
-  assert(cell.m_cols.size() >= m_to_remove.size());
-  m_cols_new.reserve(cell.m_cols.size() - m_to_remove.size());
+  std::vector<float> cols_new;
+  assert(cell.cols.size() >= m_to_remove.size());
+  cols_new.reserve(cell.cols.size() - m_to_remove.size());
   
-  for (size_t i = 0; i < cell.m_cols.size(); i++) {
+  for (size_t i = 0; i < cell.cols.size(); i++) {
     if (m_to_remove.count(i) == 0) {
-      m_cols_new.push_back(cell.m_cols.at(i));
+      cols_new.push_back(cell.cols.at(i));
     }
   }
-  cell.m_cols = m_cols_new;
+  cell.cols = cols_new;
 
   // clean the graph
-  if (m_clean_graph) {
+  /*  if (m_clean_graph) {
     cell.m_spatial_ids.clear();
     cell.m_spatial_dist.clear();
     cell.m_spatial_flags.clear();
-  }
+    }*/
 
   return 1;
   
@@ -900,8 +892,8 @@ int PhenoProcessor::ProcessLine(Cell& cell) {
     size_t marker_index = m->second;
     
     // set the flag on if it clears the gates
-    if (cell.m_cols.at(m->second) >= b.second.first &&
-	cell.m_cols.at(m->second) <= b.second.second) {
+    if (cell.cols.at(m->second) >= b.second.first &&
+	cell.cols.at(m->second) <= b.second.second) {
       //      std::cerr << "Marker: " << b.first << " cleared" << std::endl;
       //std::cerr << "...before " << flag << std::endl; 
       flag.setFlagOn(marker_index);
@@ -910,7 +902,7 @@ int PhenoProcessor::ProcessLine(Cell& cell) {
   }
 
   // convert to cy_uint for storage
-  cell.m_pheno_flag = flag.toBase10();
+  cell.pflag = flag.toBase10();
   
   return 1;
 }
@@ -935,15 +927,15 @@ int ViewProcessor::ProcessLine(Cell& cell) {
 int CatProcessor::ProcessLine(Cell& line) {
 
   // update the cell id
-  size_t n_cell_id = m_offset + line.m_id; 
+  size_t n_cell_id = m_offset + line.id; 
   if (n_cell_id > m_max_cellid)
     m_max_cellid = n_cell_id;
-  line.m_id = n_cell_id;
+  line.id = n_cell_id;
   
-  if (line.m_spatial_ids.size() && !m_error_emitted) {
+  /*  if (line.m_spatial_ids.size() && !m_error_emitted) {
     std::cerr << "Warning: Graph concatenation not supported" << std::endl;
     m_error_emitted = true;
-  }
+    }*/
   
   // update the graph ids
   /*  for (const auto& i : m_graph_indicies) {
@@ -1054,6 +1046,6 @@ int BuildProcessor::ProcessHeader(CellHeader& header) {
 // just a pass through to place it in the table
 int BuildProcessor::ProcessLine(Cell& cell) {
 
-  return 2;
+  return SAVE_CELL;
   
 }

@@ -29,10 +29,10 @@ KDTREE = -I../external/KDTree -DHAVE_KDTREE
 ######################################
 
 ## Optional header/lib library for spatial latent dirichlet allocation
-LDA_INCDIR=$(MYHOME)/git/supervised-lda/include
+LDA_INCDIR=$(HOME)/git/supervised-lda
 ifneq ($(wildcard $(LDA_INCDIR)/*),)
-    LDA=-I$(LDA_INCDIR) -DHAVE_LDAPLUSPLUS
-    LDALIB=-L$(MYHOME)/git/supervised-lda/lib -lldaplusplus -Wl,-rpath,$(MYHOME)/git/supervised-lda/lib
+    LDA=-I$(LDA_INCDIR)/include -DHAVE_LDAPLUSPLUS
+    LDALIB=-L$(LDA_INCDIR)/lib -lldaplusplus -Wl,-rpath,$(LDA_INCDIR)/lib
 else
     $(warning ******************************************************************)
     $(warning Warning: Directory $(LDA_INCDIR) does not exist or is empty. No LDA functionality will be included)
@@ -40,9 +40,8 @@ else
     $(warning ******************************************************************)
 endif
 
-
 ####### HMS SERVER SPECIFIC ######
-ifeq ($(wildcard $(BREWDIR)),)  # If dir does not exist, probably on HMS server
+ifneq ($(wildcard $(BREWDIR)),)  # If dir does not exist, probably on HMS server
 
             $(warning ******************************************************************)
             $(warning Assuming HMS file system)
@@ -55,7 +54,7 @@ ifeq ($(wildcard $(BREWDIR)),)  # If dir does not exist, probably on HMS server
 
     CAIRO=-DHAVE_CAIRO
     CAIROLIB = -lcairo
-    CGALLIB = -lgmp
+    GMPLIB = -lgmp
     EIGEN=-I$(MYHOME)/software/eigen-3.4.0/ -DHAVE_EIGEN
 
     #CGAL=-I$(MYHOME)/software/CGAL-5.5.2/include -DHAVE_CGAL
@@ -63,6 +62,16 @@ ifeq ($(wildcard $(BREWDIR)),)  # If dir does not exist, probably on HMS server
 
 ####### MAC SPECIFIC #######
 else
+    ## Optional header library for DBSCAN clustering
+    # DBSCAN_INCDIR=/Users/jeremiahwala/git/SimpleDBSCAN
+    #  ifneq ($(wildcard $(DBSCAN_INCDIR)/*),)
+    #     DBSCAN = -I$(DBSCAN_INCDIR) -DHAVE_DBSCAN
+    # else
+    #     $(warning ******************************************************************)
+    #     $(warning Warning: Directory $(DBSCAN_INCDIR) does not exist or is empty.)
+    #     $(warning To fix, please compile and include/link to DBSCAN libray)
+    #     $(warning ******************************************************************)
+    # endif
 
     ## Optional header/liblibrary for image-based functions
     TIFF_INCDIR=$(BREWHOME)/libtiff/include
@@ -124,7 +133,7 @@ else
     ## Optional library for PDF/PNG support
     CAIRO_INCDIR=$(BREWHOME)/cairo/include
     ifneq ($(wildcard $(CAIRO_INCDIR)/*),) 
-        CAIRO = -I$(CAIRO_INCDIR) -DHAVE_CAIROD
+        CAIRO = -I$(CAIRO_INCDIR) -DHAVE_CAIRO
         CAIROLIB = -L$(BREWHOME)/cairo/lib -lcairo
     else
         $(warning ******************************************************************)
@@ -137,6 +146,15 @@ else
     CGAL_INCDIR=$(BREWHOME)/cgal/include
     ifneq ($(wildcard $(CGAL_INCDIR)/*),) 
         CGAL = -I$(CGAL_INCDIR) -DHAVE_CGAL
+        GMP_INCDIR=$(BREWHOME)/gmp
+        ifneq ($(wildcard $(GMP_INCDIR)/*),)
+           GMPLIB = -L$(BREWHOME)/gmp/lib -lgmp
+        else
+            $(warning ******************************************************************)
+            $(warning Warning: Directory $(GMP_INCDIR) does not exist or is empty)
+            $(warning To fix, please compile and include/link to GMP library)
+            $(warning ******************************************************************)
+        endif
     else
         $(warning ******************************************************************)
         $(warning Warning: Directory $(CGAL_INCDIR) does not exist or is empty. CGAL will not be included)
@@ -155,13 +173,19 @@ else
         $(warning ******************************************************************)
     endif
 
-    #ML includes
-    #MLPACK = -I/opt/homebrew/Cellar/mlpack/4.2.0/include -DHAVE_MLPACK
-    #ARMADILLO = -I/opt/homebrew/Cellar/armadillo/12.4.1/include
-    #ENSMALLEN = -I/opt/homebrew/Cellar/ensmallen/2.19.1/include
+    ## Optional library for mlpack
+    MLPACK_INCDIR=$(BREWHOME)/mlpack
+    ifneq ($(wildcard $(MLPACK_INCDIR)/*),)
+	MLPACK = -I/opt/homebrew/opt/armadillo/include -I/opt/homebrew/Cellar/mlpack/4.2.0/include/stb -I/opt/homebrew/opt/ensmallen/include -I/opt/homebrew/include -I/opt/homebrew/Cellar/mlpack/4.2.0/include/ -DHAVE_MLPACK
+        #MLPACK = -I$(MLPACK_INCDIR)/include -I$(BREWHOME)/armadillo/include -I$(BREWHOME)/ensmallen/include -DHAVE_MLPACK
+        MLPACKLIB = -L$(BREWHOME)/armadillo/lib -larmadillo
+    else
+        $(warning ******************************************************************)
+        $(warning Warning: Directory $(MLPACK_INCDIR) does not exist or is empty. mlpack will not be included)
+        $(warning To fix, please include mlpack libraries)
+        $(warning ******************************************************************)
+    endif
 
-    #ML libs
-    ###MLPACKL = -L/opt/homebrew/Cellar/mlpack/4.2.0/lib -Wl,-rpath
     #ARMADILLOL = -L/opt/homebrew/Cellar/armadillo/12.4.1/lib -larmadillo -Wl,-rpath,/opt/homebrew/Cellar/armadillo/12.4.1/lib
 
 endif
@@ -176,11 +200,11 @@ endif
 
 CFLAGS = -O2 -g -std=c++17 $(USE64BIT) $(OPENMP) -I. -I.. \
           $(TIFF) $(KNN) $(UMAP) $(IRLBA) $(EIGEN) $(KMEANS) \
-          $(OMP) $(CEREAL) $(LDA) $(HD5) $(KDTREE) $(ENSMALLEN) \
-	  $(ARMADILLO) $(MLPACK) $(CAIRO) $(CGAL) $(BOOST)
+          $(OMP) $(CEREAL) $(LDA) $(HD5) $(KDTREE) \
+	  $(MLPACK) $(CAIRO) $(CGAL) $(BOOST) $(DBSCAN)
 
-LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB) $(KDLIB) ${TIFFLD} $(ARMADILLOL) \
-          $(CAIROLIB) $(CGALLIB)
+LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB) $(KDLIB) ${TIFFLD} $(MLPACKLIB) \
+          $(CAIROLIB) $(GMPLIB)
 
 # Specify the source files
 SRCS = cysift.cpp \
@@ -201,7 +225,10 @@ SRCS = cysift.cpp \
        tiff_ifd.cpp \
        tiff_image.cpp \
        tiff_cp.cpp \
-       color_map.cpp
+       color_map.cpp \
+       kdtree.cpp \
+       cell_selector.cpp \
+       cell_synth.cpp
 
 # Specify the object files
 OBJS = $(SRCS:.cpp=.o)

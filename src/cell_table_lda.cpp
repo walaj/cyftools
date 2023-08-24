@@ -109,11 +109,11 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
   assert(m_ldamodel);
   for (const auto& s : m_ldamodel->markers_to_run) {
     assert(m_table.find(s) != m_table.end());
-    shared_ptr<FloatCol> fc = std::dynamic_pointer_cast<FloatCol>(m_table.at(s));
+    FloatColPtr fc = m_table.at(s);
     assert(fc->size());
     
     for (int j = 0; j < CellCount(); j++) {
-      X(i, j) = static_cast<int>(fc->GetNumericElem(j));
+      X(i, j) = static_cast<int>(fc->getData().at(j));
     }
     i++;
   }
@@ -130,7 +130,7 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
 
   // add to the output to the data
   for (size_t i = 0; i < Zr.rows(); ++i) {
-    std::shared_ptr<FloatCol> fc = make_shared<FloatCol>();
+    FloatColPtr fc = make_shared<FloatCol>();
     fc->resize(Zr.cols());
     for (size_t j = 0; j < Zr.cols(); j++) {
       fc->SetNumericElem(Zr(i, j), j);
@@ -151,14 +151,11 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
     const float alpha_val = 0.5f;
     
     // get the x y coordinates of the cells
-    const auto x_ptr = m_table.find("x");
-    const auto y_ptr = m_table.find("y");
-    assert(x_ptr != m_table.end());
-    assert(y_ptr != m_table.end());
+    validate();
     
     // open the PDF for drawing
-    const int width  = x_ptr->second->Max();
-    const int height = y_ptr->second->Max();    
+    const int width  = m_x_ptr->Max();
+    const int height = m_y_ptr->Max();    
     //cairo_surface_t *surface = cairo_pdf_surface_create(pdffile.c_str(), width, height);
     //cairo_t *cr = cairo_create(surface);
 
@@ -191,8 +188,8 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
     for (size_t j = 0; j < Zr.cols(); j++) { // loop the cells
 
       // Draw the arc segment
-      const float x = x_ptr->second->GetNumericElem(j);
-      const float y = y_ptr->second->GetNumericElem(j);
+      const float x = m_x_ptr->getData().at(j);
+      const float y = m_y_ptr->getData().at(j);
       
       float start_angle = 0.0;
       
@@ -330,11 +327,11 @@ void CellTable::LDA_create_model(const std::vector<std::string>& marker_cols,
   int i = 0;
   for (const auto& s : marker_cols) {
     assert(m_table.find(s) != m_table.end());
-    shared_ptr<FloatCol> fc = std::dynamic_pointer_cast<FloatCol>(m_table.at(s));
+    FloatColPtr fc = m_table.at(s); 
     assert(fc->size());
     
     for (int j = 0; j < CellCount(); j++) {
-      X(i, j) = static_cast<int>(fc->GetNumericElem(j));
+      X(i, j) = static_cast<int>(fc->getData().at(j));
     }
     i++;
   }
