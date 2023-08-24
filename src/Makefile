@@ -41,7 +41,7 @@ else
 endif
 
 ####### HMS SERVER SPECIFIC ######
-ifneq ($(wildcard $(BREWDIR)),)  # If dir does not exist, probably on HMS server
+ifeq ($(wildcard $(BREWHOME)),)  # If dir does not exist, probably on HMS server
 
             $(warning ******************************************************************)
             $(warning Assuming HMS file system)

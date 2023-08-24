@@ -35,8 +35,6 @@ class Cell {
   
   friend std::ostream& operator<<(std::ostream& os, const Cell& cell);
 
-  bool mark = false;
-  
   uint64_t id;
   
   cy_uint pflag;
@@ -48,9 +46,9 @@ class Cell {
   // column data
   std::vector<float> cols;
 
-  // spatial graph
-  //std::vector<uint32_t> spatial_ids;
-  //std::vector<uint32_t> spatial_dist;
-  //std::vector<cy_uint>  spatial_flags;
+  // graph
+  // std::vector<uint32_t> spatial_ids;
+  // std::vector<uint32_t> spatial_dist;
+  // std::vector<cy_uint>  spatial_flags;
 
 };
