@@ -107,8 +107,8 @@ else
     endif
 
     ## Required library for Eigen support
-    EIGEN_INCDIR=$(BREWHOME)/eigen/include/eigen3/
-    ifneq ($(wildcard $(HD5_INCDIR)/*),)
+    EIGEN_INCDIR=$(BREWHOME)/eigen/include/eigen3
+    ifneq ($(wildcard $(EIGEN_INCDIR)/*),)
         EIGEN=-I$(EIGEN_INCDIR) -DHAVE_EIGEN
     else
         $(warning ******************************************************************)
