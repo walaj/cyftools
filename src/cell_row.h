@@ -30,7 +30,7 @@ class Cell {
   template <class Archive>
   void serialize(Archive & ar)
   {
-    ar(mark, id, cflag, pflag, x, y, cols); 
+    ar(id, cflag, pflag, x, y, cols); 
   }
   
   friend std::ostream& operator<<(std::ostream& os, const Cell& cell);
