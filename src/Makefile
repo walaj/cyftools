@@ -56,9 +56,12 @@ ifeq ($(wildcard $(BREWHOME)),)  # If dir does not exist, probably on HMS server
     CAIROLIB = -lcairo
     GMPLIB = -lgmp
     EIGEN=-I$(MYHOME)/software/eigen-3.4.0/ -DHAVE_EIGEN
-
-    #CGAL=-I$(MYHOME)/software/CGAL-5.5.2/include -DHAVE_CGAL
-
+    CGAL=-I$(MYHOME)/software/CGAL-5.5.2/include -DHAVE_CGAL
+    MLPACK = -I$(MYHOME)/software/armadillo-12.6.2/include \
+             -I$(MYHOME)/software/mlpack-4.2.0/include \
+	     -I$(MYHOME)/software/ensmallen-2.19.1/include \
+             -DHAVE_MLPACK
+    MLPACKLIB = -L$(MYHOME)/software/armadillo-12.6.2/lib64 -larmadillo
 
 ####### MAC SPECIFIC #######
 else
@@ -176,8 +179,10 @@ else
     ## Optional library for mlpack
     MLPACK_INCDIR=$(BREWHOME)/mlpack
     ifneq ($(wildcard $(MLPACK_INCDIR)/*),)
-	MLPACK = -I/opt/homebrew/opt/armadillo/include -I/opt/homebrew/Cellar/mlpack/4.2.0/include/stb -I/opt/homebrew/opt/ensmallen/include -I/opt/homebrew/include -I/opt/homebrew/Cellar/mlpack/4.2.0/include/ -DHAVE_MLPACK
-        #MLPACK = -I$(MLPACK_INCDIR)/include -I$(BREWHOME)/armadillo/include -I$(BREWHOME)/ensmallen/include -DHAVE_MLPACK
+	MLPACK = -I$(BREWHOME)/armadillo/include \
+		 -I$(BREWHOME)/mlpack/include/stb \
+		 -I$(BREWHOME)/ensmallen/include \
+		 -I$(BREWHOM)/mlpack/include -DHAVE_MLPACK
         MLPACKLIB = -L$(BREWHOME)/armadillo/lib -larmadillo
     else
         $(warning ******************************************************************)
