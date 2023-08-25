@@ -61,7 +61,7 @@ ifeq ($(wildcard $(BREWHOME)),)  # If dir does not exist, probably on HMS server
              -I$(MYHOME)/software/mlpack-4.2.0/include \
 	     -I$(MYHOME)/software/ensmallen-2.19.1/include \
              -DHAVE_MLPACK
-    MLPACKLIB = -L$(MYHOME)/software/armadillo-12.6.2/lib64 -larmadillo
+    MLPACKLIB = -L$(MYHOME)/software/armadillo-12.6.2/lib64 -larmadillo -Wl,-rpath=$(MYHOME)/software/armadillo-12.6.2/lib64
 
 ####### MAC SPECIFIC #######
 else
@@ -183,7 +183,7 @@ else
 		 -I$(BREWHOME)/mlpack/include/stb \
 		 -I$(BREWHOME)/ensmallen/include \
 		 -I$(BREWHOME)/mlpack/include -DHAVE_MLPACK
-        MLPACKLIB = -L$(BREWHOME)/armadillo/lib -larmadillo
+        MLPACKLIB = -L$(BREWHOME)/armadillo/lib -larmadillo -Wl,-rpath,$(BREWHOME)/armadillo/lib
     else
         $(warning ******************************************************************)
         $(warning Warning: Directory $(MLPACK_INCDIR) does not exist or is empty. mlpack will not be included)

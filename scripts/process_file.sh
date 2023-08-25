@@ -14,11 +14,16 @@ function check_file_exists {
     fi
 }
 
-for infile in *phenotype.csv; do
+# prepare the matlab file
+#matlab -nodisplay -r "run('/home/jaw34/git/cysift/matlab/jerry.m'); exit;"
 
-    #if [[ $(echo "$infile" | grep -o "\." | wc -l) -eq 1 ]]; then
+HOMEBASE=/n/scratch3/users/j/jaw34/projects/orion/orion_1_74
+for infile in $HOMEBASE/rawcsv/*.csv; do
 
-	base="${infile%%.*}"
+    if [[ ! $infile =~ rar ]]; then
+
+	#base="${infile%%.*}"
+	base=$(basename "$infile" .csv)
 	
 	# Extract the basename
 	echo "...working on sample $base"
@@ -32,11 +37,11 @@ for infile in *phenotype.csv; do
 	# check_file_exists "${base}.phenotype.csv"
 	#~/git/cysift/scripts/header.sh "${base}.rar.csv" "${base}.header.csv"
 
-	#check_file_exists "${base}.header.csv"
-	~/git/cysift/scripts/cerealed.sh "${base}.header.csv" "${base}.cys" 2>/dev/null
+	#check_file_exists "$HOMEBASE/headered/${base}.header.csv"
+	#~/git/cysift/scripts/cerealed.sh "$HOMEBASE/headered/${base}.header.csv" "$HOMEBASE/clean/${base}.cys" 2>/dev/null
 
-	#check_file_exists "${base}.cys"
-	sbatch ~/git/cysift/scripts/chain.sh "${base}.cys" "{base}.chain.cys" "${base}.phenotype.csv"
+	check_file_exists "$HOMEBASE/clean/${base}.cys"
+	sbatch ~/git/cysift/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrd.cys" "$HOMEBASE/phenotype/${base}.phenotype.csv"
 	
 	#check_file_exists "${base}.cys"
 	#~/git/cysift/scripts/phenotype.sh "${base}.cys" "${base}.phenotype.cys" "${base}.phenotype.csv"
@@ -59,6 +64,5 @@ for infile in *phenotype.csv; do
 	   #check_file_exists "${base}.tselect.cys"
 	   #sbatch /home/jaw34/git/cysift/scripts/frame.sh "${base}.tselect.cys" "${base}.tframe.csv"
 	
-#    fi
-    
+    fi
 done
