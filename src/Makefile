@@ -182,7 +182,7 @@ else
 	MLPACK = -I$(BREWHOME)/armadillo/include \
 		 -I$(BREWHOME)/mlpack/include/stb \
 		 -I$(BREWHOME)/ensmallen/include \
-		 -I$(BREWHOM)/mlpack/include -DHAVE_MLPACK
+		 -I$(BREWHOME)/mlpack/include -DHAVE_MLPACK
         MLPACKLIB = -L$(BREWHOME)/armadillo/lib -larmadillo
     else
         $(warning ******************************************************************)
