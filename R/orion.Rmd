@@ -1,0 +1,104 @@
+---
+title: "orion_paper"
+output: html_document
+date: "2023-08-18"
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+
+source("~/git/cysift/R/helpers.R")
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r load-data}
+load_redcap()
+```
+
+```{r setup-stuff}
+knitr::opts_chunk$set(include = FALSE)
+theme_jw <- function() {
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(color = "black")
+  )
+}
+
+```
+
+```{r clinical-figures}
+redcap$pMMR <- as.factor(redcap$pMMR)
+redcap[is.na(Grade), Grade := "Unknown"]
+levels(redcap$pMMR) <- c("dMMR", "pMMR")
+pMMR_colors <- c("dMMR" = "#fdc086", "pMMR" = "#7fc97f")
+
+# grade
+g <- ggplot(redcap, aes(x = Grade, fill = pMMR, group=pMMR)) +
+  geom_bar(color="black") +
+  labs(x = "Histological grade",
+       y = "Count") +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw()
+
+# location
+g <- ggplot(redcap, aes(x = Location, fill = pMMR, group=pMMR)) +
+  geom_bar(color="black") +
+  labs(x = "Anatomical location",
+       y = "Count") +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw()
+
+# stage
+g <- ggplot(redcap, aes(x = Stage_At_Diagnosis, fill = pMMR, group=pMMR)) +
+  geom_bar(color="black") +
+  labs(x = "Stage at diagnosis",
+       y = "Count") +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw()
+
+# age
+g <- ggplot(redcap, aes(x = pMMR, y = Age, fill = pMMR)) +
+  geom_boxplot(alpha = 0.5, width=0.1, outlier.shape=NA) +  # Boxplot in the background with some transparency
+  geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +  # Scatter plot with jitter
+  labs(y = "Age") +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw()
+```
+
+```{r radial-dens}
+files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/chain/", full.names = TRUE)
+header <- header_read(files[1])
+# read all the data as the means within the tumor compartment
+dtt <- lapply(files, function(f) {
+  cat(basename(f), "\n")
+  dt <- fread(cmd=paste("cysift select -O 1",f,"- | cysift mean - - | cysift view -"))
+  setnames(dt, paste0("V",seq(6)), c("sample","cell","x","y","pflag","cflag"))
+  setnames(dt, paste0("V",seq(7,ncol(dt))), header$id[header$tag_type %in% c("CA","MA")])
+  return(dt)
+})
+dtr <- rbindlist(dtt)
+saveRDS(dtr, "~/Sorger/cache/chain.rds", compress=FALSE)
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+install.packages(c("readxl", "data.table"))
+library(readxl)
+library(data.table)
+
