@@ -2461,7 +2461,6 @@ static void cysift_cat(const std::vector<std::string>& inputFiles, const std::st
  
 int debugfunc(int argc, char** argv) {
 
-  std::string samples;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -2470,41 +2469,18 @@ int debugfunc(int argc, char** argv) {
     }
   }
 
-  optind++;
-  
-  // Process any remaining no-flag options
-  while (optind < argc) {
-    opt::infile_vec.push_back(argv[optind]);
-    optind++;
-  }
-
-  //
-  if (opt::verbose)
-    for (const auto& v : opt::infile_vec)
-      std::cerr << "...set to read " << v << std::endl;
-  
-  // display help if no input
-  if (opt::infile_vec.empty() || die) {
-
-    const char *USAGE_MESSAGE = 
-      "Usage: cysift cat <cysfile1> <cysfile2> ... [options]\n"
-      "  Concatenate together multiple cell tables and stream to stdout in .cys format.\n"
-      "\n"
-      "Arguments:\n"
-      "  <cysfile1> <cysfile2> ...  Filepaths of cell tables to concatenate.\n"
-      "\n"
-      "Options:\n"
-      "  -v, --verbose             Increase output to stderr.\n"
-      "\n"
-      "Example:\n"
-      "  cysift cat table1.cys table2.cys > tablecat.cys\n";
-    std::cerr << USAGE_MESSAGE;
+  if (die || in_only_process(argc, argv)) {
+    std::cerr << "invalid input" << std::endl;
     return 1;
   }
 
-  cysift_cat(opt::infile_vec, "-");
-  return 1;
+  DebugProcessor debug;
+  debug.SetCommonParams(opt::outfile, cmd_input, opt::verbose); // really shouldn't need any of these
 
+  if (table.StreamTable(debug, opt::infile)) 
+    return 1; // non-zero status on StreamTable
+
+  return 0;
 }
 
 static int cerealfunc(int argc, char** argv) {

@@ -25,7 +25,7 @@ void Cell::set_sample_id(uint32_t new_id) {
 
 void Cell::set_cell_id(uint32_t new_id) {
   uint32_t currentSampleID = static_cast<uint32_t>(id >> 32);
-  id = static_cast<uint64_t>(currentSampleID) << 32 | id;
+  id = static_cast<uint64_t>(currentSampleID) << 32 | new_id;
 }
 
 uint32_t Cell::get_sample_id() const {
@@ -94,6 +94,8 @@ Cell::Cell(const std::string& row, const CellHeader& header,
 	   uint32_t cellid,
 	   uint32_t sampleid) {
 
+  
+  
   const std::vector<std::string> tokens = tokenize_comma_delimited(row);  
 
   if (tokens.size() < 3) {
@@ -102,9 +104,12 @@ Cell::Cell(const std::string& row, const CellHeader& header,
 
   pflag = 0;
   cflag = 0;
-  
-  set_cell_id(cellid);
-  set_sample_id(sampleid);
+  id = 0;
+  x = 0;
+  y = 0;
+
+  this->set_sample_id(sampleid);
+  this->set_cell_id(cellid);
 
   // 1st and 2nd entry is x,y position
   x = std::strtof(tokens.at(0).c_str(), nullptr);

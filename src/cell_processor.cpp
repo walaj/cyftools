@@ -1037,6 +1037,32 @@ int CerealProcessor::ProcessLine(const std::string& line) {
   
 }
 
+int DebugProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+  
+  // just in time, make the output stream
+  this->SetupOutputStream();
+
+  //m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  m_header.SortTags();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+
+  return HEADER_NO_ACTION;
+  
+}
+
+int DebugProcessor::ProcessLine(Cell& cell) {
+
+  cell.set_cell_id(m_cell_id);
+  m_cell_id++;
+  return WRITE_CELL;
+  
+}
+
 int BuildProcessor::ProcessHeader(CellHeader& header) {
   m_header = header; // store but don't print
 

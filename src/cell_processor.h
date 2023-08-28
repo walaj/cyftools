@@ -130,6 +130,18 @@ private:
   
 };
 
+class DebugProcessor : public CellProcessor {
+
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+
+private:
+
+  size_t m_cell_id = 0;
+  
+};
+
 class HallucinateProcessor : public CellProcessor {
 
 public:
