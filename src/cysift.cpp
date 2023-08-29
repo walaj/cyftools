@@ -2469,7 +2469,7 @@ int debugfunc(int argc, char** argv) {
     }
   }
 
-  if (die || in_only_process(argc, argv)) {
+  if (die || in_out_process(argc, argv)) {
     std::cerr << "invalid input" << std::endl;
     return 1;
   }

@@ -14,6 +14,10 @@ function check_file_exists {
     fi
 }
 
+## download the data
+#orion data
+#wget https://www.dropbox.com/s/c88pb7ih3y6d94v/matlab-Orion_CRC_allbacthes-20220602.mat?dl=1 -O ~/projects/orion/matlab-Orion_CRC_allbacthes-20220602.mat
+
 # prepare the matlab file
 #matlab -nodisplay -r "run('/home/jaw34/git/cysift/matlab/jerry.m'); exit;"
 
