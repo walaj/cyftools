@@ -2249,12 +2249,11 @@ static int selectfunc(int argc, char** argv) {
       "  Select cells by phenotype flag\n"
       "    cysfile: filepath or a '-' to stream to stdin\n"
       "  Flag selection\n"
-      "    -o                    Cell phenotype: Logical OR flags\n"
-      "    -a                    Cell phenotype: Logical AND flags\n"
-      "    -N                    Cell phenotype: Not flag\n"
-      "    -O                    Cell flag: Logical OR flags\n"
-      "    -A                    Cell flag: Logical AND flags\n"
-      "    -M                    Cell flag: Not flag\n"
+      "    -a                    Phenotype logical AND\n"
+      "    -A                    Cell logical AND\n"
+      "    -n                    Phenotype logical NOT\n"
+      "    -N                    Cell logical NOT\n"
+      "    -o                    Logical OR\n"
       "  Marker selection\n"
       "    -f                    Marker / meta field to select on\n"
       "    -g                    > - Greater than\n"
@@ -2268,6 +2267,8 @@ static int selectfunc(int argc, char** argv) {
       "  Options\n"
       "    -v, --verbose         Increase output to stderr\n"
       "    -t                    Number of threads (mask selection only)\n"
+      "  Example\n"
+      "    cysift select -a 4160 -o -a 4352 <in> <out> # select cells with bits 4096+256 OR 4096+64"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;

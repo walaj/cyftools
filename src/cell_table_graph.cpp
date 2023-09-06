@@ -676,12 +676,20 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   // display the header for the columns being display
   if (m_verbose) {
     std::cerr << std::string(47, ' ');
-      for (size_t j = 0; j < dc.size(); j++) {
+      for (size_t j = 5; j < dc.size(); j++) {
 	std::cerr << std::setw(12) << label.at(j) << " ";
-	if (j > 5)
+	if (j > 10)
 	  break;
       }
       std::cerr << " ... " << std::endl;
+    std::cerr << std::string(47, ' ');
+      for (size_t j = 5; j < dc.size(); j++) {
+	std::cerr << std::setw(12) << logor.at(j) << " ";
+	if (j > 10)
+	  break;
+      }
+      std::cerr << " ... " << std::endl;
+      
   }
 
   //static std::vector<float> cell_count;
@@ -695,7 +703,6 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   
 #pragma omp parallel for num_threads(m_threads) schedule(dynamic, 100)
   for (size_t i = 0; i < m_pflag_ptr->size(); i++) {
-
     std::vector<float> cell_count;
     std::vector<size_t> total_cell_count;  
     
@@ -715,20 +722,29 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     std::vector<std::vector<size_t>> neighbors;
     std::vector<std::vector<double>> distances;
     mlpack::Range r(0.0, max_radius);
-    
+
     // this will be inclusive of this point
     ml_kdtree->Search(query, r, neighbors, distances);
+
+    // only one query point, so just reference that
+    const std::vector<size_t>& ind = neighbors.at(0);
+    const std::vector<double>& dist = distances.at(0);
     
     // loop the nodes connected to each cell
-    for (size_t n = 0; n < distances[0].size(); n++) {
-      
+    for (size_t n = 0; n < ind.size(); n++) {
       // test if the connected cell meets the flag criteria
       // n.first is cell_id of connected cell to this cell
+
+      /*      if (i == 5000)
+	std::cerr << " n " << n << " ind[n] " << ind[n] <<
+	  " flag_result[9] " << flag_result[9][ind[n]] << " label " <<
+	  label[9] << " flag[ind[n]] " << m_pflag_ptr->getData().at(ind[n]) << std::endl;
+      */
       for (size_t j = 0; j < inner.size(); j++) {
-	float d = distances.at(0).at(n);
+	float d = dist[n]; 
 	if (d >= inner[j] && d <= outer[j])
 	  total_cell_count[j]++;
-	if (flag_result[j][n])
+	if (flag_result[j][ind[n]])
 	  cell_count[j] += ((d >= inner[j]) && (d <= outer[j]));
       }
     }
@@ -751,9 +767,9 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
 		<< " %done: " << std::setw(3) << static_cast<int>(static_cast<float>(countr) / m_pflag_ptr->size() * 100) 
 		<< " density: ";
       
-      for (size_t j = 0; j < dc.size(); j++) {
+      for (size_t j = 5; j < dc.size(); j++) {
 	std::cerr << std::setw(12) << static_cast<int>(std::round(dc.at(j)->getData().at(i))) << " ";
-	if (j > 5)
+	if (j > 10)
 	  break;
       }
       std::cerr << " ... " << std::endl;
