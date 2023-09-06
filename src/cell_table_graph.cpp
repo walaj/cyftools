@@ -705,7 +705,10 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     float x1 = m_x_ptr->getData().at(i);
     float y1 = m_y_ptr->getData().at(i);
 
-    arma::mat query = {{x1}, {y1}};
+    arma::mat query(2, 1);
+    query(0, 0) = x1;
+    query(1, 0) = y1;
+    
     std::vector<std::vector<size_t>> neighbors;
     std::vector<std::vector<double>> distances;
     mlpack::Range r(0.0, max_radius);
@@ -861,7 +864,10 @@ void CellTable::Select(CellSelector select,
 
     // this will be inclusive of this point
     assert(ml_kdtree);
-    arma::mat query = {{x1}, {y1}};
+    arma::mat query(2, 1);
+    query(0, 0) = x1;
+    query(1, 0) = y1;
+
     std::vector<std::vector<size_t>> neighbors;
     std::vector<std::vector<double>> distances;
     mlpack::Range r(0.0, radius);
