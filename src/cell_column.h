@@ -270,9 +270,9 @@ class NumericColumn : public Column {
       m_precision = n;
     }
 
-    const std::vector<T>& getData() const {
-      return m_vec;
-    }
+  const std::vector<T>& getData() const {
+    return m_vec;
+  }
 
   std::vector<T> copyData() const {
     return m_vec;

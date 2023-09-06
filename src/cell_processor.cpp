@@ -334,11 +334,15 @@ int SelectProcessor::ProcessLine(Cell& cell) {
   ///////
   // NB: even if flags are all empty, default should be to trigger a "write_cell = true"
 
+  //std::cerr << cell.cflag << " - " << cell.pflag << std::endl << m_select << std::endl;
+  
   // if flags met, print the cell
   if ( m_select.TestFlags(cell.pflag, cell.cflag)) { 
     write_cell = true;
   }
 
+  //std::cerr << " WRITE CELL " << write_cell << std::endl;
+  
   ///////
   // FIELD
   ///////
@@ -773,6 +777,11 @@ int CleanProcessor::ProcessLine(Cell& cell) {
   }
   cell.cols = cols_new;
 
+  if (m_clean_cflags)
+    cell.cflag = 0;
+  if (m_clean_pflags)
+    cell.pflag = 0;
+  
   // clean the graph
   /*  if (m_clean_graph) {
     cell.m_spatial_ids.clear();
@@ -909,9 +918,35 @@ int PhenoProcessor::ProcessLine(Cell& cell) {
 
 int ViewProcessor::ProcessHeader(CellHeader& header) {
 
+  m_header = header;
+
+  std::unordered_set<size_t> to_remove;
+  
+  // find indicies of columns to display
+  size_t i = 0;
+  if (m_to_view.size()) {
+    for (const auto& t : header.GetAllTags()) {
+      
+      // don't cut non-data tags
+      if (t.type != Tag::MA_TAG && t.type != Tag::CA_TAG)
+	continue;
+      
+      if (m_to_view.count(t.id)) {
+	m_to_view_indicies.insert(i);
+      } else {
+	to_remove.insert(i);
+      }
+      i++;
+    }
+    
+    // remove
+    m_header.Cut(to_remove);
+  }
+
+  
   // print it, that's all
   if (m_print_header || m_header_only) 
-    header.Print();
+    m_header.Print();
   
   return m_header_only ? ONLY_WRITE_HEADER : HEADER_NO_ACTION;
   
@@ -919,6 +954,24 @@ int ViewProcessor::ProcessHeader(CellHeader& header) {
 
 int ViewProcessor::ProcessLine(Cell& cell) {
 
+  // classic view, no cut
+  if (!m_to_view.size())  {
+    cell.Print(m_round);
+    return NO_WRITE_CELL; // don't output, since already printing it
+  }
+  
+  // just transfer to a new set of columns,
+  // not including what is to be cut
+  std::vector<float> cols_new;
+  assert(cell.cols.size() >= m_to_view.size());
+  cols_new.reserve(m_to_view.size());
+
+  for (size_t i = 0; i < cell.cols.size(); i++) {
+    if (m_to_view_indicies.count(i)) {
+      cols_new.push_back(cell.cols.at(i));
+    }
+  }
+  cell.cols = cols_new;
   cell.Print(m_round);
     
   return NO_WRITE_CELL; // don't output, since already printing it

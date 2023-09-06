@@ -11,7 +11,7 @@ class Cell {
 
  public:
 
-  Cell() {}
+  Cell() : id(0), pflag(0), cflag(0), x(0), y(0) {}
 
   Cell(const std::string& row, const CellHeader& header,
        uint32_t cellid,

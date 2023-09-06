@@ -6,7 +6,11 @@ date: "2023-08-18"
 
 ```{r setup, include=FALSE}
 library(data.table)
-
+library(tidyr)  # For gather()
+library(tidyverse)
+library(ggplot2)
+library(survival)
+library(forestplot)
 source("~/git/cysift/R/helpers.R")
 ```
 
@@ -18,6 +22,18 @@ When you click the **Knit** button a document will be generated that includes bo
 
 ```{r load-data}
 load_redcap()
+
+redcap$pMMR <- as.factor(redcap$pMMR)
+
+## DUMMY
+redcap[Grade == "Unknown", Grade := "Low"]
+redcap$Grade <- factor(redcap$Grade, levels = c("Low", "High"))
+
+levels(redcap$pMMR) <- c("dMMR", "pMMR")
+redcap[, mucinous := as.factor(ifelse(grepl("ucinous", Histology), 1, 0))]
+redcap$Location <- factor(redcap$Location, levels = c("Appendix", "Cecum", "Ascending", "Transverse", "Descending", "Sigmoid", "Rectosigmoid", "Rectum"))
+
+
 ```
 
 ```{r setup-stuff}
@@ -30,19 +46,25 @@ theme_jw <- function() {
     axis.text = element_text(color = "black")
   )
 }
+pMMR_colors <- c("dMMR" = "#fdc086", "pMMR" = "#5ab4ac")
 
 ```
 
 ```{r clinical-figures}
-redcap$pMMR <- as.factor(redcap$pMMR)
-redcap[is.na(Grade), Grade := "Unknown"]
-levels(redcap$pMMR) <- c("dMMR", "pMMR")
-pMMR_colors <- c("dMMR" = "#fdc086", "pMMR" = "#7fc97f")
+
 
 # grade
 g <- ggplot(redcap, aes(x = Grade, fill = pMMR, group=pMMR)) +
   geom_bar(color="black") +
   labs(x = "Histological grade",
+       y = "Count") +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw()
+
+# GEnder
+g <- ggplot(redcap, aes(x = Gender, fill = pMMR, group=pMMR)) +
+  geom_bar(color="black") +
+  labs(x = "Gender",
        y = "Count") +
   scale_fill_manual(values = pMMR_colors) +
   theme_jw()
@@ -65,12 +87,155 @@ g <- ggplot(redcap, aes(x = Stage_At_Diagnosis, fill = pMMR, group=pMMR)) +
 
 # age
 g <- ggplot(redcap, aes(x = pMMR, y = Age, fill = pMMR)) +
-  geom_boxplot(alpha = 0.5, width=0.1, outlier.shape=NA) +  # Boxplot in the background with some transparency
+  geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +  # Boxplot in the background with some transparency
   geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +  # Scatter plot with jitter
   labs(y = "Age") +
   scale_fill_manual(values = pMMR_colors) +
   theme_jw()
 ```
+
+```{r mutations}
+
+# reshape the mutation data
+long_data <- redcap %>%
+  gather(key = "Mutation", value = "Status", APC, p53, KRAS, BRAF, PIK3CA, SOX9, FBXW7, TCF7L2, CTNNB1, PTEN, NRAS) %>%
+  filter(Status == 1)  # Keep only mutated entries
+
+# Compute the total count for each mutation
+mutation_counts <- long_data %>%
+  group_by(Mutation) %>%
+  summarize(Total = n())
+long_data$Mutation <- factor(long_data$Mutation, levels = rev(mutation_counts$Mutation[order(-mutation_counts$Total)]))
+
+# Bar chart of mutation counts
+g <- ggplot(long_data, aes(x = Mutation, fill = as.factor(pMMR))) +
+  geom_bar(color="black") +  # Stacked bar chart
+  coord_flip() +  # Make the bar chart horizontal
+  labs(title = "Mutation Counts by pMMR Status",
+       x = "Mutation",
+       y = "Count") +
+  theme_jw() + 
+  scale_fill_manual(values = pMMR_colors, name = "MMR status")
+
+# KM curves by mutation
+g <- lapply(c("APC","p53","KRAS","BRAF","PIK3CA"), function(x) {
+ km_plot(redcap, x, x, c("0"="WT", "1"="Mutated"), pfs=TRUE)
+})
+
+# Known HRs by effect
+known <- data.table()
+#known <- rbind(known, data.table(variable="PIK3CA", hr=1.20, lower=0.98, upper=1.46, pmid="27436848", type="PFS", note=""))
+known <- rbind(known, data.table(variable="PIK3CA", hr=0.96, lower=0.83, upper=1.12, pmid="27436848", type="OS", note=""))
+known <- rbind(known, data.table(variable="APC", hr=0.62, lower=0.44, upper=0.83, pmid="33230914", type="OS", note="pMMR only"))
+known <- rbind(known, data.table(variable="BRAF", hr=2.25, lower=1.82, upper=2.83, pmid="34843402", type="OS", note=""))
+known <- rbind(known, data.table(variable="LVI", hr=2.37, lower=0.95, upper=5.89, pmid="24886281", type="OS", note="Stage III"))
+known <- rbind(known, data.table(variable="PNI", hr=0.99, lower=0.14, upper=7.14, pmid="24886281", type="OS", note="Stage III"))
+known <- rbind(known, data.table(variable="Grade", hr=1.45, lower=0.72, upper=2.90, pmid="24886281", type="OS", note="Poor differentiation. Stage III"))
+known <- rbind(known, data.table(variable="Gender", hr=1.16, lower=0.75, upper=1.80, pmid="24886281", type="OS", note="Male. Stage III"))
+known[, source := "lit"]
+
+# HR by mutation
+hr <- rbindlist(lapply(nn <- c("APC","p53","KRAS","BRAF","PIK3CA", "LVI","PNI","Grade", "mucinous", "Gender"), function(x) {
+ rr <- data.table::copy(redcap)
+ flip = FALSE
+ if (x == "Grade") {
+   rr <- redcap[Grade != "Unknown"]
+   flip=TRUE
+ }
+ dt <- km_plot(rr, x, x, c("0"="WT", "1"="Mutated"), pfs=TRUE, return.model=TRUE, flip=flip)
+ return(data.table(hr = dt$hr, lower = dt$lower, upper = dt$upper, variable=x))
+}))
+hr$variable <- factor(hr$variable, levels = hr$variable[order(-hr$HR)])
+hr[, source := "us"]
+
+#plot just our hazard ratios
+g <- ggplot(hr, aes(y = variable, x = hr)) +
+  geom_point(aes(x = hr), size = 3) +
+  geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.2) +
+  labs(x = "Hazard Ratio",
+       y = "Gene") +
+    geom_vline(aes(xintercept = 1), color = "red", linetype = "dashed") +  # Add vertical red line at HR = 1
+  theme_jw()
+
+# Combine our cohort with the literature
+combined_data <- rbindlist(list(hr, known), fill = TRUE)
+combined_data$variable <- factor(combined_data$variable, levels = hr$variable[order(-hr$hr)])
+g <- ggplot(combined_data, aes(y = variable, x = hr, color = source)) +
+  geom_point(aes(x = hr), size = 3, position = position_dodge(width = 0.3)) +
+  geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.2, position = position_dodge(width = 0.3)) +
+  scale_color_manual(values = c("us" = "black", "lit" = "red")) +
+  labs(title = "Hazard Ratios with Confidence Intervals",
+       x = "Hazard Ratio",
+       y = "Gene") +
+  theme_jw() +
+      geom_vline(aes(xintercept = 1), color = "black", linetype = "dashed") +  # Add vertical red line at HR = 1
+  theme(legend.title = element_blank())
+```
+
+```{r km-curves}
+g <- km_plot(redcap, "pMMR", "pMMR", c("0"="dMMR", "1"="pMMR"), pfs=FALSE, flip=TRUE) + scale_color_manual(values=pMMR_colors) + scale_fill_manual(values=pMMR_colors)
+```
+
+```{r cox-ph-no-imaging-no-molecular}
+ix <- rep(TRUE, nrow(redcap))
+survival_object <- Surv(redcap$PFSDays[ix], ifelse(redcap$PFSCensor[ix]==0,1,0))
+cox_model <- coxph(survival_object ~ redcap$Gender[ix] + redcap$mucinous[ix] + redcap$Grade[ix] + redcap$LVI[ix] + redcap$PNI[ix] + redcap$stage_num[ix] + redcap$pMMR[ix])
+
+# Extract the coefficients from the Cox model
+coefficients <- cox_model$coefficients
+hr <- exp(coefficients)
+hr <- data.table(
+  variable = names(coefficients),
+  HR = hr,
+  lower = exp(as.data.table(confint(cox_model, level = 0.95))$`2.5 %`),
+  upper = exp(as.data.table(confint(cox_model, level = 0.95))$`97.5 %`)
+)
+hr$variable <- factor(hr$variable, levels = hr$variable[order(-hr$HR)])
+
+# Create the forest plot
+g <- ggplot(
+  data = hr,
+  aes(x = variable, y = HR, ymin = lower, ymax = upper)) +
+  geom_pointrange(size = 0.8) +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  coord_flip() +
+  xlab("Covariate") +
+  ylab("Hazard Ratio") +
+  theme_jw()
+```
+
+```{r cox-ph-no-imaging-with-molecular}
+ix <- rep(TRUE, nrow(redcap))
+ix <- redcap[, pMMR=="pMMR"]
+survival_object <- Surv(redcap$PFSDays[ix], ifelse(redcap$PFSCensor[ix]==0,1,0))
+cox_model <- coxph(survival_object ~ redcap$Gender[ix] + redcap$mucinous[ix] + redcap$Grade[ix] + redcap$LVI[ix] + redcap$PNI[ix] + redcap$stage_num[ix] + redcap$pMMR[ix] + redcap$APC[ix] + redcap$KRAS[ix] + redcap$p53[ix] +
+                     redcap$BRAF[ix] + redcap$PIK3CA[ix] + redcap$tmb[ix])
+
+# Extract the coefficients from the Cox model
+coefficients <- cox_model$coefficients
+hr <- exp(coefficients)
+hr <- data.table(
+  variable = names(coefficients),
+  HR = hr,
+  lower = exp(as.data.table(confint(cox_model, level = 0.95))$`2.5 %`),
+  upper = exp(as.data.table(confint(cox_model, level = 0.95))$`97.5 %`)
+)
+hr$variable <- factor(hr$variable, levels = hr$variable[order(-hr$HR)])
+
+# Create the forest plot
+g <- ggplot(
+  data = hr,
+  aes(x = variable, y = HR, ymin = lower, ymax = upper)) +
+  geom_pointrange(size = 0.8) +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  coord_flip(ylim=c(0,10)) +
+  xlab("Covariate") +
+  ylab("Hazard Ratio") +
+  theme_jw()
+```
+
+The molecular, clinical and pathology model scored Grade (high), PNI
+
 
 ```{r radial-dens}
 files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/chain/", full.names = TRUE)
@@ -78,14 +243,39 @@ header <- header_read(files[1])
 # read all the data as the means within the tumor compartment
 dtt <- lapply(files, function(f) {
   cat(basename(f), "\n")
-  dt <- fread(cmd=paste("cysift select -O 1",f,"- | cysift mean - - | cysift view -"))
+  #dt <- fread(cmd=paste("cysift select -O 1",f,"- | cysift mean - - | cysift view -"))
+  dt <- fread(cmd=paste("cysift mean",f,"- | cysift view -"))
   setnames(dt, paste0("V",seq(6)), c("sample","cell","x","y","pflag","cflag"))
   setnames(dt, paste0("V",seq(7,ncol(dt))), header$id[header$tag_type %in% c("CA","MA")])
+  dt[, Slide_ID := sub("^(LSP[0-9]+).*", "\\1", basename(f))]
   return(dt)
 })
 dtr <- rbindlist(dtt)
 saveRDS(dtr, "~/Sorger/cache/chain.rds", compress=FALSE)
+```
 
+```{r cd3-by-tissue}
+rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
+
+# Reshape data to long format
+rr_long <- melt(rr, id.vars = "pMMR", measure.vars = c("CD3_200r", "CD20_200r","CD8_200r"), variable.name = "Metric", value.name = "Value")
+
+# Plot
+g <- ggplot(rr_long, aes(x = pMMR, y = Value, fill = pMMR)) +
+  geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +
+  geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +
+  labs(y = "Value") +
+  scale_fill_manual(values = pMMR_colors) +
+  facet_wrap(~ Metric) +  # Separate panel for each y variable
+  theme_jw()
+
+
+g <- ggplot(rr, aes(x = pMMR, y = CD3_200g, fill = pMMR)) +
+  geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +  # Boxplot in the background with some transparency
+  geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +  # Scatter plot with jitter
+  labs(y = "CD3") +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw()
 ```
 
 ## Including Plots

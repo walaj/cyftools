@@ -2,8 +2,29 @@
 
 #include "cell_utils.h"
 
-static void printWithoutScientific(double number) {
-    if (std::abs(number - std::round(number)) < 1e-9) {
+static void printWithoutScientific(double number, int round) {
+
+  // Convert to string with full precision
+  std::string out = std::to_string(number);
+  
+  // Remove trailing zeros
+  out.erase(out.find_last_not_of('0') + 1, std::string::npos);
+  
+  // Ensure only "round" characters after the decimal
+  size_t decimalPos = out.find('.');
+  if (decimalPos != std::string::npos && out.size() > decimalPos + round + 1) {
+    out.erase(decimalPos + round + 1);
+  }
+  
+  // Remove trailing decimal point if no fractional part
+  if (out.back() == '.') {
+    out.pop_back();
+  }
+  
+  std::cout << out;
+  
+  /*
+  if (std::abs(number - std::round(number)) < 1e-6) {
         // If the number is very close to an integer, print as an integer
         std::cout << static_cast<long long>(number);
     } else {
@@ -15,7 +36,7 @@ static void printWithoutScientific(double number) {
             out.pop_back();  // Remove trailing decimal point if no fractional part
         }
         std::cout << out;
-    }
+	}*/
 }
 
 void Cell::set_sample_id(uint32_t new_id) {
@@ -55,6 +76,14 @@ std::ostream& operator<<(std::ostream& os, const Cell& cell) {
     return os;
 }
 
+static void printValue(double value, int precision) {
+    double roundedValue = std::round(value * std::pow(10, precision)) / std::pow(10, precision);
+    if (roundedValue == static_cast<int>(roundedValue)) {
+        std::cout << static_cast<int>(roundedValue);
+    } else {
+        std::cout << std::fixed << std::setprecision(precision) << roundedValue;
+    }
+}
 void Cell::Print(int round) const {
 
   char d = ',';
@@ -63,12 +92,14 @@ void Cell::Print(int round) const {
   uint32_t cellID = static_cast<uint32_t>(id & 0xFFFFFFFF); // Extract the second 32 bits
   
   std::cout << sampleID << d << cellID << d << cflag << d << pflag << d;
-  std::cout << std::setprecision(round) << x << d << y;
+  printValue(x, round);
+  std::cout << d;
+  printValue(y, round);  
 
   // print cols
   for (const auto& c : cols) {
     std::cout << d;
-    printWithoutScientific(c);
+    printWithoutScientific(c, round);
   }
 
   // print graph

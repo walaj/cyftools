@@ -2,7 +2,6 @@
 #include "color_map.h"
 #include "cell_selector.h"
 
-
 #ifdef HAVE_UMAPPP
 #include "umappp/Umap.hpp"
 #include "umappp/NeighborList.hpp"
@@ -21,10 +20,6 @@
 #ifdef HAVE_CAIRO
 #include "cairo/cairo.h"
 #include "cairo/cairo-pdf.h"
-#endif
-
-#ifdef HAVE_KDTREE
-#include "KDTree.hpp"
 #endif
 
 // block for attempting bufferered writing to improve paralellization
@@ -519,17 +514,15 @@ void CellTable::TumorCall(int num_neighbors, float frac,
   //knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());  
 
   if (m_verbose)
-    std::cerr << " threads " << m_threads <<
-      " OR flag " << orflag << " AND flag " << andflag << std::endl;
+    std::cerr << " OR flag " << orflag << " AND flag " << andflag << std::endl;
   
 #pragma omp parallel for num_threads(m_threads)
   for (size_t i = 0; i < nobs; ++i) {
     
     // verbose printing
     if (i % 50000 == 0 && m_verbose)
-      std::cerr << "...working on cell " <<
-	AddCommas(i) << " with thread " <<
-	omp_get_thread_num() << " K " << num_neighbors << " Dist: " << dist <<
+      std::cerr << "...working on cell " << AddCommas(i) << 
+	" K " << num_neighbors << " Dist: " << dist <<
 	std::endl;
     
     JNeighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
@@ -552,6 +545,8 @@ void CellTable::TumorCall(int num_neighbors, float frac,
     float tumor_cell_count = 0;
     for (size_t j = 0; j < node.size(); j++) {
       CellFlag cellflag(node.m_flags.at(j));
+      //      std::cerr << " cell flag " << node.m_flags.at(j) << " test OR " << orflag << " and " << andflag <<
+      //	" test " << cellflag.testAndOr(orflag, andflag) << std::endl;
       if (cellflag.testAndOr(orflag, andflag))
 	tumor_cell_count++;
     }
@@ -569,49 +564,36 @@ void CellTable::TumorCall(int num_neighbors, float frac,
 
 void CellTable::BuildKDTree() {
 
-#ifdef HAVE_KDTREE
-
   validate();
   
-  pointVec points;
-  
-  // build the points vector
-  size_t nn = CellCount();
-  for (size_t i = 0; i < nn; i++) {
-    points.push_back({ m_x_ptr->getData().at(i), m_y_ptr->getData().at(i)});
-  }
-  
-  m_kdtree = new KDTree(points);
+#ifdef HAVE_MLPACK
 
-  /*
-  std::cerr << "...querying tree" << std::endl;
-  size_t i = 0;
-  for (const auto& p : points) {
-    i++;
-    if (i % 10000 == 0)
-      std::cerr << AddCommas(i) << std::endl;
-    std::vector<size_t> ind = tree.neighborhood_indices(p, 10);
-    if (i == 234) {
-      std::cerr << "Query P: " << p[0] << "," << p[1] << std::endl;
-      for (const auto& l : ind)
-	std::cerr << "ind: " << l << " Point " << points[l][0] << "," << points[l][1] << std::endl;
+  if (m_verbose)
+    std::cerr << "...building ML pack KDTree" << std::endl;
+  
+  arma::mat data(2, m_x_ptr->size());
+  for (size_t i = 0; i < m_x_ptr->size(); ++i)
+    {
+      data(0, i) = m_x_ptr->getData().at(i);
+      data(1, i) = m_y_ptr->getData().at(i);
     }
-  }
-  */  
-
+  
+  //assert(ml_kdtree == nullptr);
+  ml_kdtree = new mlpack::RangeSearch<mlpack::EuclideanDistance>(data);
+  assert(ml_kdtree);
+  
 #else
-  std::cerr << "Warning: Unable to build KD-tree, need to include KDTree header library (https://github.com/crvs/KDTree) " <<
-    " and add preprocessor directive -DHAVE_KDTREE" << std::endl;
+    std::cerr << "Warning: Unable to build KD-tree, need to include MLPack library " << 
+    " and add preprocessor directive -DHAVE_MLPACK" << std::endl;
 #endif
   
 }
-
 
 int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> outer,
 			       std::vector<cy_uint> logor, std::vector<cy_uint> logand,
 			       std::vector<std::string> label, std::vector<int> normalize_local,
 			       std::vector<int> normalize_global) {
-#ifdef HAVE_KDTREE
+#ifdef HAVE_MLPACK
   
   // check the radial geometry parameters
   assert(inner.size());
@@ -630,13 +612,6 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   }
 
   validate();
-
-  // check if already exists in the table
-  for (const auto& l : label) {
-    if (m_table.find(l) != m_table.end()) {
-      throw std::runtime_error("Adding density meta column " + l + " already in table");
-    }
-  }
   
   // store the densities
   std::vector<std::shared_ptr<FloatCol>> dc(inner.size());
@@ -644,21 +619,6 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     ptr = std::make_shared<FloatCol>();
     ptr->resize(m_pflag_ptr->size());
   }
-
-  // flip it so that the id points to the zero-based index
-  /*  std::unordered_map<uint32_t, size_t> inverse_lookup;
-  if (m_verbose)
-    std::cerr << "...done loading, doing the flip" << std::endl;
-  uint32_t max_cell_id = 0;
-  for (size_t i = 0; i < m_id_ptr->size(); ++i) {
-    uint32_t value = m_id_ptr->getData().at(i);
-    inverse_lookup[value] = i;
-    if (value > max_cell_id)
-      max_cell_id = value;
-      }*/
-
-  if (m_verbose)
-    std::cerr << "...radial density: starting loop" << std::endl;
 
   // build the tree
   if (m_verbose)
@@ -671,11 +631,6 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     if (max_radius < r)
       max_radius = r;
 
-#ifdef JKD_TREE
-  m_kdtree->rad = max_radius;
-  m_kdtree->r2 = max_radius * max_radius;
-#endif
-  
   // pre-compute the bools
   if (m_verbose)
     std::cerr << "...pre-computing flag results" << std::endl;
@@ -697,110 +652,101 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   }
 
   // total cell count
-  float total_cell_count = CellCount();
+  float total_image_cell_count = CellCount();
   
   // loop the cells
   size_t countr = 0; // for progress reporting
   if (m_verbose)
-    std::cerr << "...starting cell loop" << std::endl;
-#pragma omp parallel for num_threads(m_threads)
+    std::cerr << "...starting cell loop -- units = cells / 1000^2 pixels" << std::endl;
+
+  // inner and outer can be used in square mode only from now on
+  //for (size_t i = 0; i < inner.size(); i++) {
+  //  inner[i] = inner[i] * inner[i];
+  // outer[i] = outer[i] * outer[i];
+  //}
+      
+  // calculate the area
+  std::vector<float> area(inner.size());
+  for (size_t j = 0; j < inner.size(); ++j) {
+    float outerArea = static_cast<float>(outer[j] * outer[j]) * 3.1415926535f;
+    float innerArea = static_cast<float>(inner[j] * inner[j]) * 3.1415926535f;
+    area[j] = outerArea - innerArea;
+  }
+  
+  // display the header for the columns being display
+  if (m_verbose) {
+    std::cerr << std::string(47, ' ');
+      for (size_t j = 0; j < dc.size(); j++) {
+	std::cerr << std::setw(12) << label.at(j) << " ";
+	if (j > 5)
+	  break;
+      }
+      std::cerr << " ... " << std::endl;
+  }
+
+  static std::vector<float> cell_count;
+  static std::vector<size_t> total_cell_count;  
+  #pragma omp threadprivate(cell_count)
+  #pragma omp threadprivate(total_cell_count)  
+
+  // this will be inclusive of this point
+
+  assert(ml_kdtree);
+  
+#pragma omp parallel for num_threads(m_threads) schedule(dynamic, 100)
   for (size_t i = 0; i < m_pflag_ptr->size(); i++) {
     
-    // initialize the counts for each radial condition
-    std::vector<float> cell_count(inner.size());
+    // Initialize the counts for each radial condition
+    cell_count.resize(inner.size());
+    std::fill(cell_count.begin(), cell_count.end(), 0.0f);
+    total_cell_count.resize(inner.size());
+    std::fill(total_cell_count.begin(), total_cell_count.end(), 0);
 
     float x1 = m_x_ptr->getData().at(i);
     float y1 = m_y_ptr->getData().at(i);
-    point_t pt = { x1, y1 }; 
 
-    // this will be inclusive of this point
-    assert(m_kdtree);
-#ifdef JKD_TREE
-    std::vector<size_t> inds = m_kdtree->neighborhood_indices(pt);
-#else        
-    std::vector<size_t> inds = m_kdtree->neighborhood_indices(pt, max_radius);
-#endif
+    arma::mat query = {{x1}, {y1}};
+    std::vector<std::vector<size_t>> neighbors;
+    std::vector<std::vector<double>> distances;
+    mlpack::Range r(0.0, max_radius);
     
-    //std::vector<size_t> inds = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};
-
+    // this will be inclusive of this point
+    ml_kdtree->Search(query, r, neighbors, distances);
+    
     // loop the nodes connected to each cell
-    for (const auto& n : inds) {
-
-      float x2 = m_x_ptr->getData().at(n); 
-      float y2 = m_y_ptr->getData().at(n); 
-      float dx = x2 - x1;
-      float dy = y2 - y1;
-      float dist = std::sqrt(dx*dx + dy*dy);
-      //float dist = euclidean_distance(x1, y1, x2, y2);
+    for (size_t n = 0; n < distances[0].size(); n++) {
       
       // test if the connected cell meets the flag criteria
       // n.first is cell_id of connected cell to this cell
       for (size_t j = 0; j < inner.size(); j++) {
-	//std::cerr << "inner " << inner[j] << " outer " << outer[j] << std::endl;
-	//std::cerr << flag_result[j][n] << " logor " << logor[j] << " logand " << logand[j] << " flag " << m_pflag_ptr->getData().at(n) << std::endl;
+	float d = distances.at(0).at(n);
+	if (d >= inner[j] && d <= outer[j])
+	  total_cell_count[j]++;
 	if (flag_result[j][n])
-	  cell_count[j] += ((dist >= inner[j]) && (dist <= outer[j]));
+	  cell_count[j] += ((d >= inner[j]) && (d <= outer[j]));
       }
     }
     
-    // calculate the area
-    std::vector<float> area(inner.size());
-    for (size_t j = 0; j < inner.size(); ++j) {
-      float outerArea = static_cast<float>(outer[j]) * static_cast<float>(outer[j]) * 3.1415926535f;
-      float innerArea = static_cast<float>(inner[j]) * static_cast<float>(inner[j]) * 3.1415926535f;
-      area[j] = outerArea - innerArea;
-    }
-
     // do the density calculation for each condition
     // remember, i is iterator over cells, j is over conditions
     for (size_t j = 0; j < area.size(); ++j) {
-      if (!inds.empty()) {
-	float value = cell_count[j] * 100000000 / area[j]; // density per 10000 square pixels
-	if (normalize_local[j] != 0) // normalize to cell count in the radius
-	  value = value / inds.size();
-	if (normalize_global[j] != 0 && flag_count[j] != 0) // normalize to cell count in the image
-	  value = value / flag_count[j] * total_cell_count;
-	dc[j]->SetNumericElem(value, i);
-      } else {
-	dc[j]->SetNumericElem(0, i);
-      }
+      float value = cell_count[j] * 1000000 / area[j]; // density per 1000 square pixels
+      if (normalize_local[j] != 0) // normalize to cell count in the radius
+	value = total_cell_count[j] == 0 ? 0 : value / total_cell_count[j];
+      if (normalize_global[j] != 0 && flag_count[j] != 0) // normalize to cell count in the image
+	value = total_cell_count[j] == 0 ? 0 : value / flag_count[j] * total_image_cell_count;
+      dc[j]->SetNumericElem(value, i);
     }
-
-    /*
-    // build the Cell object
-    ////////////////////////
-    Cell cell;
-    cell.m_id   = m_id_ptr->getData().at(i);
-    cell.m_flag = m_pflag_ptr->getData().at(i);
-    cell.m_x    = m_x_pyr->second->getData().at(i);
-    cell.m_y    = m_y_ptr->second->getData().at(i);
-
-    // fill the Cell data columns
-    std::vector<ColPtr> col_ptr;
-    for (const auto& t : m_header.GetDataTags()) {
-      col_ptr.push_back(m_table.at(t.id));
-    }
-
-    for (const auto& c : col_ptr) {
-      cell.m_cols.push_back(c->getData().at(i));
-    }
-
-    // fill the Cell graph data
-    CellNode node;    
-    node.FillSparseFormat(cell.m_spatial_ids, cell.m_spatial_dist, cell.m_spatial_flags);
-
-    // write
-    (*m_archive)(cell);
-    */
+  
     if (m_verbose && i % 5000 == 0) {
       countr += 5000;
-      std::cerr << std::fixed << "...rad dens: working cell " << std::setw(11) << AddCommas(i) 
-          << " thread " << std::setw(2) << omp_get_thread_num() 
-          << " %done: " << std::setw(3) << static_cast<int>(static_cast<float>(countr) / m_pflag_ptr->size() * 100) 
-          << " densities: ";
+      std::cerr << std::fixed << "...cell " << std::setw(11) << AddCommas(i) 
+		<< " thr " << std::setw(2) << omp_get_thread_num() 
+		<< " %done: " << std::setw(3) << static_cast<int>(static_cast<float>(countr) / m_pflag_ptr->size() * 100) 
+		<< " density: ";
       
       for (size_t j = 0; j < dc.size(); j++) {
-	std::cerr << std::setw(8) << static_cast<int>(dc.at(j)->getData().at(i)) << " ";
+	std::cerr << std::setw(12) << static_cast<int>(std::round(dc.at(j)->getData().at(i))) << " ";
 	if (j > 5)
 	  break;
       }
@@ -811,7 +757,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   
   if (m_verbose)
     std::cerr << "...adding the density column" << std::endl;
-
+  
   for (size_t i = 0; i < label.size(); ++i) {
     
     // form the data tag
@@ -832,7 +778,7 @@ void CellTable::Select(CellSelector select,
 		       SelectOpMap criteria,
 		       bool or_toggle,
 		       float radius) {
-  
+
   // add a dummy to ensure that OutputTable recognizes that m_cells_to_write is non-empty
   m_cells_to_write.insert(-1);
   validate();
@@ -849,8 +795,8 @@ void CellTable::Select(CellSelector select,
     // FLAGS
     ///////
     // NB: even if flags are all empty, default should be to trigger a "write_cell = true"
-    CellFlag pflag(m_pflag_ptr->getData().at(i));
-    CellFlag cflag(m_cflag_ptr->getData().at(i));
+    cy_uint pflag = m_pflag_ptr->getData().at(i);
+    cy_uint cflag = m_cflag_ptr->getData().at(i);
     if (select.TestFlags(pflag, cflag)) {
       write_cell = true;
     }
@@ -911,14 +857,21 @@ void CellTable::Select(CellSelector select,
     // find the point
     float x1 = m_x_ptr->getData().at(i);
     float y1 = m_y_ptr->getData().at(i);
-    point_t pt = { x1, y1 };
+    //point_t pt = { x1, y1 };
 
     // this will be inclusive of this point
-    assert(m_kdtree);
-    std::vector<size_t> inds = m_kdtree->neighborhood_indices(pt, radius);
+    assert(ml_kdtree);
+    arma::mat query = {{x1}, {y1}};
+    std::vector<std::vector<size_t>> neighbors;
+    std::vector<std::vector<double>> distances;
+    mlpack::Range r(0.0, radius);
 
+    // this will be inclusive of this point
+    ml_kdtree->Search(query, r, neighbors, distances);
+
+    
     // loop the inds, and check if neighbors a good cell
-    for (const auto& j : inds) {
+    for (const auto& j : neighbors.at(0)) {
       int neigh_cid = m_id_ptr->getData().at(j);
       if (m_cells_to_write.count(neigh_cid)) {
 	m_cells_to_write.insert(this_cid);

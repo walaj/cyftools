@@ -15,12 +15,14 @@
 #include <cereal/archives/portable_binary.hpp>
 #include <cereal/archives/json.hpp>
 
-
+#ifdef HAVE_MLPACK
+#include <mlpack/core.hpp>
+#include <mlpack/methods/range_search/range_search.hpp>
+#endif
 
 // forward declarations
 class Polygon;
 class LDAModel;
-class KDTree;
 class TiffWriter;
 class CellSelector;
 
@@ -43,7 +45,7 @@ public:
   // Getters/setters
   //////
   void setCmd(const std::string& cmd); 
-  void setThreads(size_t threads) { m_threads = threads; }
+  void setThreads(size_t threads) { m_threads = threads;}
   void setVerbose(bool verbose) { m_verbose = verbose; }
   const CellHeader& getHeader() const { return m_header; }
 
@@ -221,8 +223,8 @@ public:
 
   LDAModel* m_ldamodel = nullptr;
 
-#ifdef HAVE_KDTREE
-  KDTree* m_kdtree = nullptr;
+#ifdef HAVE_MLPACK
+  mlpack::RangeSearch<mlpack::EuclideanDistance> * ml_kdtree = nullptr;
 #endif
   
   // for verbose

@@ -50,22 +50,11 @@ static CellTable table;
 
 static void build_table();
 
-static const char* shortopts = "CJjhHNyvmMPr:e:g:G:p:t:a:i:A:O:d:b:c:s:k:n:r:w:l:L:x:X:o:R:f:D:V:z:S:";
+//static const char* ushortopts = "CJjhHNyvmMPr:e:g:G:p:t:a:i:A:O:d:b:c:s:k:n:r:w:l:L:x:X:o:R:f:D:V:z:S:";
 static const struct option longopts[] = {
-  { "verbose",                    no_argument, NULL, 'v' },
-  { "threads",                    required_argument, NULL, 't' },
-  { "seed",                       required_argument, NULL, 's' },
-  { "roi",                        required_argument, NULL, 'r' },  
-  { "numrows",                    required_argument, NULL, 'n' },
-  { "w",                          required_argument, NULL, 'w' },
-  { "l",                          required_argument, NULL, 'l' },
-  { "crop",                       required_argument, NULL, 'c' },
-  { "cut",                        required_argument, NULL, 'x' },
-  { "strict-cut",                 required_argument, NULL, 'X' },    
-  //{ "sort",                       no_argument, NULL, 'y' },  
-  { "csv",                        no_argument, NULL, 'j'},
   { NULL, 0, NULL, 0 }
 };
+
 
 static const char *RUN_USAGE_MESSAGE =
 "Usage: cysift [module] <options> \n"
@@ -285,8 +274,6 @@ static void build_table() {
   // set table params
   table.setVerbose(opt::verbose);
   table.setThreads(opt::threads);
-
-  //
   
   // stream into memory
   BuildProcessor buildp;
@@ -304,6 +291,8 @@ static void build_table() {
 
 static int reheaderfunc(int argc, char** argv) {
 
+  const char* shortopts = "vr:";
+  
   std::vector<std::string> rename;
   std::string str;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -370,7 +359,7 @@ static int reheaderfunc(int argc, char** argv) {
 }
 
 static int dbscanfunc(int argc, char** argv) {
-  
+  /*  
   // flag selection
   cy_uint por = static_cast<cy_uint>(-1);
   cy_uint pand = static_cast<cy_uint>(-1);
@@ -389,6 +378,8 @@ static int dbscanfunc(int argc, char** argv) {
   float epsilon = 100.0f;
   int min_size = 25;
   int min_cluster_size = 100;
+
+  const char* shortopts = "o:a:N:O:A:M:ve:s:c:"
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -444,7 +435,7 @@ static int dbscanfunc(int argc, char** argv) {
   table.clusterDBSCAN(select, epsilon, min_size, min_cluster_size);
   
   table.OutputTable();
-  
+  */  
   return 0;
   
 }
@@ -457,6 +448,9 @@ static int syntheticfunc(int argc, char** argv) {
   int num_clusters = 10;
   int num_points = 100;
   double sigma = 100;
+
+  const char* shortopts = "vs:m:w:l:p:n:e:";
+  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -513,6 +507,8 @@ static int jaccardfunc(int argc, char** argv) {
 
   bool sorted = false;
   bool csv_print = false;
+
+  const char* shortopts = "vjs";
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -553,6 +549,7 @@ static int jaccardfunc(int argc, char** argv) {
 
 static int cellcountfunc(int argc, char** argv) {
 
+  const char* shortopts = "v";
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -594,7 +591,9 @@ static int cellcountfunc(int argc, char** argv) {
 static int scatterfunc(int argc, char** argv) {
 
   int width = 1000;
-  int height = 1000;  
+  int height = 1000;
+
+  const char* shortopts = "vw:l:s:";
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -651,6 +650,7 @@ static int scatterfunc(int argc, char** argv) {
 
 static int hallucinatefunc(int argc, char** argv) {
 
+  const char* shortopts = "vn:s:";
   int n_phenotypes = 10;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -711,6 +711,7 @@ static int hallucinatefunc(int argc, char** argv) {
 
 static int scramblefunc(int argc, char** argv) {
 
+  const char* shortopts = "vPs:";
   bool lock_flags = false;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -758,7 +759,9 @@ static int scramblefunc(int argc, char** argv) {
 }
 
 static int convolvefunc(int argc, char** argv) {
- 
+
+  const char* shortopts = "vi:d:t:w:";
+  
   int width = 200;
   std::string intiff;
   float microns_per_pixel = 0;
@@ -841,7 +844,7 @@ static int convolvefunc(int argc, char** argv) {
 }
 
 static int umapfunc(int argc, char** argv) {
-
+  const char* shortopts = "vt:D:k:w:l:";
   int n = 15;
   int width = 1000;
   int height = 1000;
@@ -917,7 +920,8 @@ static int umapfunc(int argc, char** argv) {
 }
 
 static int ldacreatefunc(int argc, char** argv) {
-  
+
+  const char* shortopts = "vo:s:n:r:i:t:";
 #ifdef HAVE_LDAPLUSPLUS
   std::string model_out, fields;
   int n_topics = 10;
@@ -1018,6 +1022,7 @@ static int ldacreatefunc(int argc, char** argv) {
 
 static int ldarunfunc(int argc, char** argv) {
 
+  const char* shortopts = "vi:l:c:D:";
 #ifdef HAVE_LDAPLUSPLUS
   
   std::string model_in, pdf;
@@ -1095,7 +1100,8 @@ static int ldarunfunc(int argc, char** argv) {
 }
 
 static int plotpngfunc(int argc, char** argv) {
-
+  const char* shortopts = "vf:m:";
+  
 #ifdef HAVE_CAIRO
   
   float scale_factor = 0.25f;
@@ -1148,13 +1154,19 @@ static int plotpngfunc(int argc, char** argv) {
 
 static int cleanfunc(int argc, char** argv) {
 
+  const char* shortopts = "vmMPCcp";
   bool clean_graph = false;
   bool clean_markers = false;
   bool clean_meta = false;
+  bool clean_cflags = false;
+  bool clean_pflags = false;
+  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
+    case 'c' : clean_cflags= true; break;
+    case 'p' : clean_pflags= true; break;      
     case 'm' : clean_markers = true; break;
     case 'M' : clean_meta = true; break;
     case 'P' : clean_graph = true; break;
@@ -1175,6 +1187,8 @@ static int cleanfunc(int argc, char** argv) {
       "  <output_cysfile>          Output .cys file path or '-' to stream as a cys-formatted stream to stdout.\n"
       "\n"
       "Options:\n"
+      "  -c                        Clear the cell flags\n"
+      "  -p                        Clear the phenotype flags\n"
       "  -m                        Remove all marker data.\n"
       "  -M                        Remove all meta data.\n"
       "  -P                        Remove all graph data.\n"
@@ -1190,7 +1204,7 @@ static int cleanfunc(int argc, char** argv) {
   
   CleanProcessor cleanp;
   cleanp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  cleanp.SetParams(clean_graph, clean_meta, clean_markers);  
+  cleanp.SetParams(clean_graph, clean_meta, clean_markers, clean_cflags, clean_pflags);  
 
   // process 
   if (!table.StreamTable(cleanp, opt::infile)) {
@@ -1203,6 +1217,7 @@ static int cleanfunc(int argc, char** argv) {
 
 static int catfunc(int argc, char** argv) {
 
+  const char* shortopts = "v";
   std::string samples;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -1329,15 +1344,7 @@ static int summaryfunc(int argc, char** argv) {
 }
 
 
- static int infofunc(int argc, char** argv) {
-
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
-    std::istringstream arg(optarg != NULL ? optarg : "");
-    switch (c) {
-    case 'v' : opt::verbose = true; break;
-    default: die = true;
-    }
-  }
+static int infofunc(int argc, char** argv) {
 
   // display help if no input
   if (die || in_only_process(argc, argv)) {
@@ -1349,8 +1356,6 @@ static int summaryfunc(int argc, char** argv) {
       "Arguments:\n"
       "  <cysfile>                 Input .cys file path or '-' to stream from stdin.\n"
       "\n"
-      "Options:\n"
-      "  -v, --verbose             Increase output to stderr.\n"
       "\n"
       "Example:\n"
       "  cysift info table1.cys\n";
@@ -1369,6 +1374,7 @@ static int summaryfunc(int argc, char** argv) {
 
 static int cutfunc(int argc, char** argv) {
 
+  const char* shortopts = "vx:";
   std::string cut; // list of markers, csv separated, to cut on
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1391,10 +1397,10 @@ static int cutfunc(int argc, char** argv) {
       "  <output_cysfile>          Output .cys file path or '-' to stream as a cys-formatted stream to stdout.\n"
       "\n"
       "Required Options:\n"
-      "  -x, --cut <markers>       Comma-separated list of markers to cut to.\n"
+      "  -x <markers>              Comma-separated list of markers to cut to.\n"
       "\n"
       "Optional Options:\n"
-      "  -v, --verbose             Increase output to stderr.\n"
+      "  -v                        Increase output to stderr.\n"
       "\n"
       "Example:\n"
       "  cysift cut input.cys output_cut.cys -x marker1,marker2\n"
@@ -1428,7 +1434,8 @@ static int cutfunc(int argc, char** argv) {
 }
 
 static int meanfunc(int argc, char** argv) {
- 
+
+  const char* shortopts = "v";  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -1476,6 +1483,8 @@ static int meanfunc(int argc, char** argv) {
 
 static int tumorfunc(int argc, char** argv) {
 
+  const char* shortopts = "vt:k:f:o:a:";
+
   int n = 20;
   float frac = 0.75;
   cy_uint orflag = 0;
@@ -1493,6 +1502,12 @@ static int tumorfunc(int argc, char** argv) {
     }
   }
 
+  if (orflag == 0 && andflag == 0) {
+    std::cerr << " Required to specify flags for what is a tumor cell" << std::endl;
+    die = true;
+  }
+    
+  
   if (die || in_out_process(argc, argv)) {
   
     const char *USAGE_MESSAGE =
@@ -1517,7 +1532,7 @@ static int tumorfunc(int argc, char** argv) {
   
   table.SetupOutputWriter(opt::outfile);
 
-  table.TumorCall(n, frac, orflag, andflag, 600);
+  table.TumorCall(n, frac, orflag, andflag, 200);
 
   table.OutputTable();
 
@@ -1526,7 +1541,8 @@ static int tumorfunc(int argc, char** argv) {
 }
 
 static int log10func(int argc, char** argv)  {
-  
+
+  const char* shortopts = "vn:";
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -1562,6 +1578,7 @@ static int log10func(int argc, char** argv)  {
 
 static int dividefunc(int argc, char** argv)  {
 
+  const char* shortopts = "vn:d:z:";
   std::string numerator, denominator;
   float div_zero = -1;
   
@@ -1608,8 +1625,6 @@ static int dividefunc(int argc, char** argv)  {
   return 0;
 }
 
-
-
 // parse the command line options
 static void parseRunOptions(int argc, char** argv) {
 
@@ -1655,7 +1670,8 @@ static void parseRunOptions(int argc, char** argv) {
 }
 
 static int roifunc(int argc, char** argv) {
-
+  const char* shortopts = "vn:r:";
+  
   std::string roifile;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -1700,15 +1716,17 @@ static int roifunc(int argc, char** argv) {
 }
 
 static int viewfunc(int argc, char** argv) {
-
-  int precision = -1;
-
+  
+  const char* shortopts = "vn:hHx:";
+  int precision = 2;
+  std::string cut; // list of markers, csv separated, to cut on
+  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'n' : arg >> precision; break;
-    case 't' : arg >> opt::threads; break;      
+    case 'x' : arg >> cut; break;      
     case 'h' : opt::header = true; break;
     case 'H' : opt::header_only = true; break;
     default: die = true;
@@ -1716,25 +1734,41 @@ static int viewfunc(int argc, char** argv) {
   }
   
   if (die || in_only_process(argc, argv)) {
-    
-    const char *USAGE_MESSAGE =
-      "Usage: cysift view [cysfile] <options>\n"
-      "  View the contents of a cell table\n" 
-      "  cysfile: filepath or a '-' to stream to stdin\n"
-      "  -n  [-1]                  Number of decimals to keep (-1 is no change)\n"
-      "  -H                        View only the header\n"      
-      "  -h                        Output with the header\n"
-      "  -v, --verbose             Increase output to stderr"
-      "\n";
+
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift view <cysfile> [options]\n"
+      "  View the contents of a cell table and optionally modify the output.\n"
+      "\n"
+      "Arguments:\n"
+      "  <cysfile>                  File path or '-' to stream from stdin.\n"
+      "\n"
+      "Optional Options:\n"
+      "  -x <fields>                Comma-separated list of fields to trim output to.\n"
+      "  -n <decimals>              Number of decimals to keep. Default is -1 (no change).\n"
+      "  -H                         View only the header.\n"
+      "  -h                         Output with the header.\n"
+      "  -v, --verbose              Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift view input.cys -n 2\n"
+      "  cysift view - -H\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
+  // parse the markers
+  std::unordered_set<std::string> tokens;
+  std::stringstream ss(cut);
+  std::string token;
+  while (std::getline(ss, token, ',')) {
+    tokens.insert(token);
+  }
+  
   // set table params
   table.setVerbose(opt::verbose);
   
   ViewProcessor viewp;
-  viewp.SetParams(opt::header, opt::header_only, precision);
+  viewp.SetParams(opt::header, opt::header_only, precision, tokens);
 
   table.StreamTable(viewp, opt::infile);
   
@@ -1742,7 +1776,7 @@ static int viewfunc(int argc, char** argv) {
 }
 
 static int histogramfunc(int argc, char** argv) {
-
+  const char* shortopts = "vn:w:";
   int n_bins = 50;
   int w_bins = 50;
   
@@ -1778,7 +1812,7 @@ static int histogramfunc(int argc, char** argv) {
 }
 
 static int plotfunc(int argc, char** argv) {
-
+  const char* shortopts = "vl:w:";      
   int length = 50;
   int width = 50;
   
@@ -1815,7 +1849,7 @@ static int plotfunc(int argc, char** argv) {
 }
 
 static int headfunc(int argc, char** argv) {
-
+  const char* shortopts = "vn:";
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -1865,7 +1899,7 @@ static int headfunc(int argc, char** argv) {
 }
 
  static int sampleselectfunc(int argc, char** argv) {
-
+   const char* shortopts = "vs:";
    int samplenum = -1;
    std::string tmpstring;
    std::string samplestring;
@@ -1923,7 +1957,8 @@ static int headfunc(int argc, char** argv) {
  
  
  static int subsamplefunc(int argc, char** argv) {
-   
+
+   const char* shortopts = "vn:s:r:";
   float rate = 0;
 
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1981,7 +2016,7 @@ static int headfunc(int argc, char** argv) {
 }
 
 static int pearsonfunc(int argc, char** argv) {
-
+  const char* shortopts = "vjs";
   bool sorted = false;
   bool csv_print = false;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -2017,7 +2052,7 @@ static int pearsonfunc(int argc, char** argv) {
 }
 
 static int cropfunc(int argc, char** argv) {
-
+  const char* shortopts = "vc:";
   std::string cropstring;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -2120,18 +2155,11 @@ static int spatialfunc(int argc, char** argv) {
   return 0;
 }
 */
- 
+    
 static int selectfunc(int argc, char** argv) {
 
-  // flag selection
-  cy_uint plogor = 0;
-  cy_uint plogand = static_cast<cy_uint>(-1);
-  bool plognot = false;
-
-  cy_uint clogor = 0;
-  cy_uint clogand = static_cast<cy_uint>(-1);
-  bool clognot = false;
-
+  const char* shortopts = "vr:a:n:A:N:of:g:l:G:L:e:jr:";
+  
   // field selection
   bool or_toggle = false;
   std::string sholder;
@@ -2144,16 +2172,31 @@ static int selectfunc(int argc, char** argv) {
   SelectOpMap criteria;
   std::vector<std::string> field_vec;
 
+  // select function
+  std::vector<SelectionUnit> selections;
+  selections.push_back(SelectionUnit());
+
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
-    case 'v' : opt::verbose = true; break;
-    case 'o' : arg >> plogor; break;
-    case 'a' : arg >> plogand; break;
-    case 'N' : plognot = true; break;
-    case 'O' : arg >> clogor; break;
-    case 'A' : arg >> clogand; break;
-    case 'M' : clognot = true; break;
+    case 'v': opt::verbose = true; break;
+    case 'a':
+      if (selections.back().pand) 
+	selections.push_back(SelectionUnit());
+      arg >> selections.back().pand; break;
+    case 'n':
+      if (selections.back().pnot)
+	selections.push_back(SelectionUnit());
+      arg >> selections.back().pnot; break;
+    case 'A':
+      if (selections.back().cand)
+	selections.push_back(SelectionUnit());	
+      arg >> selections.back().cand; break;
+    case 'N':
+      if (selections.back().cnot) 
+	selections.push_back(SelectionUnit());		
+      arg >> selections.back().cnot; break;
+    case 'o': selections.push_back(SelectionUnit()); break;
     case 'f' : arg >> sholder; field_vec.push_back(sholder); break;
     case 'g' : arg >> holder; num_vec.push_back({optype::GREATER_THAN, holder}); break;
     case 'l' : arg >> holder; num_vec.push_back({optype::LESS_THAN, holder}); break;
@@ -2162,15 +2205,20 @@ static int selectfunc(int argc, char** argv) {
     case 'e' : arg >> holder; num_vec.push_back({optype::EQUAL_TO, holder}); break;
     case 'j' : or_toggle = true; break;
     case 'r' : arg >> radius; break;
-    case 't' : arg >> opt::threads; break;      
-    default: die = true;
+    default: die = true; break;  
     }
   }
 
-  CellSelector cellselect(plogor, plogand, plognot, clogor, clogand, clognot);
+  CellSelector cellselect;
+  for (const auto& a : selections)
+    cellselect.AddSelectionUnit(a);
+
+  
+  if (opt::verbose)
+    std::cerr << cellselect << std::endl;
   
   if (field_vec.size() > 1) {
-
+    
     // make sure fields and criteria line up
     if (num_vec.size() != field_vec.size()) {
       std::cerr << "Must specify same number of fields (or just 1 field) as criteria" << std::endl;
@@ -2227,9 +2275,10 @@ static int selectfunc(int argc, char** argv) {
 
   // setup the selector processor for zero radius
   if (radius <= 0) {
+
     SelectProcessor select;
     select.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-    select.SetFlagParams(cellselect); //plogor, plogand, plognot, clogor, clogand, clognot); 
+    select.SetFlagParams(cellselect); 
     select.SetFieldParams(criteria, or_toggle);
     
     // process
@@ -2238,11 +2287,14 @@ static int selectfunc(int argc, char** argv) {
     return 0;
   }
 
+
+  
   // or else we read table and then select
   build_table();
 
   table.SetupOutputWriter(opt::outfile);
-  
+
+  std::cerr << " CALLING SELECT" << std::endl;
   table.Select(cellselect, 
 	       criteria,
 	       or_toggle,
@@ -2252,9 +2304,9 @@ static int selectfunc(int argc, char** argv) {
 
   return 0;
 }
-
+  
 static int phenofunc(int argc, char** argv) {
-
+  const char* shortopts = "vt:";
   std::string file;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -2301,7 +2353,7 @@ static int phenofunc(int argc, char** argv) {
 }
 
 static int radialdensfunc(int argc, char** argv) {
-
+  const char* shortopts = "vR:r:o:a:l:f:jJt:";
   cy_uint inner = 0;
   cy_uint outer = 20;
   cy_uint logor = 0;
@@ -2311,7 +2363,7 @@ static int radialdensfunc(int argc, char** argv) {
   bool normalize_local = false; // normalize to cells count in radius
   bool normalize_global = false; // normalize to cells count in slide
   std::string file;
-  
+
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -2324,7 +2376,7 @@ static int radialdensfunc(int argc, char** argv) {
     case 'l' : arg >> label; break;
     case 'f' : arg >> file; break;
     case 'j' : normalize_local = true; break;
-    case 'J' : normalize_global = true; break;      
+    case 'J' : normalize_global = true; break;
     default: die = true;
     }
   }
@@ -2343,6 +2395,7 @@ static int radialdensfunc(int argc, char** argv) {
       "    -j                    Flag for normalizing to cell count in radius\n"
       "    -J                    Flag for normalizing to cell count in slide\n"      
       "    -f                    File for multiple labels [r,R,o,a,l]\n"
+      "    -t                    Number of threads (default 1)\n"
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -2460,7 +2513,7 @@ static void cysift_cat(const std::vector<std::string>& inputFiles, const std::st
 }
  
 int debugfunc(int argc, char** argv) {
-
+  const char* shortopts = "v";
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -2484,7 +2537,7 @@ int debugfunc(int argc, char** argv) {
 }
 
 static int cerealfunc(int argc, char** argv) {
-
+  const char* shortopts = "s:v";
   uint32_t sampleid = static_cast<uint32_t>(-1);
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -2532,7 +2585,7 @@ static int cerealfunc(int argc, char** argv) {
 }
 
 static int delaunayfunc(int argc, char** argv) {
-
+  const char* shortopts = "vt:D:V:l:";
   std::string delaunay;
   std::string voronoi;
   int limit = -1;
@@ -2586,7 +2639,7 @@ static int delaunayfunc(int argc, char** argv) {
 }
 
 static int sortfunc(int argc, char** argv) {
-
+  const char* shortopts = "yx:jv";
   bool xy = false;
   std::string field;
   bool reverse = false;
@@ -2646,7 +2699,7 @@ static int sortfunc(int argc, char** argv) {
 
 
 static int countfunc(int argc, char** argv) {
-  
+  const char* shortopts = "v";  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {

@@ -232,12 +232,14 @@ class CleanProcessor : public CellProcessor {
 
 public:
 
-  void SetParams(bool clean_graph, bool clean_meta, bool clean_marker) {
+  void SetParams(bool clean_graph, bool clean_meta, bool clean_marker,
+		 bool clean_cflags, bool clean_pflags) {
     
     m_clean_graph = clean_graph;
     m_clean_meta = clean_meta;
     m_clean_marker = clean_marker;
-    
+    m_clean_cflags = clean_cflags;
+    m_clean_pflags = clean_pflags;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -249,7 +251,9 @@ private:
 
   bool m_clean_graph  = false; 
   bool m_clean_meta   = false; 
-  bool m_clean_marker = false; 
+  bool m_clean_marker = false;
+  bool m_clean_pflags = false;
+  bool m_clean_cflags = false;
 
   std::unordered_set<size_t> m_to_remove;
   
@@ -462,11 +466,14 @@ class ViewProcessor : public CellProcessor {
   
   void SetParams(bool print_header,
 		 bool header_only,
-		 int round) {
+		 int round,
+		 const std::unordered_set<std::string>& include
+		 ) {
     
     m_print_header = print_header;
     m_header_only = header_only;
     m_round = round;
+    m_to_view = include;
     
   }
   
@@ -482,6 +489,10 @@ class ViewProcessor : public CellProcessor {
 
   // number of integers to round output to
   int m_round;
+
+  std::unordered_set<std::string> m_to_view;
+
+  std::unordered_set<size_t> m_to_view_indicies;
 };
 
 class BuildProcessor : public CellProcessor { 

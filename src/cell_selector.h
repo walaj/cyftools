@@ -5,30 +5,32 @@
 // forward declar
 class CellFlag;
 
+struct SelectionUnit {
+
+  cy_uint pand = 0;
+  cy_uint pnot = 0;
+  cy_uint cand = 0;
+  cy_uint cnot = 0;
+
+  bool TestFlags(cy_uint pflag, cy_uint cflag) const;
+
+  friend std::ostream& operator<<(std::ostream& os, const SelectionUnit& unit);
+};
+
 class CellSelector {
 
 public:
 
- CellSelector(cy_uint po, cy_uint pa, cy_uint pn,
-	      cy_uint co, cy_uint ca, cy_uint cn) : 
-  plogor(po), plogand(pa), pnot(pn),
-    clogor(co), clogand(ca), cnot(cn) {}
+  CellSelector() {}
 
- CellSelector() : plogor(0), plogand(0), pnot(0),
-    clogor(0), clogand(0), cnot(0) {}
+  void AddSelectionUnit(SelectionUnit u) { m_ors.push_back(u); }
   
   bool TestFlags(cy_uint pflag, cy_uint cflag) const;
   
-  bool TestFlags(CellFlag pflag, CellFlag cflag) const;
+  friend std::ostream& operator<<(std::ostream& os, const CellSelector& cs);
   
 private:
-  
-  cy_uint plogor = 0;
-  cy_uint plogand = 0;
-  bool pnot = 0;
 
-  cy_uint clogor = 0;
-  cy_uint clogand = 0;
-  bool cnot = 0;
+  std::vector<SelectionUnit> m_ors;
   
 };

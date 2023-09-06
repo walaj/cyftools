@@ -21,9 +21,6 @@ KNN = -I../external/knncolle/include -DHAVE_KNNCOLLE
 ## Very optional header-only libraries for alternative neighor finding algorithms (e.g. in UMAP, etc)
 KMEANS = -I../external/CppKmeans/include -DHAVE_KMEANS
 
-## Optional library for KD-tree functions (radial proximity)
-KDTREE = -I../external/KDTree -DHAVE_KDTREE
-
 ######################################
 ####### OTHER OPTIONAL LIBARARIES ####
 ######################################
@@ -205,7 +202,7 @@ endif
 
 CFLAGS = -O2 -g -std=c++17 $(USE64BIT) $(OPENMP) -I. -I.. \
           $(TIFF) $(KNN) $(UMAP) $(IRLBA) $(EIGEN) $(KMEANS) \
-          $(OMP) $(CEREAL) $(LDA) $(HD5) $(KDTREE) \
+          $(OMP) $(CEREAL) $(LDA) $(HD5) \
 	  $(MLPACK) $(CAIRO) $(CGAL) $(BOOST) $(DBSCAN)
 
 LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB) $(KDLIB) ${TIFFLD} $(MLPACKLIB) \
