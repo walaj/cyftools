@@ -684,10 +684,10 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
       std::cerr << " ... " << std::endl;
   }
 
-  static std::vector<float> cell_count;
-  static std::vector<size_t> total_cell_count;  
-  #pragma omp threadprivate(cell_count)
-  #pragma omp threadprivate(total_cell_count)  
+  //static std::vector<float> cell_count;
+  //static std::vector<size_t> total_cell_count;  
+  //    #pragma omp threadprivate(cell_count)
+  //    #pragma omp threadprivate(total_cell_count)  
 
   // this will be inclusive of this point
 
@@ -695,12 +695,15 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   
 #pragma omp parallel for num_threads(m_threads) schedule(dynamic, 100)
   for (size_t i = 0; i < m_pflag_ptr->size(); i++) {
+
+    std::vector<float> cell_count;
+    std::vector<size_t> total_cell_count;  
     
     // Initialize the counts for each radial condition
     cell_count.resize(inner.size());
-    std::fill(cell_count.begin(), cell_count.end(), 0.0f);
+    //std::fill(cell_count.begin(), cell_count.end(), 0.0f);
     total_cell_count.resize(inner.size());
-    std::fill(total_cell_count.begin(), total_cell_count.end(), 0);
+    //std::fill(total_cell_count.begin(), total_cell_count.end(), 0);
 
     float x1 = m_x_ptr->getData().at(i);
     float y1 = m_y_ptr->getData().at(i);
