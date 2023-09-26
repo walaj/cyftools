@@ -8,6 +8,10 @@
 #include "cysift.h"
 #include "cell_synth.h"
 
+#ifdef HAVE_KNNCOLLE
+#include "knncolle/knncolle.hpp"
+#endif
+
 // to-do - back this out, shouldn't have this here
 #include "cell_processor.h"
 
@@ -123,15 +127,19 @@ public:
 		      std::vector<std::string> label, std::vector<int> normalize_local,
 		      std::vector<int> normalize_global);
   
-  void TumorCall(int num_neighbors, float frac,
-		 cy_uint orflag, cy_uint andflag, cy_uint dist);
+  void TumorCall(int num_neighbors, float frac, cy_uint dist);
   
+  void TumorMargin(float dist);
+
+  void IslandFill(size_t n, int flag_from, bool invert_from,
+		  int flag_to, bool invert_to);
+  
+  void MoranI(const std::vector<cy_uint>& flags);
 
   //////
   // Clustering ops
   //////
-  void clusterDBSCAN(CellSelector select,
-		     float epsilon,
+  void clusterDBSCAN(float epsilon,
 		     size_t min_size,
 		     size_t min_cluster_size
 		     ); 
@@ -175,6 +183,12 @@ public:
 	      SelectOpMap criteria,
 	      bool or_toggle,
 	      float radius);
+
+  void ClearFlag(const int flag);
+  
+  void FlagToFlag(const bool clear_flag_to,
+		  const int flag_from, bool flag_from_negative, 
+		  const int flag_to, bool flag_to_negative);
   
   //////
   // Phenotyping ops
@@ -226,6 +240,8 @@ public:
 #ifdef HAVE_MLPACK
   mlpack::RangeSearch<mlpack::EuclideanDistance> * ml_kdtree = nullptr;
 #endif
+
+
   
   // for verbose
   size_t m_count = 0;
@@ -234,6 +250,9 @@ public:
   bool m_verbose = false;
   size_t m_threads = 1;
 
+  // neighbors structure
+
+  
   // selected write
   std::unordered_set<int> m_cells_to_write;
   
@@ -247,6 +266,17 @@ public:
   void print_correlation_matrix(const std::vector<std::string>& labels,
 				const std::vector<std::vector<float>>& correlation_matrix, bool sort) const;
     
+  int dfs(int cellIndex,
+	  std::vector<int>& component_label,
+	  int currentLabel,
+	  const std::vector<std::vector<size_t>>& neighbors) const;
+
+  knncolle::VpTree<knncolle::distances::Euclidean, int, float> build_vp_tree() const {
+    static const std::vector<bool> empty_vector;
+    return build_vp_tree(empty_vector);
+  }
+  
+  knncolle::VpTree<knncolle::distances::Euclidean, int, float> build_vp_tree(const std::vector<bool>& ix) const;
   
 #endif    
 };

@@ -8,7 +8,7 @@
 
 #include <limits>
 
-int SelectProcessor::ProcessHeader(CellHeader& header) {
+int MarkProcessor::ProcessHeader(CellHeader& header) {
   
   m_header = header;
 
@@ -325,9 +325,34 @@ int SubsampleProcessor::ProcessLine(Cell& line) {
   
 }
 
-int SelectProcessor::ProcessLine(Cell& cell) {
+int FilterProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
 
-  bool write_cell = false;
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+
+  m_header.SortTags();
+  
+  // just in time, make the output stream
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+  
+  return HEADER_NO_ACTION;
+
+}
+
+int FilterProcessor::ProcessLine(Cell& cell) {
+  
+  if (cell.cflag & MARK_FLAG) 
+    return WRITE_CELL;
+  return NO_WRITE_CELL;
+}
+
+int MarkProcessor::ProcessLine(Cell& cell) {
+
+    bool write_cell = false;
 
   ///////
   // FLAGS
@@ -369,7 +394,7 @@ int SelectProcessor::ProcessLine(Cell& cell) {
       case optype::LESS_THAN_OR_EQUAL: write_cell    = write_cell = m_or_toggle ? (write_cell || (value <= cc.second)) : (write_cell && (value <= cc.second));  break;
       case optype::EQUAL_TO: write_cell              = write_cell = m_or_toggle ? (write_cell || (value == cc.second)) : (write_cell && (value == cc.second));  break;
       default: assert(false);
-      }
+      } 
 
       //std::cerr << " write_cell after " << write_cell << std::endl;
     }
@@ -377,9 +402,9 @@ int SelectProcessor::ProcessLine(Cell& cell) {
   }
   
   if (flag_write_cell && write_cell)
-    return CellProcessor::WRITE_CELL;
+    cell.cflag |= (1 << 1);
   
-  return CellProcessor::NO_WRITE_CELL; // don't write if not selected
+  return CellProcessor::WRITE_CELL; // don't write if not selected
 }
 
 

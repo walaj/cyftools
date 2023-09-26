@@ -73,7 +73,8 @@ static const char *RUN_USAGE_MESSAGE =
 "  sort        - Sort the cells\n"
 "  subsample   - Subsample cells randomly\n"
 "  roi         - Trim cells to a region of interest within a given polygon\n"
-"  select      - Select by cell phenotype flags\n"
+"  mark        - Mark cells for later processing (filtering etc)\n"
+"  filter      - Keep only marked cells\n"
 "  sampleselect- Select a particular sample from a multi-sample file\n"
 "  pheno       - Phenotype cells (set the phenotype flags)\n"
 "  cellcount   - Provide total slide cell count for each cell type\n"
@@ -94,6 +95,8 @@ static const char *RUN_USAGE_MESSAGE =
 "  umap        - Construct the marker space UMAP\n"
   //"  spatial     - Construct the spatial KNN graph\n"
 "  tumor       - Set the tumor flag using KNN approach\n"
+"  margin      - Set the tumor margin using KNN approach\n"
+"  island      - Remove islands of stroma within tumor\n"  
 "  radialdens  - Calculate density of cells within a radius\n"  
 " --- Convolution ---\n"
 "  convolve    - Density convolution to produce TIFF\n"
@@ -107,6 +110,9 @@ static const char *RUN_USAGE_MESSAGE =
 "  synth       - Various approaches for creating synthetic data\n"  
 "\n";
 
+static int islandfunc(int argc, char** argv);
+static int marginfunc(int argc, char** argv);
+static int filterfunc(int argc, char** argv);
 static int syntheticfunc(int argc, char** argv);
 static int dbscanfunc(int argc, char** argv);
 static int sampleselectfunc(int argc, char** argv);
@@ -146,7 +152,7 @@ static int log10func(int argc, char** argv);
 static int cutfunc(int argc, char** argv);
 static int umapfunc(int argc, char** argv);
 static int radiusfunc(int argc, char** argv);
-static int selectfunc(int argc, char** argv);
+static int markfunc(int argc, char** argv);
 //static int spatialfunc(int argc, char** argv); 
 static int phenofunc(int argc, char** argv);
 
@@ -185,6 +191,8 @@ int main(int argc, char **argv) {
     val = debugfunc(argc, argv);
   } else if (opt::module == "ldacreate") {
     val = ldacreatefunc(argc, argv);
+  } else if (opt::module == "island") {
+    val = islandfunc(argc, argv);
   } else if (opt::module == "ldarun") {
     val = ldarunfunc(argc, argv);
   } else if (opt::module == "clean") {
@@ -195,6 +203,8 @@ int main(int argc, char **argv) {
     val = radialdensfunc(argc, argv);
   } else if (opt::module == "cellcount") {
     val = cellcountfunc(argc, argv);
+  } else if (opt::module == "margin") {
+    val = marginfunc(argc, argv);
   } else if (opt::module == "subsample") {
     val = subsamplefunc(argc, argv);
   } else if (opt::module == "plot") {
@@ -231,8 +241,8 @@ int main(int argc, char **argv) {
     val = umapfunc(argc, argv);
     //  } else if (opt::module == "spatial") {
     //val = spatialfunc(argc, argv);    
-  } else if (opt::module == "select") {
-    val = selectfunc(argc, argv);
+  } else if (opt::module == "mark") {
+    val = markfunc(argc, argv);
   } else if (opt::module == "sampleselect") {
     val = sampleselectfunc(argc, argv);
   } else if (opt::module == "convolve") {
@@ -259,6 +269,8 @@ int main(int argc, char **argv) {
     scramblefunc(argc, argv);
   } else if (opt::module == "scatter") {
     scatterfunc(argc, argv);
+  } else if (opt::module == "filter") {
+    filterfunc(argc, argv);
   } else if (opt::module == "hallucinate") {
     hallucinatefunc(argc, argv);
   } else {
@@ -358,38 +370,124 @@ static int reheaderfunc(int argc, char** argv) {
   return 0;
 }
 
+static int islandfunc(int argc, char** argv) {
+
+  const char* shortopts = "vd:t:n:TS";
+  float dist = 100;
+  bool tumor_fill = false;
+  bool stroma_fill = false;
+  int n = 100;
+
+    for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'n' : arg >> n; break;
+    case 'd' : arg >> dist; break;
+    case 'T' : tumor_fill = true; break;
+    case 'S' : stroma_fill = true; break;      
+    case 't' : arg >> opt::threads; break;      
+    default: die = true;
+    }
+  }
+
+    if (die || in_out_process(argc, argv) || (tumor_fill == stroma_fill)) {
+    
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift island[cysfile]\n"
+      "  Fill-in islands with <= N cells\n"
+      "\n"
+      "Arguments:\n"
+      "  [cysfile]                 Input .cys file path or '-' to stream from stdin.\n"
+      "  -n [100]                  Minimum size for an island to remain a stroma island\n"
+      "\n"
+      "Optional Options:\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "  -T                        Fill in islands of stroma within tumors\n"
+      "  -S                        Fill in islands of tumors within stroma\n"      
+      "\n"
+      "Example:\n"
+      "  cysift island -n 100 -T input.cys output.cys\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  build_table();
+
+  table.SetupOutputWriter(opt::outfile);
+
+  table.ClearFlag(MARGIN_FLAG);
+  
+  // fills NON-MARK with MARK
+  if (tumor_fill)
+    table.IslandFill(n, TUMOR_FLAG, false, TUMOR_FLAG, false);
+  else if (stroma_fill)
+    table.IslandFill(n, TUMOR_FLAG, true, TUMOR_FLAG, true);
+  
+  table.OutputTable();
+  
+  return 0;
+
+}
+
+static int marginfunc(int argc, char** argv) {
+
+  const char* shortopts = "vd:t:";
+  float dist = 100;
+  
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'd' : arg >> dist; break;
+    case 't' : arg >> opt::threads; break;      
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE = 
+      "Usage: cysift margin [cysfile]\n"
+      "  Identify cells at the tumor / stroma interface margin\n"
+      "\n"
+      "Arguments:\n"
+      "  [cysfile]                 Input .cys file path or '-' to stream from stdin.\n"
+      "  -d [100]                  Radius to look at the margin for\n"
+      "\n"
+      "Optional Options:\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cysift margin -d 200 input.cys output.cys\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  build_table();
+
+  table.SetupOutputWriter(opt::outfile);
+  
+  table.TumorMargin(dist); 
+  
+  table.OutputTable();
+  
+  return 0;
+  
+}
+
 static int dbscanfunc(int argc, char** argv) {
-  /*  
-  // flag selection
-  cy_uint por = static_cast<cy_uint>(-1);
-  cy_uint pand = static_cast<cy_uint>(-1);
-  bool pnot = false;
-
-  cy_uint cor = static_cast<cy_uint>(-1);
-  cy_uint cand = static_cast<cy_uint>(-1);
-  bool cnot = false;
-
-  // field selection
-  bool or_toggle = false;
-  std::string sholder;
-  float holder;
-
+  
   // dbscan params
   float epsilon = 100.0f;
   int min_size = 25;
   int min_cluster_size = 100;
 
-  const char* shortopts = "o:a:N:O:A:M:ve:s:c:"
+  const char* shortopts = "ve:s:c:";
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
-    case 'o' : arg >> por; break;
-    case 'a' : arg >> pand; break;
-    case 'N' : pnot = true; break;
-    case 'O' : arg >> cor; break;
-    case 'A' : arg >> cand; break;
-    case 'M' : cnot = true; break;
     case 'v' : opt::verbose = true; break;
     case 'e' : arg >> epsilon; break;
     case 's' : arg >> min_size; break;
@@ -409,15 +507,9 @@ static int dbscanfunc(int argc, char** argv) {
       "\n"
       "Optional Options:\n"
       "  -v, --verbose             Increase output to stderr.\n"
-      "    -o                    Cell phenotype: Logical OR flags\n"
-      "    -a                    Cell phenotype: Logical AND flags\n"
-      "    -N                    Cell phenotype: Not flag\n"
-      "    -O                    Cell flag: Logical OR flags\n"
-      "    -A                    Cell flag: Logical AND flags\n"
-      "    -M                    Cell flag: Not flag\n"
-      "    -e                    Epsilon parameter for DBSCAN\n"
-      "    -s                    Min size parameter for DBSCAN\n"
-      "    -c                    Min cluster size (otherwise mark as zero)\n"
+      "    -e [100]                Epsilon parameter for DBSCAN\n"
+      "    -s [25]                 Min size parameter for DBSCAN\n"
+      "    -c [100]                Min cluster size (otherwise mark as zero)\n"
       "\n"
       "Example:\n"
       "  cysift dbscan input.cys output.cys\n";
@@ -425,17 +517,14 @@ static int dbscanfunc(int argc, char** argv) {
     return 1;
   }
 
-  CellSelector select(por, pand, pnot,
-		      cor, cand, cnot);
-  
   build_table();
 
   table.SetupOutputWriter(opt::outfile);
   
-  table.clusterDBSCAN(select, epsilon, min_size, min_cluster_size);
+  table.clusterDBSCAN(epsilon, min_size, min_cluster_size);
   
   table.OutputTable();
-  */  
+  
   return 0;
   
 }
@@ -1483,12 +1572,12 @@ static int meanfunc(int argc, char** argv) {
 
 static int tumorfunc(int argc, char** argv) {
 
-  const char* shortopts = "vt:k:f:o:a:";
+  const char* shortopts = "vt:k:f:d:";
 
+  float dist = 200;
   int n = 20;
   float frac = 0.75;
-  cy_uint orflag = 0;
-  cy_uint andflag = 0;  
+  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -1496,18 +1585,11 @@ static int tumorfunc(int argc, char** argv) {
     case 't' : arg >> opt::threads; break;
     case 'k' : arg >> n; break;
     case 'f' : arg >> frac; break;
-    case 'o' : arg >> orflag; break;
-    case 'a' : arg >> andflag; break;      
+    case 'd' : arg >> dist; break;
     default: die = true;
     }
   }
 
-  if (orflag == 0 && andflag == 0) {
-    std::cerr << " Required to specify flags for what is a tumor cell" << std::endl;
-    die = true;
-  }
-    
-  
   if (die || in_out_process(argc, argv)) {
   
     const char *USAGE_MESSAGE =
@@ -1516,8 +1598,7 @@ static int tumorfunc(int argc, char** argv) {
       "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -k [20]               Number of neighbors\n"
       "    -f [0.75]             Fraction of neighbors\n"
-      "    -o                    Flag OR for tumor\n"
-      "    -a                    Flag AND for tumor\n"      
+      "    -d [200]              Max distance to consider\n"
       "    -v, --verbose         Increase output to stderr\n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -1532,7 +1613,7 @@ static int tumorfunc(int argc, char** argv) {
   
   table.SetupOutputWriter(opt::outfile);
 
-  table.TumorCall(n, frac, orflag, andflag, 200);
+  table.TumorCall(n, frac, dist);
 
   table.OutputTable();
 
@@ -1649,13 +1730,14 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "delaunay" || opt::module == "head" || 
 	 opt::module == "mean" || opt::module == "ldacreate" ||
 	 opt::module == "ldarun" || opt::module == "png" || 
-	 opt::module == "radialdens" ||
+	 opt::module == "radialdens" || opt::module == "margin" ||
 	 opt::module == "scramble" || opt::module == "scatter" ||
 	 opt::module == "hallucinate" || opt::module == "summary" ||
+	 opt::module == "island" || 
 	 opt::module == "jaccard" || opt::module == "cellcount" ||
-	 opt::module == "synth" || 
+	 opt::module == "synth" || opt::module == "filter" || 
 	 opt::module == "sampleselect" || opt::module == "dbscan" || 
-	 opt::module == "select" || opt::module == "pheno")) {
+	 opt::module == "mark" || opt::module == "pheno")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
     die = true;
   }
@@ -2155,91 +2237,126 @@ static int spatialfunc(int argc, char** argv) {
   return 0;
 }
 */
-    
-static int selectfunc(int argc, char** argv) {
+ 
+ static int filterfunc(int argc, char** argv) {
+   const char* shortopts = "v";
+   
+   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+     std::istringstream arg(optarg != NULL ? optarg : "");
+     switch (c) {
+     case 'v': opt::verbose = true; break;
+     }   
+   }
 
-  const char* shortopts = "vr:a:n:A:N:of:g:l:G:L:e:jr:";
+  if (die || in_out_process(argc, argv)) {
   
-  // field selection
-  bool or_toggle = false;
-  std::string sholder;
-  float holder;
-
-  // radius for mask select
-  float radius = 0.0f;
-  
-  SelectOpVec num_vec;
-  SelectOpMap criteria;
-  std::vector<std::string> field_vec;
-
-  // select function
-  std::vector<SelectionUnit> selections;
-  selections.push_back(SelectionUnit());
-
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
-    std::istringstream arg(optarg != NULL ? optarg : "");
-    switch (c) {
-    case 'v': opt::verbose = true; break;
-    case 'a':
-      if (selections.back().pand) 
-	selections.push_back(SelectionUnit());
-      arg >> selections.back().pand; break;
-    case 'n':
-      if (selections.back().pnot)
-	selections.push_back(SelectionUnit());
-      arg >> selections.back().pnot; break;
-    case 'A':
-      if (selections.back().cand)
-	selections.push_back(SelectionUnit());	
-      arg >> selections.back().cand; break;
-    case 'N':
-      if (selections.back().cnot) 
-	selections.push_back(SelectionUnit());		
-      arg >> selections.back().cnot; break;
-    case 'o': selections.push_back(SelectionUnit()); break;
-    case 'f' : arg >> sholder; field_vec.push_back(sholder); break;
-    case 'g' : arg >> holder; num_vec.push_back({optype::GREATER_THAN, holder}); break;
-    case 'l' : arg >> holder; num_vec.push_back({optype::LESS_THAN, holder}); break;
-    case 'G' : arg >> holder; num_vec.push_back({optype::GREATER_THAN_OR_EQUAL, holder}); break;
-    case 'L' : arg >> holder; num_vec.push_back({optype::LESS_THAN_OR_EQUAL, holder}); break;
-    case 'e' : arg >> holder; num_vec.push_back({optype::EQUAL_TO, holder}); break;
-    case 'j' : or_toggle = true; break;
-    case 'r' : arg >> radius; break;
-    default: die = true; break;  
-    }
+    const char *USAGE_MESSAGE =
+      "Usage: cysift filter [cysfile]\n"
+      "  Keep only marked cells\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
+      "  Options\n"
+      "    -v, --verbose         Increase output to stderr\n"
+      "  Example\n"
+      "    cysift filter <in> <out>"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
   }
 
-  CellSelector cellselect;
-  for (const auto& a : selections)
-    cellselect.AddSelectionUnit(a);
+  FilterProcessor filter;
+  filter.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
 
-  
-  if (opt::verbose)
-    std::cerr << cellselect << std::endl;
-  
-  if (field_vec.size() > 1) {
-    
-    // make sure fields and criteria line up
-    if (num_vec.size() != field_vec.size()) {
-      std::cerr << "Must specify same number of fields (or just 1 field) as criteria" << std::endl;
-      die = true;
-    } else {
-      for (size_t i = 0; i < num_vec.size(); i++) {
-	criteria[field_vec.at(i)].push_back(num_vec.at(i));
-      }
-    }
-    
-  } else if (field_vec.size() == 1) {
+  // process
+  if (table.StreamTable(filter, opt::infile))
+    return 1;
 
-    if (num_vec.size() == 0) {
-      std::cerr << "Must specify a numeric criteria" << std::endl;
-      die = true;
-    } else {
-      for (const auto& c : num_vec) {
-	criteria[field_vec.at(0)].push_back(c);
-      }
-    }
-    
+  return 0;
+  
+ }
+ 
+ static int markfunc(int argc, char** argv) {
+   
+   const char* shortopts = "vr:a:n:A:N:of:g:l:G:L:e:jr:";
+   
+   // field selection
+   bool or_toggle = false;
+   std::string sholder;
+   float holder;
+   
+   // radius for mask select
+   float radius = 0.0f;
+   
+   SelectOpVec num_vec;
+   SelectOpMap criteria;
+   std::vector<std::string> field_vec;
+   
+   // select function
+   std::vector<SelectionUnit> selections;
+   selections.push_back(SelectionUnit());
+   
+   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+     std::istringstream arg(optarg != NULL ? optarg : "");
+     switch (c) {
+     case 'v': opt::verbose = true; break;
+     case 'a':
+       if (selections.back().pand) 
+	 selections.push_back(SelectionUnit());
+       arg >> selections.back().pand; break;
+     case 'n':
+       if (selections.back().pnot)
+	 selections.push_back(SelectionUnit());
+       arg >> selections.back().pnot; break;
+     case 'A':
+       if (selections.back().cand)
+	 selections.push_back(SelectionUnit());	
+       arg >> selections.back().cand; break;
+     case 'N':
+       if (selections.back().cnot) 
+	 selections.push_back(SelectionUnit());		
+       arg >> selections.back().cnot; break;
+     case 'o': selections.push_back(SelectionUnit()); break;
+     case 'f' : arg >> sholder; field_vec.push_back(sholder); break;
+     case 'g' : arg >> holder; num_vec.push_back({optype::GREATER_THAN, holder}); break;
+     case 'l' : arg >> holder; num_vec.push_back({optype::LESS_THAN, holder}); break;
+     case 'G' : arg >> holder; num_vec.push_back({optype::GREATER_THAN_OR_EQUAL, holder}); break;
+     case 'L' : arg >> holder; num_vec.push_back({optype::LESS_THAN_OR_EQUAL, holder}); break;
+     case 'e' : arg >> holder; num_vec.push_back({optype::EQUAL_TO, holder}); break;
+     case 'j' : or_toggle = true; break;
+     case 'r' : arg >> radius; break;
+     default: die = true; break;  
+     }
+   }
+   
+   CellSelector cellselect;
+   for (const auto& a : selections)
+     cellselect.AddSelectionUnit(a);
+   
+   if (opt::verbose)
+     std::cerr << cellselect << std::endl;
+   
+   if (field_vec.size() > 1) {
+     
+     // make sure fields and criteria line up
+     if (num_vec.size() != field_vec.size()) {
+       std::cerr << "Must specify same number of fields (or just 1 field) as criteria" << std::endl;
+       die = true;
+     } else {
+       for (size_t i = 0; i < num_vec.size(); i++) {
+	 criteria[field_vec.at(i)].push_back(num_vec.at(i));
+       }
+     }
+     
+   } else if (field_vec.size() == 1) {
+     
+     if (num_vec.size() == 0) {
+       std::cerr << "Must specify a numeric criteria" << std::endl;
+       die = true;
+     } else {
+       for (const auto& c : num_vec) {
+	 criteria[field_vec.at(0)].push_back(c);
+       }
+     }
+     
   }
   
   if (die || in_out_process(argc, argv)) {
@@ -2266,9 +2383,8 @@ static int selectfunc(int argc, char** argv) {
       "    -r                    Radius (in x,y coords) of region around selected cells to also include\n"
       "  Options\n"
       "    -v, --verbose         Increase output to stderr\n"
-      "    -t                    Number of threads (mask selection only)\n"
       "  Example\n"
-      "    cysift select -a 4160 -o -a 4352 <in> <out> # select cells with bits 4096+256 OR 4096+64"
+      "    cysift mark -a 4160 -o -a 4352 <in> <out> # select cells with bits 4096+256 OR 4096+64"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
@@ -2277,7 +2393,7 @@ static int selectfunc(int argc, char** argv) {
   // setup the selector processor for zero radius
   if (radius <= 0) {
 
-    SelectProcessor select;
+    MarkProcessor select;
     select.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
     select.SetFlagParams(cellselect); 
     select.SetFieldParams(criteria, or_toggle);
@@ -2287,8 +2403,6 @@ static int selectfunc(int argc, char** argv) {
 
     return 0;
   }
-
-
   
   // or else we read table and then select
   build_table();
@@ -2512,6 +2626,62 @@ static void cysift_cat(const std::vector<std::string>& inputFiles, const std::st
         }
     }
 }
+
+ int moranfunc(int argc, char** argv) {
+
+  const char* shortopts = "vR:r:o:a:l:f:t:";
+  cy_uint inner = 0;
+  cy_uint outer = 20;
+  cy_uint logor = 0;
+  cy_uint logand = 0;
+  std::string label;
+
+  std::string file;
+
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 't' : arg >> opt::threads; break;
+    case 'R' : arg >> inner; break;
+    case 'r' : arg >> outer; break;
+    case 'o' : arg >> logor; break;
+    case 'a' : arg >> logand; break;
+    case 'l' : arg >> label; break;
+    case 'f' : arg >> file; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift moran [cysfile]\n"
+      "  Calculate the Moran's I cells in neighborhoods\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
+      "    -r [20]               Outer radius\n"
+      "    -R [0]                Inner radius\n"
+      "    -o                    Logical OR flags\n"
+      "    -a                    Logical AND flags\n"
+      "    -l                    Label the column\n"
+      "    -f                    File for multiple labels [r,R,o,a,l]\n"
+      "    -t                    Number of threads (default 1)\n"
+      "    -v, --verbose         Increase output to stderr\n"      
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  build_table();
+
+  table.SetupOutputWriter(opt::outfile);
+
+  //table.MoranI();
+
+  table.OutputTable();
+
+  return 0;
+ }
  
 int debugfunc(int argc, char** argv) {
   const char* shortopts = "v";

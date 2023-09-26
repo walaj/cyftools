@@ -363,8 +363,19 @@ class CountProcessor : public CellProcessor {
 };
 
 
-// Select processor
-class SelectProcessor : public CellProcessor {
+// filter processor
+class FilterProcessor : public CellProcessor {
+
+public:
+  
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+
+};
+
+// Mark processor
+class MarkProcessor : public CellProcessor {
   
  public:
   

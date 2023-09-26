@@ -5,6 +5,19 @@
 #include <sstream>
 #include <iostream>
 
+#define TUMOR_FLAG 0b1
+#define MARK_FLAG 0b10
+#define MARGIN_FLAG 0b100
+
+// Macro to test if a flag is set
+#define IS_FLAG_SET(flags, flag) ((flags) & (flag))
+
+// Macro to set a flag
+#define SET_FLAG(flags, flag) ((flags) |= (flag))
+
+// Macro to clear a flag
+#define CLEAR_FLAG(flags, flag) ((flags) &= ~(flag))
+
 // define phenotype map
 typedef std::pair<float,float> Pheno;
 typedef std::unordered_map<std::string, Pheno> PhenoMap;

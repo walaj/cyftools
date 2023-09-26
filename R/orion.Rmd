@@ -11,33 +11,43 @@ library(tidyverse)
 library(ggplot2)
 library(survival)
 library(forestplot)
+library(survminer)
 source("~/git/cysift/R/helpers.R")
+source("~/Sorger/projects/orion/R/orion_helpers.R")
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r load-data}
+```{r load-data, include=FALSE}
+# load clinical data
 load_redcap()
 
-redcap$pMMR <- as.factor(redcap$pMMR)
+# re-format pMMR into factor
+redcap$pMMR <- factor(redcap$pMMR, levels = c(0, 1), labels = c("dMMR", "pMMR"))
 
-## DUMMY
+# Verify the transformation
+table(redcap$pMMR)
+
+## DUMMY data for the unknown grade data
 redcap[Grade == "Unknown", Grade := "Low"]
 redcap$Grade <- factor(redcap$Grade, levels = c("Low", "High"))
 
-levels(redcap$pMMR) <- c("dMMR", "pMMR")
+# setup other clinical/histological adta
 redcap[, mucinous := as.factor(ifelse(grepl("ucinous", Histology), 1, 0))]
 redcap$Location <- factor(redcap$Location, levels = c("Appendix", "Cecum", "Ascending", "Transverse", "Descending", "Sigmoid", "Rectosigmoid", "Rectum"))
 
-
+# anatomic location
+redcap[, side := {
+  if (Location %in% c("Appendix","Cecum","Ascending","Transverse")) {
+    "Right"
+  } else if (Location %in% c("Sigmoid","Descending")) {
+    "Left"
+  } else {
+    "Rectal"
+  }
+}, by="Slide_ID"]
 ```
 
-```{r setup-stuff}
-knitr::opts_chunk$set(include = FALSE)
+```{r plot-setup-stuff, include=FALSE}
+# ggplot theme
 theme_jw <- function() {
   theme_minimal() +
   theme(
@@ -46,12 +56,123 @@ theme_jw <- function() {
     axis.text = element_text(color = "black")
   )
 }
-pMMR_colors <- c("dMMR" = "#fdc086", "pMMR" = "#5ab4ac")
 
+# color theme
+pMMR_colors <- c("dMMR" = "#fdc086", "pMMR" = "#5ab4ac", "tipMMR"="#beaed4")
+
+# plot to pdf function
+save_pdf <- function(g, filename, width=10, height=10) {
+  filepath <- paste0("~/Sorger/projects/orion/figs_raw_paper/", filename)
+  
+  pdf(filepath, useDingbats = FALSE, width, height)
+  print(g)
+  dev.off()
+}
+```
+
+```{r radial-dens, include=FALSE}
+dtr <- readRDS("~/Sorger/cache/chain.rds")
+
+if (TRUE) {
+  files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/chain/", full.names = TRUE)
+  files <- files[grepl("cys$", files)]
+  
+  #num_cells <- sum(sapply(files, function(f) {
+  #  fread(cmd=paste("cysift count", f))$V1
+  #}))
+  
+  header <- header_read(files[1])
+  # read all the data as the means within the tumor compartment
+  dtt <- lapply(files, function(f) {
+    cat(basename(f), "\n")
+    dt <- fread(cmd=paste("cysift select -A 1",f,"- | cysift mean - - | cysift view -"))
+    setnames(dt, paste0("V",seq(6)), c("sample","cell","x","y","pflag","cflag"))
+    setnames(dt, paste0("V",seq(7,ncol(dt))), header$id[header$tag_type %in% c("CA","MA")])
+    dt[, Slide_ID := sub("^(LSP[0-9]+).*", "\\1", basename(f))]
+    return(dt)
+  })
+  dtr <- rbindlist(dtt)
+  #saveRDS(dtr, "~/Sorger/cache/chain.rds", compress=FALSE)
+}
+```
+
+```{r mark-the-tipMMR, include=FALSE}
+
+#### MARK THE TIPMMR BY CD3
+# Slide LSP10716 is the 8/9 ranked by CD3
+rr[, tipMMR := factor(ifelse(CD3_200r > rr[Slide_ID=="LSP10716", CD3_200r], ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+rr$tipMMR <- factor(rr$tipMMR, levels = c("pMMR", "tipMMR", "dMMR"))
+g <- km_plot(rr[pMMR=="pMMR"], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE)
+table(rr$tipMMR)
+rr[tipMMR=="tipMMR", Slide_ID]
+
+#### MARK THE TIPMMR BY CD8
+# Slide LSP10716 is the 23rd percetile of dMMR
+if (FALSE) {
+  rr[, tipMMR := factor(ifelse(CD8_200r > rr[Slide_ID=="LSP10716", CD8_200r], ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+  g <- km_plot(rr[pMMR=="pMMR"], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE)
+  table(rr$tipMMR)
+  rr[tipMMR=="tipMMR", Slide_ID]
+}
+```
+
+```{r random-hr-tip}
+
+## get distribution of HR for "random" tipMMR, selected from pMMR
+set.seed(42)
+rrpmmr <- rr[pMMR == "pMMR"]
+hrdist <- sapply(seq(5000), function(cc) {
+  if (cc %% 100 == 0)
+    cat(cc,"\n")
+  rrpmmr[, rand_label := "hi"]
+  rrpmmr[sample(.N, 13), rand_label := "low"]
+  hr <- as.numeric(km_plot(rrpmmr, parm="rand_label", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1])
+  return(hr)
+})
+saveRDS(hrdist, "~/Sorger/cache/hrdist.rds")
+
+g <- ggplot(data.table(hr=hrdist[hrdist < 10]), aes(x=hr)) + geom_histogram(stat="bin", binwidth=0.05) + 
+  theme_jw() + xlab("Hazard Ratio") + ylab("Frequency") + geom_vline(aes(xintercept=1), color="red") +
+ geom_vline(aes(xintercept=0.09), color="blue")
+save_pdf(g, "cd3_tipmmr_random.pdf", width=3, height=2)
+
+## iteratively search for best HR
+hrs.cd3 <- rbindlist(lapply(sort(rr$CD3_200r)[seq(5,nrow(rr)-5)], function(cc) {
+  rr[, tipMMR := factor(ifelse(CD3_200r > cc, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+  cat(cc, "\n")
+  return(data.table(cutoff=cc, hr=as.numeric(km_plot(rr[pMMR=="pMMR"&PFSDays > 0], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1]), numtip = table(rr$tipMMR)["tipMMR"], cell="CD3"))
+}))
+hrs.cd8 <- rbindlist(lapply(sort(rr$CD8_200r)[seq(5,nrow(rr)-5)], function(cc) {
+  rr[, tipMMR := factor(ifelse(CD8_200r > cc, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+  return(data.table(cutoff=cc, hr=as.numeric(km_plot(rr[pMMR=="pMMR"&PFSDays > 0], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1]), numtip = table(rr$tipMMR)["tipMMR"], cell="CD8"))
+}))
+hrs.cd8 <- rbindlist(lapply(sort(rr$CD8_200r)[seq(5,nrow(rr)-5)], function(cc) {
+  rr[, tipMMR := factor(ifelse(CD8_200r > cc, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+  return(data.table(cutoff=cc, hr=as.numeric(km_plot(rr[pMMR=="pMMR"&PFSDays > 0], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1]), numtip = table(rr$tipMMR)["tipMMR"], cell="CD8"))
+}))
+hrs.rand <- rbindlist(lapply(sort(rr$rand)[seq(5,nrow(rr)-5)], function(cc) {
+  rr[, tipMMR := factor(ifelse(rand > cc, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+  return(data.table(cutoff=cc, hr=as.numeric(km_plot(rr[pMMR=="pMMR"&PFSDays > 0], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1]), numtip = table(rr$tipMMR)["tipMMR"], cell="rand"))
+}))
+hrs <- rbind(hrs.cd3, hrs.cd8, hrs.rand)
+
+rr[, tipMMR := factor(ifelse(CD8_200r > 50, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+km_plot(rr[pMMR=="pMMR" & PFSDays > 90], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE)
+
+# plot of HR by number of samples designated as tipMMR
+g <- ggplot(hrs, aes(x=numtip, y=hr, color=cell)) + geom_point() + theme_jw()
+```
+
+```{r merge-clinical-imaging, include=FALSE}
+rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
+```
+
+```{r neoadjuvant}
+redcap[grepl("y",TNM_At_Diagnosis), Location]
+table(grepl("y", redcap$TNM_At_Diagnosis))
 ```
 
 ```{r clinical-figures}
-
 
 # grade
 g <- ggplot(redcap, aes(x = Grade, fill = pMMR, group=pMMR)) +
@@ -59,15 +180,17 @@ g <- ggplot(redcap, aes(x = Grade, fill = pMMR, group=pMMR)) +
   labs(x = "Histological grade",
        y = "Count") +
   scale_fill_manual(values = pMMR_colors) +
-  theme_jw()
+  theme_jw() + theme(legend.position = "none")
+save_pdf(g, "grade_bar.pdf", width=3, height=3)
 
-# GEnder
+# Gender
 g <- ggplot(redcap, aes(x = Gender, fill = pMMR, group=pMMR)) +
   geom_bar(color="black") +
   labs(x = "Gender",
        y = "Count") +
   scale_fill_manual(values = pMMR_colors) +
-  theme_jw()
+  theme_jw() + theme(legend.position = "none")
+save_pdf(g, "gender_bar.pdf", width=2, height=3)
 
 # location
 g <- ggplot(redcap, aes(x = Location, fill = pMMR, group=pMMR)) +
@@ -75,7 +198,8 @@ g <- ggplot(redcap, aes(x = Location, fill = pMMR, group=pMMR)) +
   labs(x = "Anatomical location",
        y = "Count") +
   scale_fill_manual(values = pMMR_colors) +
-  theme_jw()
+  theme_jw() + theme(legend.position = "none")
+save_pdf(g, "location_bar.pdf", width=6, height=3)
 
 # stage
 g <- ggplot(redcap, aes(x = Stage_At_Diagnosis, fill = pMMR, group=pMMR)) +
@@ -84,14 +208,17 @@ g <- ggplot(redcap, aes(x = Stage_At_Diagnosis, fill = pMMR, group=pMMR)) +
        y = "Count") +
   scale_fill_manual(values = pMMR_colors) +
   theme_jw()
+save_pdf(g, "stage_bar.pdf", width=3, height=3)
 
 # age
 g <- ggplot(redcap, aes(x = pMMR, y = Age, fill = pMMR)) +
-  geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +  # Boxplot in the background with some transparency
-  geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +  # Scatter plot with jitter
+  geom_boxplot(alpha = 1, width=0.8, outlier.shape=NA) + 
+  geom_jitter(position = position_jitter(width = 0.2), size = 3, alpha = 1, shape=20) +  
   labs(y = "Age") +
   scale_fill_manual(values = pMMR_colors) +
-  theme_jw()
+  theme_jw() + theme(legend.position = "none")
+save_pdf(g, "age_box.pdf", width=3, height=3)
+
 ```
 
 ```{r mutations}
@@ -234,61 +361,271 @@ g <- ggplot(
   theme_jw()
 ```
 
-The molecular, clinical and pathology model scored Grade (high), PNI
-
-
-```{r radial-dens}
-files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/chain/", full.names = TRUE)
-header <- header_read(files[1])
-# read all the data as the means within the tumor compartment
-dtt <- lapply(files, function(f) {
-  cat(basename(f), "\n")
-  #dt <- fread(cmd=paste("cysift select -O 1",f,"- | cysift mean - - | cysift view -"))
-  dt <- fread(cmd=paste("cysift mean",f,"- | cysift view -"))
-  setnames(dt, paste0("V",seq(6)), c("sample","cell","x","y","pflag","cflag"))
-  setnames(dt, paste0("V",seq(7,ncol(dt))), header$id[header$tag_type %in% c("CA","MA")])
-  dt[, Slide_ID := sub("^(LSP[0-9]+).*", "\\1", basename(f))]
-  return(dt)
-})
-dtr <- rbindlist(dtt)
-saveRDS(dtr, "~/Sorger/cache/chain.rds", compress=FALSE)
-```
-
 ```{r cd3-by-tissue}
-rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
-
 # Reshape data to long format
-rr_long <- melt(rr, id.vars = "pMMR", measure.vars = c("CD3_200r", "CD20_200r","CD8_200r"), variable.name = "Metric", value.name = "Value")
+rr_long <- melt(rr, id.vars = "pMMR", measure.vars = c("CD3_200r", "CD4_200r","CD8_200r"), variable.name = "Metric", value.name = "Value")
+rr_long[, cells_per_mm2 := Value * 1e6 / (1000^2 * 0.325^2)]
+t.test(rr[pMMR=="pMMR", CD3_200r], rr[pMMR=="dMMR", CD3_200r]) # p = 0.02745
+t.test(rr[pMMR=="pMMR", CD4_200r], rr[pMMR=="dMMR", CD4_200r]) # p = 0.4261
+t.test(rr[pMMR=="pMMR", CD8_200r], rr[pMMR=="dMMR", CD8_200r]) # p = 0.01863
+wilcox.test(rr[pMMR=="pMMR", CD3_200r], rr[pMMR=="dMMR", CD3_200r]) # p = 0.004448
+wilcox.test(rr[pMMR=="pMMR", CD4_200r], rr[pMMR=="dMMR", CD4_200r]) # p = 0.4273
+wilcox.test(rr[pMMR=="pMMR", CD8_200r], rr[pMMR=="dMMR", CD8_200r]) # p = 0.001122
+rr_long[, cells_per_mm2 := Value * 1e6 / (1000^2 * 0.325^2)]
 
-# Plot
-g <- ggplot(rr_long, aes(x = pMMR, y = Value, fill = pMMR)) +
+# Plot T cells subsets
+g <- ggplot(rr_long, aes(x = pMMR, y = cells_per_mm2, fill = pMMR)) +
   geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +
   geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +
-  labs(y = "Value") +
+  labs(y = "Cells / mm2") +
+  coord_cartesian(ylim=c(0,40000)) +
   scale_fill_manual(values = pMMR_colors) +
   facet_wrap(~ Metric) +  # Separate panel for each y variable
   theme_jw()
 
-
-g <- ggplot(rr, aes(x = pMMR, y = CD3_200g, fill = pMMR)) +
-  geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +  # Boxplot in the background with some transparency
-  geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +  # Scatter plot with jitter
-  labs(y = "CD3") +
+# Plot B and PD1 subsets
+rr_long <- melt(rr, id.vars = "pMMR", measure.vars = c("CD20_200r", "PD1_200r","PD_L1_200r"), variable.name = "Metric", value.name = "Value")
+wilcox.test(rr[pMMR=="pMMR", CD20_200r], rr[pMMR=="dMMR", CD20_200r]) # p = 0.06399
+wilcox.test(rr[pMMR=="pMMR", PD1_200r], rr[pMMR=="dMMR", PD1_200r]) # p = 0.09163
+wilcox.test(rr[pMMR=="pMMR",PD_L1_200r], rr[pMMR=="dMMR", PD_L1_200r]) # p = 0.02668
+rr_long[, cells_per_mm2 := Value * 1e6 / (1000^2 * 0.325^2)]
+g <- ggplot(rr_long, aes(x = pMMR, y = cells_per_mm2, fill = pMMR)) +
+  geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +
+  geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +
+  labs(y = "Cells / mm2") +
+  coord_cartesian(ylim=c(0,20000)) + 
   scale_fill_manual(values = pMMR_colors) +
+  facet_wrap(~ Metric) +  # Separate panel for each y variable
+  theme_jw()
+
+# Plot innate cells subsets
+rr_long <- melt(rr, id.vars = "pMMR", measure.vars = c("CD31_200r", "CD68_200r","CD163_200r"), variable.name = "Metric", value.name = "Value")
+wilcox.test(rr[pMMR=="pMMR", CD31_200r], rr[pMMR=="dMMR", CD31_200r]) # p = 0.921
+wilcox.test(rr[pMMR=="pMMR", CD68_200r], rr[pMMR=="dMMR", CD68_200r]) # p = 0.2608
+wilcox.test(rr[pMMR=="pMMR", CD163_200r], rr[pMMR=="dMMR", CD163_200r]) # p = 0.2678
+rr_long[, cells_per_mm2 := Value * 1e6 / (1000^2 * 0.325^2)]
+g <- ggplot(rr_long, aes(x = pMMR, y = cells_per_mm2, fill = pMMR)) +
+  geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +
+  geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +
+  labs(y = "Cells / mm2") +
+  scale_fill_manual(values = pMMR_colors) +
+  facet_wrap(~ Metric) +  # Separate panel for each y variable
   theme_jw()
 ```
 
-## Including Plots
+```{r CD8_200r-distribution}
+## CD8
+setkey(rr, CD8_200r)
+cd8_levels <- rr$Slide_ID
+rr[, Slide_ID := factor(Slide_ID, levels=cd8_levels)]
+g <- ggplot(rr, aes(x=Slide_ID, y=CD8_200r, fill=pMMR)) + 
+  geom_bar(stat="identity")+
+  coord_flip() +
+  scale_fill_manual(values=pMMR_colors) +
+  theme_jw()
 
-You can also embed plots, for example:
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+## CD3
+setkey(rr, CD3_200r)
+cd3_levels <- rr$Slide_ID
+rr[, Slide_ID := factor(Slide_ID, levels=cd3_levels)]
+g <- ggplot(rr, aes(x=Slide_ID, y=CD3_200r, fill=pMMR)) + 
+  geom_bar(stat="identity")+
+  coord_flip() +
+  scale_fill_manual(values=pMMR_colors) +
+  theme_jw()
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r TIL-vs-CD3}
+rr[, cells_per_mm2 := CD45_200r * 1e6 / (1000^2 * 0.325^2)]
+rr[, TIL := factor(TIL, levels=c("absent","mild","moderate","marked"))]
+g <- ggplot(rr[!is.na(TIL)], aes(x = TIL, y = cells_per_mm2)) +
+  geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +
+  ylab("CD45+ cells/mm2") +
+  geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +
+  theme_jw()
+wilcox.test(rr[TIL=="absent", CD45_200r], rr[TIL=="marked", CD45_200r])
+wilcox.test(rr[TIL=="absent", CD45_200r], rr[TIL=="marked", CD45_200r])
+```
 
-install.packages(c("readxl", "data.table"))
-library(readxl)
-library(data.table)
+```{r gene-mutation-enrichment-tipmmr}
+## bar chart on pMMR, tipMMR, dMMR on Mutations
+rrm <- melt(rr, id.vars = "tipMMR", measure.vars = c("BRAF", "APC", "CTNNB1", "KRAS", "p53","PIK3CA"), variable.name="Gene")
+result <- rrm[, .(n = .N, mut = sum(value == 1, na.rm=TRUE)), by = .(tipMMR, Gene)]
+result[, SE := sqrt((mut/n) * (1 - mut/n) / n)]
+result[, lower_limit := mut/n - 1.96*SE]
+result$lower_limit[result$lower_limit < 0] <- 0
+
+fisher.test(matrix(c(sum(rr[tipMMR=="tipMMR", .(BRAF)]), rr[tipMMR=="tipMMR",.N],
+  sum(rr[tipMMR=="pMMR", .(BRAF)], na.rm=TRUE), rr[tipMMR=="pMMR", .N]), nrow=2, ncol=2))
+fisher.test(matrix(c(sum(rr[tipMMR=="tipMMR", .(APC)]), rr[tipMMR=="tipMMR",.N],
+  sum(rr[tipMMR=="pMMR", .(APC)], na.rm=TRUE), rr[tipMMR=="pMMR", .N]), nrow=2, ncol=2))
+fisher.test(matrix(c(sum(rr[tipMMR=="tipMMR", .(CTNNB1)]), rr[tipMMR=="tipMMR",.N],
+  sum(rr[tipMMR=="pMMR", .(CTNNB1)], na.rm=TRUE), rr[tipMMR=="pMMR", .N]), nrow=2, ncol=2))
+
+g <- ggplot(result, aes(x=Gene, fill=tipMMR, y=mut/n)) + 
+  geom_bar(stat="identity", position="dodge", color="black") + 
+  theme_jw() + scale_fill_manual(values=pMMR_colors) +
+  ylab("Fraction of samples with mutation") +
+  geom_errorbar(aes(ymin=lower_limit, ymax=mut/n + 1.96*SE), width=0.25, position=position_dodge(0.9))
+save_pdf(g, "tipMMR_gene_bars.pdf", width=4.5,height=2)
+
+## bar chart on pMMR, tipMMR, dMMR on Grade, Mucionus, LVI, PNI etc
+rrm <- melt(rr, id.vars = "tipMMR", measure.vars = c("mucinous", "Grade", "LVI","PNI"), variable.name="Variable")
+rrm[Variable=="Grade", value := as.integer(value=="High")]
+result <- rrm[!is.na(value), .(n = .N, mut = sum(value == 1, na.rm=TRUE)), by = .(tipMMR, Variable)]
+result[, SE := sqrt((mut/n) * (1 - mut/n) / n)]
+result[, lower_limit := mut/n - 1.96*SE]
+result$lower_limit[result$lower_limit < 0] <- 0
+
+g <- ggplot(result, aes(x=Variable, fill=tipMMR, y=mut/n)) + 
+  geom_bar(stat="identity", position="dodge", color="black") + 
+  theme_jw() + scale_fill_manual(values=pMMR_colors) +
+  ylab("Fraction of samples with feature") +
+  geom_errorbar(aes(ymin=lower_limit, ymax=mut/n + 1.96*SE), width=0.25, position=position_dodge(0.9))
+save_pdf(g, "tipMMR_hist_bars.pdf", width=3,height=2)
+
+# age
+g <- ggplot(rr, aes(x = tipMMR, y = Age, fill = tipMMR)) +
+  geom_boxplot(alpha = 1, width=0.8, outlier.shape=NA) +  # Boxplot in the background with some transparency
+  geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 1, shape=20) +  # Scatter plot with jitter
+  labs(y = "Age") +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw() + theme(legend.position = "none")
+save_pdf(g, "tipMMR_age_box.pdf", width=3,height=2)
+
+t.test(rr[tipMMR=="tipMMR", Age], rr[tipMMR=="dMMR", Age])
+t.test(rr[tipMMR=="dMMR", Age], rr[tipMMR=="pMMR", Age])
+
+# location
+rrm <- melt(rr, id.vars = "tipMMR", measure.vars = c("side"), variable.name="side")
+result <- rr[, .(SideCount = .N), by = .(tipMMR, side)][, N := sum(SideCount), by = tipMMR]
+result <- rbind(result, data.table(tipMMR="dMMR",side="Rectal",SideCount=0, N=9))
+
+result[, SE := sqrt((SideCount/N) * (1 - SideCount/N) / N)]
+result[, lower_limit := SideCount/N - 1.96*SE]
+result$lower_limit[result$lower_limit < 0] <- 0
+
+g <- ggplot(result, aes(x=side, fill=tipMMR, y=SideCount/N)) + 
+  geom_bar(stat="identity", position="dodge", color="black") + 
+  theme_jw() + scale_fill_manual(values=pMMR_colors) +
+  ylab("Fraction of samples with feature") +
+  geom_errorbar(aes(ymin=lower_limit, ymax=SideCount/N + 1.96*SE), width=0.25, position=position_dodge(0.9))
+save_pdf(g, "tipMMR_side_bars.pdf", width=3,height=2)
+
+# gender bar chart on pMMR, tipMMR, dMMR on Mutations
+# Calculating number of males and females, and the male-to-female ratio
+result <- rrm[, .(n = .N, mut = sum(value == "M", na.rm=TRUE), females = sum(value != "M", na.rm=TRUE)), by = .(tipMMR)]
+result[, ratio := mut/females]
+result[, deviation := ratio - 1]
+
+# Plotting the deviation from a ratio of 1 using horizontal bars
+g <- ggplot(result, aes(y=tipMMR, x=deviation, fill=tipMMR)) + 
+  geom_bar(stat="identity", position="dodge", color="black") + 
+  scale_fill_manual(values=pMMR_colors) +
+  #xlab("Deviation from Male-to-Female Ratio of 1 (Right indicates male predominance)") +
+  geom_vline(xintercept=0, linetype="dashed") +  # Add a vertical dashed line at 0 for reference
+  theme_jw() + 
+  scale_x_continuous(name="M:F ratio", breaks=seq(-0.5, 0.5, by=0.25), labels=seq(0.5, 1.5, by=0.25))
+save_pdf(g,"tipMMR_gender_bars.pdf", width=3, height=1)
+```
+
+```{r cd3-stage}
+rr_long <- melt(rr, id.vars = c("tipMMR","stage_num"), measure.vars = c("CD3_200r"), variable.name = "Metric", value.name = "Value")
+g <- ggplot(rr_long, aes(x=as.factor(stage_num), y = Value* 1e6 / (1000^2 * 0.325^2))) +
+  geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA,notch=FALSE) +
+  geom_jitter(position = position_jitter(width = 0.2), size = 1, shape=16) +
+  labs(y = "Cells / mm2") +
+  scale_y_log10()+
+  scale_x_discrete(labels =c("I","II","III","IV")) +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw() + theme(axis.title.x = element_blank())
+save_pdf(g, "stage_CD3_boxplot.pdf", width=3,height=3)
+```
+
+```{r checkpoint}
+## PD1
+setkey(rr, PD1_200r)
+pd1_levels <- rr$Slide_ID
+rr[, Slide_ID := factor(Slide_ID, levels=pd1_levels)]
+g <- ggplot(rr, aes(x=Slide_ID, y=PD1_200r, fill=tipMMR)) + 
+  geom_bar(stat="identity")+
+  coord_flip() +
+  scale_fill_manual(values=pMMR_colors) +
+  theme_jw() + scale_y_log10()
+save_pdf(g, "pd1_waterfall.pdf", width=6, height=6)
+
+# PD-L1
+setkey(rr, PD_L1_200r)
+pdl1_levels <- rr$Slide_ID
+rr[, Slide_ID := factor(Slide_ID, levels=pdl1_levels)]
+g <- ggplot(rr, aes(x=Slide_ID, y=PD_L1_200r, fill=tipMMR)) + 
+  geom_bar(stat="identity")+
+  coord_flip() +
+  scale_fill_manual(values=pMMR_colors) +
+  theme_jw() + scale_y_log10()
+save_pdf(g, "pdl1_waterfall.pdf", width=6, height=6)
+
+# CD45RO
+setkey(rr, CD45RO_200r)
+plevels <- rr$Slide_ID
+rr[, Slide_ID := factor(Slide_ID, levels=plevels)]
+g <- ggplot(rr, aes(x=Slide_ID, y=CD45RO_200r, fill=tipMMR)) + 
+  geom_bar(stat="identity")+
+  coord_flip() +
+  scale_fill_manual(values=pMMR_colors) +
+  theme_jw() + scale_y_log10()
+p = ttest_pairs(rr, "tipMMR","CD45RO_200r")
+#save_pdf(g, "pdl1_waterfall.pdf", width=6, height=6)
+
+# Pan-CK -- PD-L1
+setkey(rr, PanCKpPDL1_200r)
+plevels <- rr$Slide_ID
+rr[, Slide_ID := factor(Slide_ID, levels=plevels)]
+g <- ggplot(rr, aes(x=Slide_ID, y=PanCKpPDL1_200r, fill=tipMMR)) + 
+  geom_bar(stat="identity")+
+  coord_flip() +
+  scale_fill_manual(values=pMMR_colors) +
+  theme_jw() + scale_y_log10()
+save_pdf(g, "PanCKpPDL1_200r_waterfall.pdf", width=6, height=6)
+
+# double-positive PD-L1 ratios
+rr[, pdl1_div_cd168_200r := PD_L1_200r/CD163_200r]
+rr[, pdl1_div_panCK_200r := PD_L1_200r/PanCK_200r]
+rr_long <- melt(rr, id.vars = "tipMMR", measure.vars = c("pdl1_div_cd168_200r", "pdl1_div_panCK_200r"), variable.name = "Metric", value.name = "Value")
+rr_long[, cells_per_mm2 := Value * 1e6 / (1000^2 * 0.325^2)]
+g <- ggplot(rr_long, aes(x = tipMMR, y = cells_per_mm2, fill = tipMMR)) +
+  geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +
+  geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +
+  labs(y = "Cells / mm2") +
+  scale_fill_manual(values = pMMR_colors) +
+  facet_wrap(~ Metric) +
+  theme_jw()
+
+rr_long <- melt(rr, id.vars = "tipMMR", measure.vars = c("PD1_200r", "PD_L1_200r", "CD45RO_200r"), variable.name = "Metric", value.name = "Value")
+rr_long[, cells_per_mm2 := Value * 1e6 / (1000^2 * 0.325^2)]
+pd1 = ttest_pairs(rr, "tipMMR","PD1_200r")
+pdl1 = ttest_pairs(rr, "tipMMR","PD_L1_200r")
+
+# Plot PD1/PDL1 
+g <- ggplot(rr_long, aes(x = tipMMR, y = cells_per_mm2, fill = tipMMR)) +
+  geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +
+  geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +
+  labs(y = "Cells / mm2") +
+  scale_y_log10()+
+  scale_fill_manual(values = pMMR_colors) +
+  facet_wrap(~ Metric) +
+  theme_jw()
+save_pdf(g, "pd1_pdl1_cd45ro_boxplot_tip.pdf", width=6,height=3)
+```
+
+```{r dbscan}
+f <- data.table::fread(cmd="cysift view ~/Sorger/projects/orion/orion_1_74/chain/LSP10353.dbscan.cys")
+fplot <- f[sample(.N,1e5), .(V5, V6,V217)][, cluster := ifelse(V217 > 0, "tumor","stroma")]
+g <- ggplot(fplot, aes(x=V5, y=V6, color=cluster)) + geom_point(size=0.1, shape=20) + theme_jw() + scale_color_manual(values=c(tumor="blue",stroma="red"))
+save_pdf(g, "dbtest.pdf", width=15, height=15)
+```
+
+
+
 

@@ -1,6 +1,7 @@
 #include "cell_table.h"
 #include "color_map.h"
 #include "cell_selector.h"
+#include <stack>
 
 #ifdef HAVE_UMAPPP
 #include "umappp/Umap.hpp"
@@ -10,7 +11,6 @@
 #include "umappp/neighbor_similarities.hpp"
 #include "umappp/optimize_layout.hpp"
 #include "umappp/spectral_init.hpp"
-#include "knncolle/knncolle.hpp"
 #endif
 
 #ifdef HAVE_KMEANS
@@ -250,7 +250,7 @@ void CellTable::UMAPPlot(const std::string& file, int width, int height) const {
   for (size_t i = 0; i < u1_ptr->size(); i++) {
     Color c = colormap.at(clusters.at(i) % 12);
     cairo_set_source_rgba(cr, c.redf(), c.greenf(), c.bluef(), 0.3);
-    cairo_arc(cr, u1_ptr->getData().at(i)*cwidth/2+cwidth/2, u2_ptr->getData().at(i)*cwidth/2+cwidth/2, 0.5, 0.0, 2.0 * M_PI);
+    cairo_arc(cr, u1_ptr->at(i)*cwidth/2+cwidth/2, u2_ptr->at(i)*cwidth/2+cwidth/2, 0.5, 0.0, 2.0 * M_PI);
     cairo_fill(cr);
   }
 
@@ -469,52 +469,258 @@ void CellTable::UMAPPlot(const std::string& file, int width, int height) const {
 
 }*/
 
-void CellTable::TumorCall(int num_neighbors, float frac,
-			  cy_uint orflag, cy_uint andflag, cy_uint dist) {
+int CellTable::dfs(int cellIndex,
+		   std::vector<int>& component_label,
+		   int currentLabel,
+		   const std::vector<std::vector<size_t>>& neighbors) const {
 
-#ifdef HAVE_KNNCOLLE
+  std::stack<int> stack;
+  stack.push(cellIndex);
   
-  // number of cells
-  int nobs = CellCount();
+  int size = 0;
+  
+  while (!stack.empty()) {
+    int curr = stack.top();
+    stack.pop();
+
+    if (component_label[curr] == 0) {
+      component_label[curr] = currentLabel;
+      size++;
+      
+      for (int neighbor : neighbors[curr]) {
+	if (component_label[neighbor] == 0) {
+	  stack.push(neighbor);
+	}
+      }
+    }
+  }
+  
+  return size;
+}
+
+void CellTable::IslandFill(size_t n, int flag_from, bool invert_from,
+			   int flag_to, bool invert_to) {
+  
+  validate();
+
+  const size_t NUM_NEIGHBORS = 10;
+  const float DIST_LIMIT = 100;
+  
+#ifdef HAVE_KNNCOLLE  
+
+  size_t num_cells = CellCount();
+
+  // build the vp tree for the entire network
+  knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher_all
+    = build_vp_tree();
+
+  // for every cell, determine if it has flag-set neighbor
+  if (m_verbose)
+    std::cerr << "...getting whole slide nearest neighbors." << std::endl;
+
+  std::vector<bool> marked_neighbor(num_cells, false);
+  for (size_t i = 0; i < num_cells; i++) {
+
+    // find the k nearest neighbors
+    JNeighbors neigh = searcher_all.find_nearest_neighbors(i, 10);
+
+    for (const auto& nn : neigh) {
+
+      // is the neighbor a marked cell or not
+      bool marked = IS_FLAG_SET(m_cflag_ptr->at(nn.first), flag_from);
+      marked = invert_from ? !marked : marked;
+      
+      // then if within dist limited, neighbor is marked
+      if (nn.second < DIST_LIMIT && marked) {
+	marked_neighbor[i] = true;
+	break;
+      }
+    }
+  }
+
+  // map to move from indicies in stroma to global indicies
+  std::vector<int> stroma_to_all_index_map;
+  std::vector<int> all_to_stroma_index_map(num_cells, -1);
+  std::vector<bool> ix(num_cells, false);
+  size_t stroma_index = 0;
+  for (size_t i = 0; i < num_cells; i++) {
+
+    // find if cell is marked
+    bool marked = IS_FLAG_SET(m_cflag_ptr->at(i), flag_from);
+    marked = invert_from ? !marked : marked;
+    
+    // if its NON-marked cell (often, stromal) cell,
+    // 1) add the index from where would be if counted all cells
+    // 2) add the stroma index to the all map
+    if (!marked) { //IS_FLAG_SET(m_cflag_ptr->at(i), MARK_FLAG)) {
+      ix[i] = true;
+      stroma_to_all_index_map.push_back(i);
+      all_to_stroma_index_map[i] = stroma_index;      
+      stroma_index++;      
+    }
+  }
+  
+  const int num_stroma = stroma_index;
+  assert(stroma_to_all_index_map.size() == num_stroma);
+  
+  // store the neighbors in stromal coordinates
+  std::vector<std::vector<size_t>> neighbors;
+  neighbors.resize(num_stroma);
+
+  // build the vp tree for the stroma
+  knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher = build_vp_tree(ix);
+  
+  // from the VP tree, build the nearest neighbors indicies vector
+  if (m_verbose)
+    std::cerr << "...getting unmarked-only nearest neighbors" << std::endl;
+  
+  stroma_index = 0;
+  for (size_t i = 0; i < num_stroma; i++) {
+
+    JNeighbors neigh = searcher.find_nearest_neighbors(i, NUM_NEIGHBORS);
+    neighbors[i].reserve(NUM_NEIGHBORS);
+
+    // make the stromal (unmarked) nearest neighbors graph
+    for (const auto& nn : neigh) {
+      assert(nn.first < num_stroma);
+      if (nn.second < DIST_LIMIT)
+	neighbors[i].push_back(nn.first);
+    }
+  }
+  
+  // Initialize connected component labels
+  std::vector<int> component_label(num_stroma, 0);
+  int currentLabel = 1;
   
   if (m_verbose)
-    std::cerr << "...finding K nearest-neighbors (spatial) on " << AddCommas(nobs) << " cells" << std::endl;
+    std::cerr << "...looping cells to fill unmarked islands with fewer than " <<
+      AddCommas(n) << " cells" << std::endl;
+  
+  // loop the cells and start DFS connected component algorithm on stromal cells
+  std::unordered_set<int> island_count;
+  size_t filled_cell_count = 0;
+  stroma_index = 0;
+  for (int i = 0; i < num_cells; i++) {
+    
+    // find if cell is marked
+    bool marked = IS_FLAG_SET(m_cflag_ptr->at(i), flag_from);
+    marked = invert_from ? !marked : marked;
+    
+    // skip marked cells
+    if (marked) // || already_visited) // IS_FLAG_SET(m_cflag_ptr->at(i), MARK_FLAG))
+      continue;
+
+    // find index of cell in table (all) coords
+    int all_index = stroma_to_all_index_map.at(stroma_index);
+    assert(all_index == i);
+
+    // if not yet part of a component, do the DFS
+    if (component_label[stroma_index] == 0) {
+      int size = dfs(stroma_index, component_label, currentLabel, neighbors);
+      
+      //      std::cerr << "...DFS " << currentLabel << " with " << AddCommas(size) << " components " <<
+      //	" and marked neighbor: " << marked_neighbor.at(all_index) << std::endl;
+
+      // store which connected components should get flipped
+      if (size < n && marked_neighbor.at(i)) {
+	island_count.insert(currentLabel);
+	filled_cell_count += size;
+      }
+      currentLabel++;
+    }
+
+    stroma_index++;
+  }
+
+  // which connected components have a tumor connection?
+  std::unordered_set<size_t> marked_connect_component;
+  for (size_t i = 0; i < num_stroma; i++) {
+    int all_index = stroma_to_all_index_map.at(i);
+    if (marked_neighbor[all_index])
+      marked_connect_component.insert(component_label[i]);
+  }
+
+  std::cerr << "...setting flags" << std::endl;
+  
+  // go through and actually change the flags
+  // remember we are looping here in all coords but components are in stromal coords
+  for (size_t i = 0; i < num_cells; i++) {
+
+    int stromal_ix = all_to_stroma_index_map.at(i);
+    if (island_count.count(component_label[stromal_ix]) &&
+	marked_connect_component.count(component_label[stromal_ix])) {
+      if (invert_to)
+	CLEAR_FLAG((*m_cflag_ptr)[i], flag_to);
+      else
+	SET_FLAG((*m_cflag_ptr)[i], flag_to);	
+    }
+  }
+  
+  if (m_verbose) {
+    std::cerr << "...filled " << AddCommas(island_count.size()) << " unmarked \"islands\" involving " <<
+      AddCommas(filled_cell_count) << " cells" << std::endl;
+  }
+  
+#else
+  std::cerr << "Warning: tumor call function requires including header library knncolle (https://github.com/LTLA/knncolle)" <<
+    " and preprocessor directive -DHAVE_KNNCOLLE" << std::endl;
+#endif
+  
+}
+
+knncolle::VpTree<knncolle::distances::Euclidean, int, float>
+CellTable::build_vp_tree(const std::vector<bool>& ix) const {
+
+  // number of cells
+  int nobs = CellCount();
+  const int ndim = 2;
+  assert(nobs == ix.size() || ix.size() == 0);
   
   // column major the coordinate data
   std::vector<float> concatenated_data;
-  
-  const int ndim = 2;
+  concatenated_data.reserve(nobs * ndim);
+
   validate();
+
+  // add x and y
+  size_t n = 0;  
+  for (size_t i = 0; i < nobs; i++) {
+    if (ix.size() == 0 || ix.at(i)) {
+      concatenated_data.push_back(m_x_ptr->at(i));
+      concatenated_data.push_back(m_y_ptr->at(i));      
+      n++;
+    }
+  }
   
-  const std::vector<float>& x_data = m_x_ptr->getData(); // just a ptr, not a copy
+  assert(n == concatenated_data.size() / 2);
+  nobs = n; 
+  
   if (m_verbose) 
-    std::cerr << "...adding " << AddCommas(x_data.size()) << " points on x" << std::endl;
-  concatenated_data.insert(concatenated_data.end(), x_data.begin(), x_data.end());
-
-  const std::vector<float>& y_data = m_y_ptr->getData(); // just a ptr, not a copy
-  if (m_verbose) 
-    std::cerr << "...adding " << AddCommas(y_data.size()) << " points on y" << std::endl;
-   concatenated_data.insert(concatenated_data.end(), y_data.begin(), y_data.end());
+    std::cerr << "...building KNN VP tree with " << AddCommas(concatenated_data.size()/2) << " points" << std::endl;
+  
+  // convert to row major?
+  //column_to_row_major(concatenated_data, nobs, ndim);
+  
+  JNeighbors output(nobs);
    
-   // convert to row major?
-   column_to_row_major(concatenated_data, nobs, ndim);
-   
-   if (m_verbose)
-     std::cerr << "...setting up KNN graph (spatial) for tumor calling on " << AddCommas(nobs) << " points" << std::endl;
-
-   JNeighbors output(nobs);
-
-  if (m_verbose)
-    std::cerr << "...building KNN (spatial) graph with " <<
-      num_neighbors << " nearest neigbors and dist limit " << dist << std::endl;
-
   // initialize the tree. Can choose from different algorithms, per knncolle library
   knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());
   //knncolle::AnnoyEuclidean<int, float> searcher(ndim, nobs, concatenated_data.data());
-  //knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());  
+   //knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());  
 
   if (m_verbose)
-    std::cerr << " OR flag " << orflag << " AND flag " << andflag << std::endl;
+    std::cerr << "..KNN (spatial) vp tree built" << std::endl;
+  
+   return searcher;
+   
+}
+
+void CellTable::TumorCall(int num_neighbors, float frac, cy_uint dist) {
+
+#ifdef HAVE_KNNCOLLE
+
+  int nobs = CellCount();
+  knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher = build_vp_tree();
   
 #pragma omp parallel for num_threads(m_threads)
   for (size_t i = 0; i < nobs; ++i) {
@@ -532,7 +738,7 @@ void CellTable::TumorCall(int num_neighbors, float frac,
     // add the pheno flags
     std::vector<cy_uint> pflag_vec(neigh.size());
     for (size_t j = 0; j < neigh.size(); j++) {
-      pflag_vec[j] = m_pflag_ptr->getData().at(neigh.at(j).first);
+      pflag_vec[j] = m_pflag_ptr->at(neigh.at(j).first);
     }
 
     assert(pflag_vec.size() == neigh.size());
@@ -544,21 +750,104 @@ void CellTable::TumorCall(int num_neighbors, float frac,
     node.sort_ascending_distance();
     float tumor_cell_count = 0;
     for (size_t j = 0; j < node.size(); j++) {
-      CellFlag cellflag(node.m_flags.at(j));
-      //      std::cerr << " cell flag " << node.m_flags.at(j) << " test OR " << orflag << " and " << andflag <<
-      //	" test " << cellflag.testAndOr(orflag, andflag) << std::endl;
-      if (cellflag.testAndOr(orflag, andflag))
+      if (IS_FLAG_SET(node.m_flags.at(j), MARK_FLAG)) {
 	tumor_cell_count++;
+      }
     }
+    
     if (tumor_cell_count / static_cast<float>(node.size()) >= frac)
-      m_cflag_ptr->SetNumericElem(1, i);
+      SET_FLAG((*m_cflag_ptr)[i], TUMOR_FLAG); 
+
+    // clear the mark
+    CLEAR_FLAG((*m_cflag_ptr)[i], MARK_FLAG);
     
   }// end for
-
+  
 #else
   std::cerr << "Warning: tumor call function requires including header library knncolle (https://github.com/LTLA/knncolle)" <<
     " and preprocessor directive -DHAVE_KNNCOLLE" << std::endl;
 #endif
+  
+}
+
+void CellTable::TumorMargin(float dist) {
+
+#ifdef HAVE_KNNCOLLE
+
+  validate();
+
+  // build the tree
+  if (m_verbose)
+    std::cerr << "...building the KDTree" << std::endl;
+  BuildKDTree();
+
+  // loop the cells
+  size_t countr = 0; // for progress reporting
+  if (m_verbose)
+    std::cerr << "...starting cell loop -- units = cells / 1000^2 pixels" << std::endl;
+
+  const size_t num_cells = CellCount();
+  
+  // do a quick loop to make sure tumor is labeled
+  size_t tumor_count = 0;
+  for (size_t i = 0; i < num_cells; i++) {
+    if (m_cflag_ptr->at(i) & TUMOR_FLAG)
+      tumor_count++;
+  }
+  if (tumor_count == 0) {
+    std::cerr << "*******************************************************************" << std::endl;
+    std::cerr << "WARNING: No cells labeled as tumor. Likely need to run cysift tumor" << std::endl;
+    std::cerr << "*******************************************************************" << std::endl;    
+  }
+
+  size_t margin_count = 0;
+  
+#pragma omp parallel for num_threads(m_threads) schedule(dynamic, 100)
+  for (size_t i = 0; i < num_cells; i++) {
+    std::vector<float> cell_count;
+    std::vector<size_t> total_cell_count;
+    
+    float x1 = m_x_ptr->at(i);
+    float y1 = m_y_ptr->at(i);
+
+    arma::mat query(2, 1);
+    query(0, 0) = x1;
+    query(1, 0) = y1;
+    
+    std::vector<std::vector<size_t>> neighbors;
+    std::vector<std::vector<double>> distances;
+    mlpack::Range r(0.0, dist);
+
+    // this will be inclusive of this point
+    ml_kdtree->Search(query, r, neighbors, distances);
+
+    // only one query point, so just reference that
+    const std::vector<size_t>& ind = neighbors.at(0);
+    const std::vector<double>& dist = distances.at(0);
+
+    const bool cell_is_tumor = IS_FLAG_SET(m_cflag_ptr->at(i), TUMOR_FLAG);
+
+    // loop the nodes connected to each cell
+    for (size_t n = 0; n < ind.size(); n++) {
+      const uint32_t ncflag = m_cflag_ptr->at(ind.at(n)); // neighbor c flag
+      if ( ( cell_is_tumor && ! IS_FLAG_SET(ncflag, TUMOR_FLAG)) || // cell is tumor, neighbor is stroma
+	   (!cell_is_tumor &&   IS_FLAG_SET(ncflag, TUMOR_FLAG))) { // cell is stroma, neighbor is tumor
+	SET_FLAG((*m_cflag_ptr)[i], MARGIN_FLAG); // mark as margin
+	assert(IS_FLAG_SET(m_cflag_ptr->at(i), MARGIN_FLAG));
+	margin_count++;
+	break;
+      }
+    }
+  }
+  
+  if (m_verbose)
+    std::cerr << "...identified " << AddCommas(margin_count) << " cells at the margin within a distance of " << dist << std::endl;
+  
+#else
+  std::cerr << "Warning: tumor call function requires including header library knncolle (https://github.com/LTLA/knncolle)" <<
+    " and preprocessor directive -DHAVE_KNNCOLLE" << std::endl;
+#endif
+  
   
 }
 
@@ -586,6 +875,104 @@ void CellTable::BuildKDTree() {
     std::cerr << "Warning: Unable to build KD-tree, need to include MLPack library " << 
     " and add preprocessor directive -DHAVE_MLPACK" << std::endl;
 #endif
+  
+}
+
+void CellTable::MoranI(const std::vector<cy_uint>& flags) {
+
+  /*
+  validate();
+  
+  // build the tree
+  if (m_verbose)
+    std::cerr << "...building the KDTree" << std::endl;
+  BuildKDTree();
+
+
+  // pre-compute the bools
+  if (m_verbose)
+    std::cerr << "...pre-computing flag results" << std::endl;
+  std::vector<std::vector<int>> flag_result(inner.size(), std::vector<int>(m_pflag_ptr->size(), 0));
+  for (size_t i = 0; i < m_pflag_ptr->size(); i++) {
+    CellFlag mflag(m_pflag_ptr->getData().at(i));
+    for (size_t j = 0; j < inner.size(); j++) {
+      if (mflag.testAndOr(flags[j], 0)) {
+	flag_result[j][i] = 1; 
+      }
+    }
+  }
+
+
+  std::vector<float> flag_moran(flags.size(), 0.0f);
+  for (size_t i = 0; i < flag_count.size(); i++) {
+    for (size_t x = 0; x < m_x_ptr->size(); x++) {
+      CellFlag mflag(m_pflag_ptr->getData().at(x));
+      if (mflag.testAndOr(flags.at(i))) {
+	for (size_t y = 0; y < m_y_ptr->size(); y++) {
+	  if (x != y && )
+	    }
+      }
+    }
+  }
+
+  size_t countr = 0;
+#pragma omp parallel for num_threads(m_threads) schedule(dynamic, 100)
+  for (size_t i = 0; i < m_pflag_ptr->size(); i++) {
+    
+    float x1 = m_x_ptr->getData().at(i);
+    float y1 = m_y_ptr->getData().at(i);
+
+    arma::mat query(2, 1);
+    query(0, 0) = x1;
+    query(1, 0) = y1;
+    
+    std::vector<std::vector<size_t>> neighbors;
+    std::vector<std::vector<double>> distances;
+    mlpack::Range r(0.0, max_radius);
+
+    // this will be inclusive of this point
+    ml_kdtree->Search(query, r, neighbors, distances);
+
+    // only one query point, so just reference that
+    const std::vector<size_t>& ind = neighbors.at(0);
+    const std::vector<double>& dist = distances.at(0);
+
+    // vec to store morans I
+    std::vector<float> flag_variance(flags.size(), 0.0f);    
+    std::vector<int>   flag_count(flags.size(), 0);
+    std::vector<float> flag_mean(flags.size(), 0.0f);
+
+    // calculate the total number of cells for each flag type
+    for (size_t j = 0; j < flags.size(); j++) {
+      for (const auto& n : ind) {
+	if (flag_result[j][n])
+	  flag_count[j]++;
+      }
+    }
+    
+    // find the mean number of cells
+    flag_mean[j] = static_cast<float>(flag_count.at(j)) / static_cast<float>(ind.size());
+    
+    // find the variance
+    flag_variance[j] = (1 - flag_mean[j]) * (1 - flag_mean[j]) * flag_count[j];
+
+    if (m_verbose && i % 5000 == 0) {
+      countr += 5000;
+      std::cerr << std::fixed << "...cell " << std::setw(11) << AddCommas(i) 
+		<< " thr " << std::setw(2) << omp_get_thread_num() 
+		<< " %done: " << std::setw(3) << static_cast<int>(static_cast<float>(countr) / m_pflag_ptr->size() * 100) 
+		<< " moran: ";
+      
+      for (size_t j = 5; j < dc.size(); j++) {
+	std::cerr << std::setw(12) << static_cast<int>(std::round(dc.at(j)->getData().at(i))) << " ";
+	if (j > 10)
+	  break;
+      }
+      std::cerr << " ... " << std::endl;
+    }
+    
+  } // end the main cell loop
+  */  
   
 }
 
@@ -740,6 +1127,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
 	  " flag_result[9] " << flag_result[9][ind[n]] << " label " <<
 	  label[9] << " flag[ind[n]] " << m_pflag_ptr->getData().at(ind[n]) << std::endl;
       */
+      
       for (size_t j = 0; j < inner.size(); j++) {
 	float d = dist[n]; 
 	if (d >= inner[j] && d <= outer[j])

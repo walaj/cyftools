@@ -1,4 +1,5 @@
 #include "cell_table.h"
+#include "cysift.h"
 #include "csv.h"
 #include "color_map.h"
 #include "cell_selector.h"
@@ -373,8 +374,7 @@ void CellTable::add_cell_to_table(const Cell& cell, bool nodata, bool nograph) {
   
 }
 
-void CellTable::clusterDBSCAN(CellSelector select,
-			      float epsilon,
+void CellTable::clusterDBSCAN(float epsilon,
 			      size_t min_size,
 			      size_t min_cluster_size
 			      ) {
@@ -392,16 +392,17 @@ void CellTable::clusterDBSCAN(CellSelector select,
 
   size_t count = 0;
   std::vector<size_t> idx(CellCount());
-  for (size_t i = 0; i < m_pflag_ptr->size(); i++) {
-    // only select on certain cells
-    if (select.TestFlags(m_pflag_ptr->getData().at(i),
-			 m_cflag_ptr->getData().at(i))) {
+  for (size_t i = 0; i < m_cflag_ptr->size(); i++) {
+    
+    // only select on marked cells
+    if (m_cflag_ptr->getData().at(i) & 0b10) {
       x_row(count) = m_x_ptr->getData().at(i);
       y_row(count) = m_y_ptr->getData().at(i);
       idx[count] = i;
       count++;
     }
   }
+  
   x_row.resize(count);
   y_row.resize(count);
   idx.resize(count);
@@ -1406,11 +1407,11 @@ int CellTable::PlotPNG(const std::string& file,
   for (size_t j = 0; j < CellCount(); j++) { // loop the cells
     
     // Draw the arc segment
-    const float x = m_x_ptr->getData().at(j);
-    const float y = m_y_ptr->getData().at(j);
+    const float x = m_x_ptr->at(j);
+    const float y = m_y_ptr->at(j);
 
-    const cy_uint pf = m_pflag_ptr->getData().at(j);
-    const cy_uint cf = m_cflag_ptr->getData().at(j);
+    const cy_uint pf = m_pflag_ptr->at(j);
+    const cy_uint cf = m_cflag_ptr->at(j);
     
     float start_angle = 0.0;
     
@@ -1418,7 +1419,17 @@ int CellTable::PlotPNG(const std::string& file,
     CellFlag cflag(cf);
     
     Color c;
+
+    if (cf & TUMOR_FLAG && cf & MARGIN_FLAG)
+      c = color_purple;
+    else if (cf & TUMOR_FLAG && ! (cf & MARGIN_FLAG))
+      c = color_red;
+    else if (! (cf & TUMOR_FLAG) && cf & MARGIN_FLAG)
+      c = color_cyan;
+    else if (! (cf & TUMOR_FLAG) && ! (cf & MARGIN_FLAG))
+      c = color_dark_green;
     
+    /*    
     if (pflag.testAndOr(4416,0) && pflag.testAndOr(32768,0)) // T-cell - PD-1+ 
       c = color_red;
     else if (pflag.testAndOr(4416,0) && !pflag.testAndOr(32768,0)) // T-cell - PD-1-
@@ -1433,6 +1444,7 @@ int CellTable::PlotPNG(const std::string& file,
       c = color_cyan;      
     else
       c = color_gray;
+    */
     
     cairo_set_source_rgba(crp, c.redf(), c.greenf(), c.bluef(), alpha_val);
     cairo_arc(crp, x*scale_factor, y*scale_factor, radius_size, 0, TWO_PI);
@@ -1455,7 +1467,16 @@ int CellTable::PlotPNG(const std::string& file,
   int legend_x = width*scale_factor - legend_width - legend_padding;
   int legend_y = legend_padding;
 
-  ColorMap cm = {color_red, color_light_red,
+  ColorMap cm = {color_purple, color_red,
+		 color_cyan, color_dark_green}; 
+  std::vector<std::string> labels = {
+    "Tumor + Margin",
+    "Tumor + Core",    
+    "Stroma + Margin",
+    "Stroma"
+  };
+  /*  
+  ColorMap cm = {color_light_red, color_light_red,
 		 color_purple, color_dark_green, color_light_green,
 		 color_cyan, color_gray};
   std::vector<std::string> labels = {
@@ -1467,7 +1488,7 @@ int CellTable::PlotPNG(const std::string& file,
     "Other PD-L1 pos",
     "Stromal"
   };
-  
+  */
   add_legend_cairo(crp, font_size, legend_width, legend_height, legend_x, legend_y,
 		   cm, labels);
   
@@ -1480,6 +1501,52 @@ int CellTable::PlotPNG(const std::string& file,
 #endif
   
   return 0;
+}
+
+void CellTable::ClearFlag(const int flag) {
+  const size_t n = CellCount();
+  validate();
+  for (int i = 0; i < n; i++)
+    CLEAR_FLAG((*m_cflag_ptr)[i], flag);
+}
+
+void CellTable::FlagToFlag(const bool clear_flag_to,
+			   const int flag_from, bool flag_from_negative, 
+			   const int flag_to, bool flag_to_negative) {
+
+  validate();
+  const size_t n = CellCount();
+  
+  // set flags all on or all off
+  if (clear_flag_to) {
+    for (size_t i = 0; i < n; i++) {
+      if (!flag_to_negative)    
+	CLEAR_FLAG((*m_cflag_ptr)[i], flag_to);
+      else
+	SET_FLAG((*m_cflag_ptr)[i], flag_to);
+    }
+  }
+  
+  // transfer
+  for (size_t i = 0; i < n; i++) {
+    
+    if (!flag_from_negative &&
+	!flag_to_negative && 
+	IS_FLAG_SET(m_cflag_ptr->at(i), flag_from))
+      SET_FLAG((*m_cflag_ptr)[i], flag_to);
+    else if (flag_from_negative &&
+	     !flag_to_negative &&
+	     !IS_FLAG_SET(m_cflag_ptr->at(i), flag_from))
+      SET_FLAG((*m_cflag_ptr)[i], flag_to);
+    else if (!flag_from_negative &&
+	     flag_to_negative &&
+	     IS_FLAG_SET(m_cflag_ptr->at(i), flag_from))
+      CLEAR_FLAG((*m_cflag_ptr)[i], flag_to);
+    else if (flag_from_negative &&
+	     flag_to_negative &&
+	     !IS_FLAG_SET(m_cflag_ptr->at(i), flag_from))
+      CLEAR_FLAG((*m_cflag_ptr)[i], flag_to);
+  }
 }
 
 void CellTable::ScramblePflag(int seed, bool lock_flags) {

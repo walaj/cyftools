@@ -266,14 +266,29 @@ class NumericColumn : public Column {
       }
     }
     
-    void SetPrecision(size_t n) override {
-      m_precision = n;
-    }
-
+  void SetPrecision(size_t n) override {
+    m_precision = n;
+  }
+  
   const std::vector<T>& getData() const {
     return m_vec;
   }
 
+  // 1) Overloading at() for const access
+  const T& at(std::size_t index) const {
+    return m_vec.at(index);
+  }
+  
+  // 2) Overloading operator[] for non-const access
+  T& operator[](std::size_t index) {
+    return m_vec[index];
+  }
+  
+  // You might also want to provide a const overload for operator[]
+  const T& operator[](std::size_t index) const {
+    return m_vec[index];
+  }
+  
   std::vector<T> copyData() const {
     return m_vec;
   }
