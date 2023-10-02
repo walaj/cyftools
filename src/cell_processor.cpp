@@ -325,7 +325,7 @@ int SubsampleProcessor::ProcessLine(Cell& line) {
   
 }
 
-int FilterProcessor::ProcessHeader(CellHeader& header) {
+int TrimProcessor::ProcessHeader(CellHeader& header) {
   m_header = header;
 
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
@@ -343,7 +343,7 @@ int FilterProcessor::ProcessHeader(CellHeader& header) {
 
 }
 
-int FilterProcessor::ProcessLine(Cell& cell) {
+int TrimProcessor::ProcessLine(Cell& cell) {
   
   if (cell.cflag & MARK_FLAG) 
     return WRITE_CELL;
@@ -351,8 +351,8 @@ int FilterProcessor::ProcessLine(Cell& cell) {
 }
 
 int MarkProcessor::ProcessLine(Cell& cell) {
-
-    bool write_cell = false;
+  
+  bool write_cell = false;
 
   ///////
   // FLAGS
@@ -400,10 +400,26 @@ int MarkProcessor::ProcessLine(Cell& cell) {
     }
     
   }
+
+  write_cell = write_cell && flag_write_cell;
   
-  if (flag_write_cell && write_cell)
-    cell.cflag |= (1 << 1);
+  // writing all cells with marks, so can clear the mark
+  if (m_trim && write_cell) {
+    CLEAR_FLAG(cell.cflag, MARK_FLAG);
+    return CellProcessor::WRITE_CELL;
+  } else if (m_trim && !write_cell) {
+    return CellProcessor::NO_WRITE_CELL;
+  } else if (!m_trim && write_cell) {
+    SET_FLAG(cell.cflag, MARK_FLAG);
+    return CellProcessor::WRITE_CELL;
+  } else if (!m_trim && !write_cell) {
+    CLEAR_FLAG(cell.cflag, MARK_FLAG);
+    return CellProcessor::WRITE_CELL;    
+  } else {
+    assert(false);
+  }
   
+  assert(false);
   return CellProcessor::WRITE_CELL; // don't write if not selected
 }
 

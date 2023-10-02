@@ -56,7 +56,7 @@ class CellProcessor {
       m_os = std::make_unique<std::ofstream>(m_output_file, std::ios::binary);
       m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(*m_os);
     }
-    assert(m_archive);
+   assert(m_archive);
   }
   
   void OutputLine(const Cell& cell) const { 
@@ -364,7 +364,7 @@ class CountProcessor : public CellProcessor {
 
 
 // filter processor
-class FilterProcessor : public CellProcessor {
+class TrimProcessor : public CellProcessor {
 
 public:
   
@@ -379,8 +379,9 @@ class MarkProcessor : public CellProcessor {
   
  public:
   
-  void SetFlagParams(CellSelector select) {
+  void SetFlagParams(CellSelector select, bool trim) {
     m_select = select;
+    m_trim = trim;
   }
 
   void SetFieldParams(const SelectOpMap criteria, bool or_toggle) {
@@ -395,6 +396,8 @@ class MarkProcessor : public CellProcessor {
  private:
 
   CellSelector m_select;
+
+  bool m_trim = false;
   
   // field selectors
   SelectOpMap m_criteria;

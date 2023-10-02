@@ -70,11 +70,11 @@ save_pdf <- function(g, filename, width=10, height=10) {
 }
 ```
 
-```{r radial-dens, include=FALSE}
-dtr <- readRDS("~/Sorger/cache/chain.rds")
+```{r cys-read, include=FALSE}
+#dtr <- readRDS("~/Sorger/cache/chain.rds")
 
 if (TRUE) {
-  files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/chain/", full.names = TRUE)
+  files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/margin/", full.names = TRUE)
   files <- files[grepl("cys$", files)]
   
   #num_cells <- sum(sapply(files, function(f) {
@@ -85,35 +85,53 @@ if (TRUE) {
   # read all the data as the means within the tumor compartment
   dtt <- lapply(files, function(f) {
     cat(basename(f), "\n")
-    dt <- fread(cmd=paste("cysift select -A 1",f,"- | cysift mean - - | cysift view -"))
+    dt <- fread(cmd=paste("cysift filter -T -A 5",f,"/tmp/tmp.cys && cysift mean /tmp/tmp.cys - | cysift view -"))
     setnames(dt, paste0("V",seq(6)), c("sample","cell","x","y","pflag","cflag"))
     setnames(dt, paste0("V",seq(7,ncol(dt))), header$id[header$tag_type %in% c("CA","MA")])
     dt[, Slide_ID := sub("^(LSP[0-9]+).*", "\\1", basename(f))]
+    dt[, margin := "margin5"]
     return(dt)
   })
   dtr <- rbindlist(dtt)
-  #saveRDS(dtr, "~/Sorger/cache/chain.rds", compress=FALSE)
+  saveRDS(dtr, "~/Sorger/cache/margin5.rds", compress=FALSE)
+  
+  
 }
+
+
+```
+```{r merge-clinical-imaging, include=FALSE}
+
+rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
 ```
 
 ```{r mark-the-tipMMR, include=FALSE}
-
-#### MARK THE TIPMMR BY CD3
-# Slide LSP10716 is the 8/9 ranked by CD3
-rr[, tipMMR := factor(ifelse(CD3_200r > rr[Slide_ID=="LSP10716", CD3_200r], ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
-rr$tipMMR <- factor(rr$tipMMR, levels = c("pMMR", "tipMMR", "dMMR"))
-g <- km_plot(rr[pMMR=="pMMR"], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE)
-table(rr$tipMMR)
-rr[tipMMR=="tipMMR", Slide_ID]
-
-#### MARK THE TIPMMR BY CD8
-# Slide LSP10716 is the 23rd percetile of dMMR
 if (FALSE) {
-  rr[, tipMMR := factor(ifelse(CD8_200r > rr[Slide_ID=="LSP10716", CD8_200r], ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+  hard_coded_tip <- c("LSP14418", "LSP14398", "LSP14423", "LSP14438", "LSP14393", "LSP14403", "LSP14458", "LSP10771", "LSP14388", "LSP14468", "LSP14483", "LSP10388", "LSP14448")
+  rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
+} else if (TRUE) {
+  
+  #### MARK THE TIPMMR BY CD3
+  # Slide LSP10716 is the 8/9 ranked by CD3
+  rr[, tipMMR := factor(ifelse(CD3_200r > rr[Slide_ID=="LSP10716", CD3_200r], ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+  rr$tipMMR <- factor(rr$tipMMR, levels = c("pMMR", "tipMMR", "dMMR"))
   g <- km_plot(rr[pMMR=="pMMR"], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE)
   table(rr$tipMMR)
   rr[tipMMR=="tipMMR", Slide_ID]
+} else {
+  
+  #### MARK THE TIPMMR BY CD8
+  # Slide LSP10716 is the 23rd percetile of dMMR
+  if (FALSE) {
+    rr[, tipMMR := factor(ifelse(CD8_200r > rr[Slide_ID=="LSP10716", CD8_200r], ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+    g <- km_plot(rr[pMMR=="pMMR"], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE)
+    table(rr$tipMMR)
+    rr[tipMMR=="tipMMR", Slide_ID]
+  }
 }
+
+
+
 ```
 
 ```{r random-hr-tip}
@@ -163,9 +181,7 @@ km_plot(rr[pMMR=="pMMR" & PFSDays > 90], parm="tipMMR", parm.name="tipMMR",parm.
 g <- ggplot(hrs, aes(x=numtip, y=hr, color=cell)) + geom_point() + theme_jw()
 ```
 
-```{r merge-clinical-imaging, include=FALSE}
-rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
-```
+
 
 ```{r neoadjuvant}
 redcap[grepl("y",TNM_At_Diagnosis), Location]
@@ -626,6 +642,28 @@ g <- ggplot(fplot, aes(x=V5, y=V6, color=cluster)) + geom_point(size=0.1, shape=
 save_pdf(g, "dbtest.pdf", width=15, height=15)
 ```
 
+```{r margins}
+dtr <- rbindlist(lapply(c("~/Sorger/cache/margin5.rds",
+                         "~/Sorger/cache/margin4.rds",
+                         "~/Sorger/cache/core1.rds"), readRDS))
+rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
+
+rr_long <- melt(rr, id.vars = c("tipMMR","margin"), measure.vars = c(#"PD1_200r", "PD_L1_200r", "CD45RO_200r",
+                                                                     "CD3_20g","CD4_20g","CD8_20g"),
+                                                                     #"SMA_200r"), 
+                variable.name = "Metric", value.name = "Value")
+rr_long[, Metric_margin := interaction(Metric, margin, sep = " - ")]
+rr_long[, cells_per_mm2 := Value * 1e6 / (1000^2 * 0.325^2)]
+
+g <- ggplot(rr_long[margin != "margin5"], aes(x = tipMMR, y = cells_per_mm2, fill = margin)) +
+  geom_boxplot(alpha = 0.4, width=0.8, outlier.shape=NA) +
+  #geom_jitter(aes(color=margin), size = 1, alpha = 0.7, shape=20) +
+  labs(y = "Cells / mm2") +
+  scale_y_log10() + 
+  #scale_fill_manual(values = pMMR_colors) +
+  facet_wrap(~ Metric) + theme_jw()
+save_pdf(g, "margin_compare_tcell_boxplot.pdf", width=6, height=3)
+```
 
 
 

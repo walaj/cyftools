@@ -640,8 +640,6 @@ void CellTable::IslandFill(size_t n, int flag_from, bool invert_from,
       marked_connect_component.insert(component_label[i]);
   }
 
-  std::cerr << "...setting flags" << std::endl;
-  
   // go through and actually change the flags
   // remember we are looping here in all coords but components are in stromal coords
   for (size_t i = 0; i < num_cells; i++) {

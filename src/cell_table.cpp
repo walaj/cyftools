@@ -1639,8 +1639,8 @@ int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
   }
 
   // now read the Cell objects
+  Cell cell;
   while (true) {
-    Cell cell;
     try {
       m_count++;            
       if (m_verbose && (m_count % 500000 == 0 || m_count == 1))

@@ -73,8 +73,8 @@ static const char *RUN_USAGE_MESSAGE =
 "  sort        - Sort the cells\n"
 "  subsample   - Subsample cells randomly\n"
 "  roi         - Trim cells to a region of interest within a given polygon\n"
-"  mark        - Mark cells for later processing (filtering etc)\n"
-"  filter      - Keep only marked cells\n"
+"  filter      - Mark cellsfor later processing (filtering etc)\n"
+"  trim        - Trim cells to only those that are marked (from cysift filter)\n"
 "  sampleselect- Select a particular sample from a multi-sample file\n"
 "  pheno       - Phenotype cells (set the phenotype flags)\n"
 "  cellcount   - Provide total slide cell count for each cell type\n"
@@ -112,7 +112,7 @@ static const char *RUN_USAGE_MESSAGE =
 
 static int islandfunc(int argc, char** argv);
 static int marginfunc(int argc, char** argv);
-static int filterfunc(int argc, char** argv);
+static int trimfunc(int argc, char** argv);
 static int syntheticfunc(int argc, char** argv);
 static int dbscanfunc(int argc, char** argv);
 static int sampleselectfunc(int argc, char** argv);
@@ -152,7 +152,7 @@ static int log10func(int argc, char** argv);
 static int cutfunc(int argc, char** argv);
 static int umapfunc(int argc, char** argv);
 static int radiusfunc(int argc, char** argv);
-static int markfunc(int argc, char** argv);
+static int filterfunc(int argc, char** argv);
 //static int spatialfunc(int argc, char** argv); 
 static int phenofunc(int argc, char** argv);
 
@@ -241,8 +241,8 @@ int main(int argc, char **argv) {
     val = umapfunc(argc, argv);
     //  } else if (opt::module == "spatial") {
     //val = spatialfunc(argc, argv);    
-  } else if (opt::module == "mark") {
-    val = markfunc(argc, argv);
+  } else if (opt::module == "filter") {
+    val = filterfunc(argc, argv);
   } else if (opt::module == "sampleselect") {
     val = sampleselectfunc(argc, argv);
   } else if (opt::module == "convolve") {
@@ -269,8 +269,8 @@ int main(int argc, char **argv) {
     scramblefunc(argc, argv);
   } else if (opt::module == "scatter") {
     scatterfunc(argc, argv);
-  } else if (opt::module == "filter") {
-    filterfunc(argc, argv);
+  } else if (opt::module == "trim") {
+    trimfunc(argc, argv);
   } else if (opt::module == "hallucinate") {
     hallucinatefunc(argc, argv);
   } else {
@@ -1594,12 +1594,13 @@ static int tumorfunc(int argc, char** argv) {
   
     const char *USAGE_MESSAGE =
       "Usage: cysift tumor [cysfile]\n"
-      "  Set the flag on whether a cell is in the tumor region\n"
+      "  Set the flag on whether a cell is in the tumor region, using marked cells\n"
       "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -k [20]               Number of neighbors\n"
       "    -f [0.75]             Fraction of neighbors\n"
       "    -d [200]              Max distance to consider\n"
-      "    -v, --verbose         Increase output to stderr\n"      
+      "    -v, --verbose         Increase output to stderr\n"
+      "  Example: cysift filter -a 4 <in.cys> - | cysift tumor - <out.cys>
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
@@ -1735,9 +1736,9 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "hallucinate" || opt::module == "summary" ||
 	 opt::module == "island" || 
 	 opt::module == "jaccard" || opt::module == "cellcount" ||
-	 opt::module == "synth" || opt::module == "filter" || 
+	 opt::module == "synth" || opt::module == "trim" || 
 	 opt::module == "sampleselect" || opt::module == "dbscan" || 
-	 opt::module == "mark" || opt::module == "pheno")) {
+	 opt::module == "filter" || opt::module == "pheno")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
     die = true;
   }
@@ -2238,7 +2239,7 @@ static int spatialfunc(int argc, char** argv) {
 }
 */
  
- static int filterfunc(int argc, char** argv) {
+ static int trimfunc(int argc, char** argv) {
    const char* shortopts = "v";
    
    for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -2251,32 +2252,34 @@ static int spatialfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
   
     const char *USAGE_MESSAGE =
-      "Usage: cysift filter [cysfile]\n"
+      "Usage: cysift trim [cysfile]\n"
       "  Keep only marked cells\n"
       "    cysfile: filepath or a '-' to stream to stdin\n"
       "  Options\n"
       "    -v, --verbose         Increase output to stderr\n"
       "  Example\n"
-      "    cysift filter <in> <out>"
+      "    cysift trim <in> <out>"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
-  FilterProcessor filter;
-  filter.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  TrimProcessor trim;
+  trim.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
 
   // process
-  if (table.StreamTable(filter, opt::infile))
+  if (table.StreamTable(trim, opt::infile))
     return 1;
 
   return 0;
   
  }
  
- static int markfunc(int argc, char** argv) {
+ static int filterfunc(int argc, char** argv) {
    
-   const char* shortopts = "vr:a:n:A:N:of:g:l:G:L:e:jr:";
+   const char* shortopts = "vr:a:n:A:N:of:g:l:G:L:e:jr:T";
+
+   bool trim_cells = false;
    
    // field selection
    bool or_toggle = false;
@@ -2298,6 +2301,7 @@ static int spatialfunc(int argc, char** argv) {
      std::istringstream arg(optarg != NULL ? optarg : "");
      switch (c) {
      case 'v': opt::verbose = true; break;
+     case 'T' : trim_cells = true; break;
      case 'a':
        if (selections.back().pand) 
 	 selections.push_back(SelectionUnit());
@@ -2382,9 +2386,10 @@ static int spatialfunc(int argc, char** argv) {
       "  Mask selection\n"
       "    -r                    Radius (in x,y coords) of region around selected cells to also include\n"
       "  Options\n"
+      "    -T                    Trim cells that aren't marked. Also clears the marks\n"
       "    -v, --verbose         Increase output to stderr\n"
       "  Example\n"
-      "    cysift mark -a 4160 -o -a 4352 <in> <out> # select cells with bits 4096+256 OR 4096+64"
+      "    cysift filter -a 4160 -o -a 4352 <in> <out> # select cells with bits 4096+256 OR 4096+64"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
@@ -2395,7 +2400,7 @@ static int spatialfunc(int argc, char** argv) {
 
     MarkProcessor select;
     select.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-    select.SetFlagParams(cellselect); 
+    select.SetFlagParams(cellselect, trim_cells); 
     select.SetFieldParams(criteria, or_toggle);
     
     // process
