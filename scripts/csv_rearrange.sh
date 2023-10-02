@@ -14,6 +14,11 @@ LSP14468,LSP14503,LSP15304,LSP14403,LSP15280,LSP15308,LSP14408,LSP14443,LSP14473
 LSP15312,LSP14413,LSP14448,LSP14483,LSP15288,LSP15316,LSP14418,LSP14453,LSP14493,LSP15292,\
 LSP15320,LSP14423,LSP14458,LSP14498,LSP15300,LSP15324,LSP14463"
 
+prostate="dataLSP12601.csv,dataLSP12603.csv,dataLSP12605.csv,dataLSP12607.csv,dataLSP12609.csv,dataLSP12611.csv,dataLSP12613.csv,dataLSP12615.csv,\
+dataLSP12617.csv,dataLSP12619.csv,dataLSP12621.csv,dataLSP12623.csv,dataLSP12625.csv,dataLSP12627.csv,dataLSP12629.csv,dataLSP12631.csv,\
+dataLSP12633.csv,dataLSP12635.csv,dataLSP12637.csv,dataLSP12639.csv,dataLSP12641.csv,dataLSP12643.csv,dataLSP12645.csv,dataLSP12647.csv,\
+dataLSP12649.csv,dataLSP12651.csv,dataLSP12653.csv,dataLSP12655.csv,dataLSP12657.csv"
+
 base=$(basename "$input_file" .csv)
 
 ## install with "pip install csvkit"
@@ -29,10 +34,10 @@ elif [[ $orion1_40 == *"$base"* ]]; then
     csvcut -c "Xt,Yt,Hoechst,AF1,CD31,CD45,CD68,Argo550,CD4,FOXP3,CD8a,CD45RO,CD20,PD_L1,CD3e,CD163,E_cadherin,PD_1,Ki67,Pan_CK,SMA,Area,MajorAxisLength,MinorAxisLength,Eccentricity,Solidity,Extent,Orientation" ${input_file} > ${rar_file}
 elif [[ "$input_file" == *"immune"* ]]; then
     echo "CyCIF immune"
-    csvcut -c "Xt,Yt,Hoechst1,A488,A555,A647,CD3,CD11c,GranzymeB,Ki67,panCK,CD45,CD11b,CD68,CD14,CD163,FOXP3,CD8a,CD15,CD44,PD_L1,CD4,p_TBK1,PD_1,CD57,HLA_DR,LAG3,CD20,TIM3,HLA_A,CD16,pSRC,pSTAT1,CD24,Desmin,PDPN,STING,pRB,pTyr" ${input_file} > ${rar_file}
-elif [[ "$input_file" == *"tumor"* ]]; then
-    echo "CyCIF Tumor"
-    csvcut -c "Xt,Yt,Hoechst1,A488,A555,A647,NaKATPase,MCM6,p53,PCNA,panCK,SMA_1,E_Cad,SMA_2,Vimentin,EGFR,CDX2,CD45,pERK,H3K27me3,H3K27ac,beta_Catenin,CD44,PD_L1,N_Cadherin,H2ax,ZEB1,Nestin,CD68,CD31,S100a,GFAP,IRF_1,pS6_235,cPARP,p21,Var49,KAP1,Ki67,FN3,VEGFR2,NGFR" ${input_file} > ${rar_file}
+    csvcut -c "Xt,Yt,Hoechst1,A488,A555,A647,CD3,CD11c,GranzymeB,Ki67,panCK,CD45,CD11b,CD68,CD14,CD163,FOXP3,CD8a,CD15,CD44,PD_L1,CD4,p_TBK1,PD_1,CD57,,Ki67,AMCAR,HMWCK,CD19,SMA,CD20,CD11b,CD68,CD163,CD4,CD3d,CD8a,TCF1,FOXP3,PD1,CD57,CD11c,GranzymeB,CD15,HLADR,CD103,CD31,pTBK1,HLAA,CD24,CD44,CD206" ${input_file} > ${rar_file}
+elif [[ $prostate == *"$base"* ]]; then
+    echo "Prostate"
+    csvcut -c "Xt,Yt,Hoechst1,Ki67,AMCAR,HMWCK,CD19,SMA,CD20,CD11b,CD68,CD163,CD4,CD3d,CD8a,TCF1,FOXP3,PD1,CD57,CD11c,GranzymeB,CD15,HLADR,CD103,CD31,pTBK1,HLAA,CD24,CD44,CD206" $input_file > $rar_file
 else
     echo "Warning: Unknown file"
 fi

@@ -1600,7 +1600,7 @@ static int tumorfunc(int argc, char** argv) {
       "    -f [0.75]             Fraction of neighbors\n"
       "    -d [200]              Max distance to consider\n"
       "    -v, --verbose         Increase output to stderr\n"
-      "  Example: cysift filter -a 4 <in.cys> - | cysift tumor - <out.cys>
+      "  Example: cysift filter -a 4 <in.cys> - | cysift tumor - <out.cys>\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;

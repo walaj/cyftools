@@ -33,10 +33,9 @@ if [[ ! -f "$input_file" ]]; then
     exit 1
 else
     echo "...running: cysift chain on ${base}"
-    echo "cysift pheno ${V} $input_file -t $pheno_file - | cysift tumor ${V} - - -o 131072 -f 0.50 -k 25 -t ${T} | cysift radialdens ${V} - - -t ${T} -f ${RAD} | cysift delaunay - ${output_file} -l 20"    
+    echo "cysift pheno ${V} $input_file -t $pheno_file - | cysift tumor ${V} - - -o 131072 -f 0.50 -k 25 -t ${T} | cysift radialdens ${V} - - -t ${T} -f ${RAD} | cysift delaunay - ${output_file} -l 20" 
     cysift pheno ${V} $input_file -t $pheno_file - |\
-	cysift tumor ${V} - - -o 131072 -f 0.50 -k 25 -t ${T} |\
+	cysift tumor ${V} - - -o 4 -f 0.50 -k 25 -t ${T} |\
 	cysift radialdens ${V} - - -t ${T} -f ${RAD} |\
 	cysift delaunay -l 20 - ${output_file}
-
 fi

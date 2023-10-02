@@ -5,6 +5,7 @@ output_file=$2
 
 number="${input_file##*LSP}"
 number="${number%%.*}"
+echo "...cerealed.sh: detected sample number: $number"
 
 if [[ ! -f "$input_file" ]]; then
     echo "Error: File '$input_file' does not exist."
