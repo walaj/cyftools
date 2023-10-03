@@ -1,18 +1,7 @@
 #!/bin/bash
 
-if ! command -v Rscript &> /dev/null
-then
-    echo "Rscript could not be found"
-    exit
-fi
+source ~/git/cysift/scripts/config.sh
 
-function check_file_exists {
-    local file="$1"
-    if [[ ! -f "$file" ]]; then
-        echo "File not found: $file"
-        exit 1
-    fi
-}
 
 ## download the data
 #orion data
@@ -41,8 +30,14 @@ for infile in $HOMEBASE/rawcsv/*.csv; do
 	#~/git/cysift/scripts/csv_rearrange.sh $infile "${base}.rar.csv"
 
 	## Get the gates from the *p columns from csv's dumped from matlab files
+	#if ! command -v Rscript &> /dev/null
+	#then
+	#    echo "Rscript could not be found"
+	#    exit
+	#fi
 	#check_file_exists "$HOMEBASE/rawcsv/${base}.rar.csv"
 	#~/git/cysift/scripts/pheno.sh $infile "$HOMEBASE/pheno/${base}.phenotype.csv"
+	
 
 	## Put the cysift headers onto the csv files
 	#check_file_exists "$HOMEBASE/pheno/${base}.phenotype.csv"

@@ -734,15 +734,15 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint dist) {
     CellNode node;
     
     // add the pheno flags
-    std::vector<cy_uint> pflag_vec(neigh.size());
+    std::vector<cy_uint> cflag_vec(neigh.size());
     for (size_t j = 0; j < neigh.size(); j++) {
-      pflag_vec[j] = m_pflag_ptr->at(neigh.at(j).first);
+      cflag_vec[j] = m_cflag_ptr->at(neigh.at(j).first);
     }
 
-    assert(pflag_vec.size() == neigh.size());
+    assert(cflag_vec.size() == neigh.size());
 
     // make the node
-    node = CellNode(neigh, pflag_vec);
+    node = CellNode(neigh, cflag_vec);
 
     // finally do tumor stuff
     node.sort_ascending_distance();
