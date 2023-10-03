@@ -1377,7 +1377,7 @@ void CellTable::PrintJaccardSimilarity(bool csv, bool sort) const {
 
 int CellTable::PlotPNG(const std::string& file,
 		       float scale_factor,
-		       const std::string& colname
+		       const std::string& module
 		       ) const {
   
 #ifdef HAVE_CAIRO
@@ -1401,6 +1401,45 @@ int CellTable::PlotPNG(const std::string& file,
   cairo_surface_t *surfacep = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width*scale_factor, height*scale_factor);
   cairo_t *crp = cairo_create (surfacep);
   cairo_set_source_rgb(crp, 0, 0, 0); // background color
+
+  ColorMap cm;
+  std::vector<std::string> labels;
+
+  if (module == "tumor") {
+      cm = {color_purple, color_red,
+		     color_cyan, color_dark_green}; 
+      labels = {
+	"Tumor + Margin",
+	"Tumor + Core",    
+	"Stroma + Margin",
+	"Stroma"
+      };
+  } else if (module == "orion") {
+      cm = {color_light_red, color_light_red,
+		 color_purple, color_dark_green, color_light_green,
+		 color_cyan, color_gray};
+      labels = {
+	"T-cell PD-1 pos",
+	"T-cell PD-1 neg",    
+	"B-cell",
+	"Tumor-cell - PD-L1 pos",
+	"Tumor-cell - PD-L1 neg",
+	"Other PD-L1 pos",
+	"Stromal"
+      };
+      
+  } else if (module == "prostate") {
+
+      cm = {color_light_red, color_light_red,
+		     color_purple, color_dark_green, color_gray};
+      labels = {
+	"T-cell PD-1 pos",
+	"T-cell PD-1 neg",    
+	"B-cell",
+	"AMCAR-pos",
+	"Stromal"
+      };
+  }
   
   // loop and draw
   size_t count = 0;
@@ -1420,32 +1459,51 @@ int CellTable::PlotPNG(const std::string& file,
     
     Color c;
 
-    if (cf & TUMOR_FLAG && cf & MARGIN_FLAG)
-      c = color_purple;
-    else if (cf & TUMOR_FLAG && ! (cf & MARGIN_FLAG))
-      c = color_red;
-    else if (! (cf & TUMOR_FLAG) && cf & MARGIN_FLAG)
-      c = color_cyan;
-    else if (! (cf & TUMOR_FLAG) && ! (cf & MARGIN_FLAG))
-      c = color_dark_green;
+    // Color by tumor / stromal call
+    if (module == "tumor") {
+      
+      if (cf & TUMOR_FLAG && cf & MARGIN_FLAG)
+	c = color_purple;
+      else if (cf & TUMOR_FLAG && ! (cf & MARGIN_FLAG))
+	c = color_red;
+      else if (! (cf & TUMOR_FLAG) && cf & MARGIN_FLAG)
+	c = color_cyan;
+      else if (! (cf & TUMOR_FLAG) && ! (cf & MARGIN_FLAG))
+	c = color_dark_green;
+
+      
+    } else if (module == "prostate") { 
     
-    /*    
-    if (pflag.testAndOr(4416,0) && pflag.testAndOr(32768,0)) // T-cell - PD-1+ 
-      c = color_red;
-    else if (pflag.testAndOr(4416,0) && !pflag.testAndOr(32768,0)) // T-cell - PD-1-
-      c = color_light_red;
-    else if (pflag.testAndOr(1024,0)) // B-cell
-      c = color_purple;
-    else if (pflag.testAndOr(0,18432) || pflag.testAndOr(0,133120)) // PD-L1 POS tumor cell
-      c = color_dark_green;
-    else if (pflag.testAndOr(147456,0)) // PD-L1 NEG tumor cell
-      c = color_light_green;
-    else if (pflag.testAndOr(2048,0)) // PD-L1 any cell
-      c = color_cyan;      
-    else
-      c = color_gray;
-    */
-    
+      if (IS_FLAG_SET(pf, PROSTATE_CD3) && IS_FLAG_SET(pf, PROSTATE_PD1))
+	c = color_red;
+      else if (IS_FLAG_SET(pf, PROSTATE_CD3) && !IS_FLAG_SET(pf, PROSTATE_PD1))
+	c = color_light_red;
+      else if (IS_FLAG_SET(pf, PROSTATE_CD20)) 
+	c = color_purple;
+      else if (IS_FLAG_SET(pf, PROSTATE_AMCAR)) 
+	c = color_dark_green;
+      else
+	c = color_gray;
+      
+    } else if (module == "orion") {
+
+      if (pflag.testAndOr(2048,0) && pflag.testAndOr(32768,0)) // T-cell - PD-1+ 
+	c = color_red;
+      else if (pflag.testAndOr(4416,0) && !pflag.testAndOr(32768,0)) // T-cell - PD-1-
+	c = color_light_red;
+      else if (pflag.testAndOr(1024,0)) // B-cell
+	c = color_purple;
+      else if (pflag.testAndOr(0,18432) || pflag.testAndOr(0,133120)) // PD-L1 POS tumor cell
+	c = color_dark_green;
+      else if (pflag.testAndOr(147456,0)) // PD-L1 NEG tumor cell
+	c = color_light_green;
+      else if (pflag.testAndOr(2048,0)) // PD-L1 any cell
+	c = color_cyan;      
+      else
+	c = color_gray;
+
+  
+    }    
     cairo_set_source_rgba(crp, c.redf(), c.greenf(), c.bluef(), alpha_val);
     cairo_arc(crp, x*scale_factor, y*scale_factor, radius_size, 0, TWO_PI);
     cairo_line_to(crp, x*scale_factor, y*scale_factor);
@@ -1467,28 +1525,6 @@ int CellTable::PlotPNG(const std::string& file,
   int legend_x = width*scale_factor - legend_width - legend_padding;
   int legend_y = legend_padding;
 
-  ColorMap cm = {color_purple, color_red,
-		 color_cyan, color_dark_green}; 
-  std::vector<std::string> labels = {
-    "Tumor + Margin",
-    "Tumor + Core",    
-    "Stroma + Margin",
-    "Stroma"
-  };
-  /*  
-  ColorMap cm = {color_light_red, color_light_red,
-		 color_purple, color_dark_green, color_light_green,
-		 color_cyan, color_gray};
-  std::vector<std::string> labels = {
-    "T-cell PD-1 pos",
-    "T-cell PD-1 neg",    
-    "B-cell",
-    "Tumor-cell - PD-L1 pos",
-    "Tumor-cell - PD-L1 neg",
-    "Other PD-L1 pos",
-    "Stromal"
-  };
-  */
   add_legend_cairo(crp, font_size, legend_width, legend_height, legend_x, legend_y,
 		   cm, labels);
   

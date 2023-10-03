@@ -9,6 +9,12 @@
 #define MARK_FLAG 0b10
 #define MARGIN_FLAG 0b100
 
+#define PROSTATE_AMCAR 4
+#define PROSTATE_HMWCK 8
+#define PROSTATE_CD20 64
+#define PROSTATE_CD3 2048
+#define PROSTATE_PD1 32768
+
 // Macro to test if a flag is set
 #define IS_FLAG_SET(flags, flag) ((flags) & (flag))
 

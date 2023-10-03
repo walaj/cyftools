@@ -73,7 +73,7 @@ public:
   //////
   int PlotPNG(const std::string& file,
 	      float scale_factor,
-	      const std::string& colname
+	      const std::string& module
 	      ) const;
   
   //////

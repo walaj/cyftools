@@ -1217,7 +1217,7 @@ static int plotpngfunc(int argc, char** argv) {
       "\n"
       "Options:\n"
       "  -f <float>                Fractional scale factor. Default: 0.25. (1 means each pixel is 1 x-unit; smaller values result in a smaller image)\n"
-      "  -m <string>               Column name to color by\n"                 
+      "  -m <string>               Module (prostate, tumor, orion)\n"                 
       "  -v, --verbose             Increase output to stderr.\n"
       "\n"
       "Example:\n"
@@ -1600,7 +1600,7 @@ static int tumorfunc(int argc, char** argv) {
       "    -f [0.75]             Fraction of neighbors\n"
       "    -d [200]              Max distance to consider\n"
       "    -v, --verbose         Increase output to stderr\n"
-      "  Example: cysift filter -a 4 <in.cys> - | cysift tumor - <out.cys>
+      "  Example: cysift filter -a 4 <in.cys> - | cysift tumor - <out.cys>\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
