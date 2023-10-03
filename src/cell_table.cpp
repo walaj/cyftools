@@ -316,42 +316,48 @@ CellTable::CellTable(size_t num_cells) {
   
 }*/
 
+#include <iomanip>  // for std::setw and std::left
+
 std::ostream& operator<<(std::ostream& os, const CellTable& table) {
 
-  // make the cell and sample ids
-  //IntColPtr id_ptr = dynamic_pointer_cast<NumericColumn<uint64_t>>(table.m_table.at("id"));
-  std::shared_ptr<NumericColumn<uint32_t>> sid = make_shared<NumericColumn<uint32_t>>();
-  std::shared_ptr<NumericColumn<uint32_t>> cid = make_shared<NumericColumn<uint32_t>>();
-  cid->reserve(table.size());
-  sid->reserve(table.size());
-  for (const auto& c : table.m_id_ptr->getData()) {
-    sid->PushElem(static_cast<uint32_t>(c >> 32));
-    cid->PushElem(static_cast<uint32_t>(c & 0xFFFFFFFF));
-  }
-
-  os << "CellID -- "   << cid->toString() << std::endl;
-  os << "SampleID -- " << sid->toString() << std::endl;
-  os << "RawID -- " << table.m_id_ptr->toString() << std::endl;
-  os << "Pheno Flag -- "   << table.m_pflag_ptr->toString() << std::endl;
-  os << "Cell Flag -- "    << table.m_cflag_ptr->toString() << std::endl;
-  os << "X -- "      << table.m_x_ptr->toString() << std::endl;
-  os << "Y -- "      << table.m_y_ptr->toString() << std::endl;
-  
-  for (const auto& t : table.m_header.GetDataTags()) {
-    
-    const FloatColPtr col_ptr = table.m_table.at(t.id);
-    std::string ctype;
-
-    switch (t.type) {
-      case Tag::MA_TAG: ctype = "Marker"; break;
-      case Tag::GA_TAG: ctype = "Graph"; break;
-      case Tag::CA_TAG: ctype = "Meta"; break;
-      default: ctype = "UNKNOWN"; break;
+    // make the cell and sample ids
+    std::shared_ptr<NumericColumn<uint32_t>> sid = make_shared<NumericColumn<uint32_t>>();
+    std::shared_ptr<NumericColumn<uint32_t>> cid = make_shared<NumericColumn<uint32_t>>();
+    cid->reserve(table.size());
+    sid->reserve(table.size());
+    for (const auto& c : table.m_id_ptr->getData()) {
+        sid->PushElem(static_cast<uint32_t>(c >> 32));
+        cid->PushElem(static_cast<uint32_t>(c & 0xFFFFFFFF));
     }
+
+    // Decide on a field width for the descriptions; 
+    // this can be adjusted based on your expected max width or based on the actual data.
+    const int descWidth = 12;
+    const int dataWidth = 50;  // Adjust this based on the width of your data.
+
+    os << std::left << std::setw(descWidth) << "CellID"    << " -- " << cid->toString()           << std::endl;
+    os << std::left << std::setw(descWidth) << "SampleID"  << " -- " << sid->toString()           << std::endl;
+    os << std::left << std::setw(descWidth) << "RawID"     << " -- " << table.m_id_ptr->toString() << std::endl;
+    os << std::left << std::setw(descWidth) << "Pheno Flag"   << " -- " << table.m_pflag_ptr->toString()  << std::endl;
+    os << std::left << std::setw(descWidth) << "Cell Flag"    << " -- " << table.m_cflag_ptr->toString()   << std::endl;
+    os << std::left << std::setw(descWidth) << "X"      << " -- " << table.m_x_ptr->toString() << std::endl;
+    os << std::left << std::setw(descWidth) << "Y"      << " -- " << table.m_y_ptr->toString() << std::endl;
     
-    os << t.id << " -- " << ctype << " -- " << col_ptr->toString() << std::endl;
-  }
-  return os;
+    for (const auto& t : table.m_header.GetDataTags()) {
+        
+        const FloatColPtr col_ptr = table.m_table.at(t.id);
+        std::string ctype;
+
+        switch (t.type) {
+            case Tag::MA_TAG: ctype = "Marker"; break;
+            case Tag::GA_TAG: ctype = "Graph"; break;
+            case Tag::CA_TAG: ctype = "Meta"; break;
+            default: ctype = "UNKNOWN"; break;
+        }
+        
+        os << std::left << std::setw(descWidth) << t.id << " -- " << std::setw(dataWidth) << ctype << " -- " << col_ptr->toString() << std::endl;
+    }
+    return os;
 }
 
 void CellTable::add_cell_to_table(const Cell& cell, bool nodata, bool nograph) {
