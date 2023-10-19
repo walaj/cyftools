@@ -15,6 +15,11 @@
 #define PROSTATE_CD3 2048
 #define PROSTATE_PD1 32768
 
+#define ORION_PANCK 131072
+#define ORION_PDL1 2048
+#define ORION_CD163 8192
+
+
 // Macro to test if a flag is set
 #define IS_FLAG_SET(flags, flag) ((flags) & (flag))
 

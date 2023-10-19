@@ -79,6 +79,7 @@ std::vector<Polygon> read_polygons_from_file(const std::string& file_path) {
       std::vector<std::pair<float, float>> vertices = parse_vertices(all_points);
       
       polygons.emplace_back(Id, Name, Text, type, vertices);
+
     }
     /*
     

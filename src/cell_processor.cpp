@@ -502,6 +502,30 @@ void CountProcessor::PrintCount() {
   std::cout << m_count << std::endl;
 }
 
+int RescaleProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+  
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  m_header.SortTags();
+  
+  // just in time output
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+
+  return HEADER_NO_ACTION; 
+
+}
+
+int RescaleProcessor::ProcessLine(Cell& cell) {
+
+  cell.x = cell.x * m_factor;
+  cell.y = cell.y * m_factor;
+  return WRITE_CELL;
+}
+
 int ScatterProcessor::ProcessHeader(CellHeader& header) {
   m_header = header;
   
@@ -522,7 +546,6 @@ int ScatterProcessor::ProcessHeader(CellHeader& header) {
   // output the header
   assert(m_archive);
   (*m_archive)(m_header);
-
   return HEADER_NO_ACTION; 
 
 }
@@ -835,35 +858,20 @@ int CleanProcessor::ProcessLine(Cell& cell) {
 }
 
 int ROIProcessor::ProcessLine(Cell& cell) {
-  //int ROIProcessor::ProcessLine(const std::string& line) {
 
-  /*
-  // convert the line to CellRow
-  CellRow values(m_col_count); 
-  int num_elems = read_one_line_to_cellrow(line, values, m_header);
-  if (num_elems != m_col_count) {
-    throw std::runtime_error("Error on line: " + line + "\n\tread " +
-			     std::to_string(num_elems) + " expected " +
-			     std::to_string(m_col_count));
-  }
-  
-  // get x and y from the string
-  float x_, y_;
-  get_two_elements_as_floats(line, x_i, y_i, x_, y_);
-  
   // Loop the table and check if the cell is in the ROI
-  bool print_line = false;
+  bool print_line = m_blacklist_remove;
   
   // Loop through all polygons and check if the point is inside any of them
   for (const auto &polygon : m_rois) {
     
     // if point is in this polygon, add the polygon id number to the roi
-    if (polygon.PointIn(x_,y_)) {
-      
-      print_line = true;
-      
-      //std::cerr << " ADDING POINT " << x_ << "," << y_ << std::endl;
-      //new_data->SetNumericElem(polygon.Id, i);
+    if (polygon.PointIn(cell.x,cell.y)) {
+
+      if (m_blacklist_remove && (polygon.Text == "blacklist" || polygon.Name == "blacklist"))
+	print_line = false;
+      else 
+	print_line = true;
       
       // uncomment below if want to prevent over-writing existing
       // break;
@@ -871,10 +879,9 @@ int ROIProcessor::ProcessLine(Cell& cell) {
   }
   
   if (print_line)
-    std::cout << line << std::endl;
-
-  */
-  return 1;
+    return CellProcessor::WRITE_CELL;
+    
+  return CellProcessor::NO_WRITE_CELL;
   
 }
 
@@ -883,6 +890,29 @@ int PhenoProcessor::ProcessHeader(CellHeader& header) {
   m_header = header;
 
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  
+  // if randomly scaling gates
+  if (m_random_scale > 0) {
+
+    // random number generator
+    std::random_device rd;
+    std::mt19937 m_gen(rd());
+    std::uniform_real_distribution<> dis(1 - m_random_scale, 1 + m_random_scale);
+
+    // adjust the new gate
+    std::string pheno_tag;    
+    for (auto& p : m_p) {
+      float random_gate_scale = dis(m_gen);
+      int new_low_gate = static_cast<int>(p.second.first * random_gate_scale);
+      pheno_tag += p.first + ":" + std::to_string(new_low_gate) + ",";
+      p.second.first  = new_low_gate;
+    }
+    if (!pheno_tag.empty()) //remove last comma
+      pheno_tag.pop_back();
+
+    // add the tag
+    m_header.addTag(Tag(Tag::PG_TAG, "", pheno_tag));
+  }
   
   // build up a map of the indices of the markers
   // in the Cell
@@ -942,8 +972,8 @@ int PhenoProcessor::ProcessLine(Cell& cell) {
     size_t marker_index = m->second;
     
     // set the flag on if it clears the gates
-    if (cell.cols.at(m->second) >= b.second.first &&
-	cell.cols.at(m->second) <= b.second.second) {
+    if (cell.cols.at(m->second) >= b.second.first*m_scale &&
+	cell.cols.at(m->second) <= b.second.second*m_scale) {
       //      std::cerr << "Marker: " << b.first << " cleared" << std::endl;
       //std::cerr << "...before " << flag << std::endl; 
       flag.setFlagOn(marker_index);

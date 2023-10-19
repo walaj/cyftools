@@ -71,45 +71,41 @@ save_pdf <- function(g, filename, width=10, height=10) {
 ```
 
 ```{r cys-read, include=FALSE}
-#dtr <- readRDS("~/Sorger/cache/chain.rds")
-
-if (TRUE) {
+if (FALSE) {
   files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/margin/", full.names = TRUE)
   files <- files[grepl("cys$", files)]
-  
-  #num_cells <- sum(sapply(files, function(f) {
-  #  fread(cmd=paste("cysift count", f))$V1
-  #}))
   
   header <- header_read(files[1])
   # read all the data as the means within the tumor compartment
   dtt <- lapply(files, function(f) {
     cat(basename(f), "\n")
-    dt <- fread(cmd=paste("cysift filter -T -A 5",f,"/tmp/tmp.cys && cysift mean /tmp/tmp.cys - | cysift view -"))
+    dt <- fread(cmd=paste("cysift filter",f,"/tmp/tmp.cys && cysift mean /tmp/tmp.cys - | cysift view -"))
     setnames(dt, paste0("V",seq(6)), c("sample","cell","x","y","pflag","cflag"))
     setnames(dt, paste0("V",seq(7,ncol(dt))), header$id[header$tag_type %in% c("CA","MA")])
     dt[, Slide_ID := sub("^(LSP[0-9]+).*", "\\1", basename(f))]
-    dt[, margin := "margin5"]
+    dt[, margin := "stroma_n5"]
     return(dt)
   })
   dtr <- rbindlist(dtt)
-  saveRDS(dtr, "~/Sorger/cache/margin5.rds", compress=FALSE)
+  rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
+  saveRDS(dtr, "~/Sorger/cache/stroma_n5.rds", compress=FALSE)
+} else {
   
+  dtr <- rbindlist(lapply(c("~/Sorger/cache/margin5.rds",
+                         "~/Sorger/cache/margin4.rds",
+                         "~/Sorger/cache/stroma_n5.rds",
+                         "~/Sorger/cache/core1.rds"), readRDS))
+rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
+hard_coded_tip <- c("LSP14418", "LSP14398", "LSP14423", "LSP14438", "LSP14393", "LSP14403", "LSP14458", "LSP10771", "LSP14388", "LSP14468", "LSP14483", "LSP10388", "LSP14448")
+rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
   
 }
-
-
-```
-```{r merge-clinical-imaging, include=FALSE}
-
-rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
-```
 
 ```{r mark-the-tipMMR, include=FALSE}
 if (FALSE) {
   hard_coded_tip <- c("LSP14418", "LSP14398", "LSP14423", "LSP14438", "LSP14393", "LSP14403", "LSP14458", "LSP10771", "LSP14388", "LSP14468", "LSP14483", "LSP10388", "LSP14448")
   rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
-} else if (TRUE) {
+} else if (FALSE) {
   
   #### MARK THE TIPMMR BY CD3
   # Slide LSP10716 is the 8/9 ranked by CD3
@@ -130,55 +126,55 @@ if (FALSE) {
   }
 }
 
-
-
 ```
 
-```{r random-hr-tip}
+```{r random-hr-tip, include=FALSE}
 
 ## get distribution of HR for "random" tipMMR, selected from pMMR
-set.seed(42)
-rrpmmr <- rr[pMMR == "pMMR"]
-hrdist <- sapply(seq(5000), function(cc) {
-  if (cc %% 100 == 0)
-    cat(cc,"\n")
-  rrpmmr[, rand_label := "hi"]
-  rrpmmr[sample(.N, 13), rand_label := "low"]
-  hr <- as.numeric(km_plot(rrpmmr, parm="rand_label", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1])
-  return(hr)
-})
-saveRDS(hrdist, "~/Sorger/cache/hrdist.rds")
+# set.seed(42)
+# rrpmmr <- rr[pMMR == "pMMR"]
+# hrdist <- sapply(seq(5000), function(cc) {
+#   if (cc %% 100 == 0)
+#     cat(cc,"\n")
+#   rrpmmr[, rand_label := "hi"]
+#   rrpmmr[sample(.N, 13), rand_label := "low"]
+#   hr <- as.numeric(km_plot(rrpmmr, parm="rand_label", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1])
+#   return(hr)
+# })
+# saveRDS(hrdist, "~/Sorger/cache/hrdist.rds")
+hrdist <- readRDS("~/Sorger/cache/hrdist.rds")
 
+# plot random distribution of hazard ratios vs tipMMR
 g <- ggplot(data.table(hr=hrdist[hrdist < 10]), aes(x=hr)) + geom_histogram(stat="bin", binwidth=0.05) + 
   theme_jw() + xlab("Hazard Ratio") + ylab("Frequency") + geom_vline(aes(xintercept=1), color="red") +
  geom_vline(aes(xintercept=0.09), color="blue")
 save_pdf(g, "cd3_tipmmr_random.pdf", width=3, height=2)
 
 ## iteratively search for best HR
-hrs.cd3 <- rbindlist(lapply(sort(rr$CD3_200r)[seq(5,nrow(rr)-5)], function(cc) {
-  rr[, tipMMR := factor(ifelse(CD3_200r > cc, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
-  cat(cc, "\n")
-  return(data.table(cutoff=cc, hr=as.numeric(km_plot(rr[pMMR=="pMMR"&PFSDays > 0], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1]), numtip = table(rr$tipMMR)["tipMMR"], cell="CD3"))
-}))
-hrs.cd8 <- rbindlist(lapply(sort(rr$CD8_200r)[seq(5,nrow(rr)-5)], function(cc) {
-  rr[, tipMMR := factor(ifelse(CD8_200r > cc, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
-  return(data.table(cutoff=cc, hr=as.numeric(km_plot(rr[pMMR=="pMMR"&PFSDays > 0], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1]), numtip = table(rr$tipMMR)["tipMMR"], cell="CD8"))
-}))
-hrs.cd8 <- rbindlist(lapply(sort(rr$CD8_200r)[seq(5,nrow(rr)-5)], function(cc) {
-  rr[, tipMMR := factor(ifelse(CD8_200r > cc, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
-  return(data.table(cutoff=cc, hr=as.numeric(km_plot(rr[pMMR=="pMMR"&PFSDays > 0], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1]), numtip = table(rr$tipMMR)["tipMMR"], cell="CD8"))
-}))
-hrs.rand <- rbindlist(lapply(sort(rr$rand)[seq(5,nrow(rr)-5)], function(cc) {
-  rr[, tipMMR := factor(ifelse(rand > cc, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
-  return(data.table(cutoff=cc, hr=as.numeric(km_plot(rr[pMMR=="pMMR"&PFSDays > 0], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1]), numtip = table(rr$tipMMR)["tipMMR"], cell="rand"))
-}))
-hrs <- rbind(hrs.cd3, hrs.cd8, hrs.rand)
-
-rr[, tipMMR := factor(ifelse(CD8_200r > 50, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
-km_plot(rr[pMMR=="pMMR" & PFSDays > 90], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE)
-
-# plot of HR by number of samples designated as tipMMR
-g <- ggplot(hrs, aes(x=numtip, y=hr, color=cell)) + geom_point() + theme_jw()
+# hrs.cd3 <- rbindlist(lapply(sort(rr$CD3_200r)[seq(5,nrow(rr)-5)], function(cc) {
+#   rr[, tipMMR := factor(ifelse(CD3_200r > cc, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+#   cat(cc, "\n")
+#   return(data.table(cutoff=cc, hr=as.numeric(km_plot(rr[pMMR=="pMMR"&PFSDays > 0], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1]), numtip = table(rr$tipMMR)["tipMMR"], cell="CD3"))
+# }))
+# hrs.cd8 <- rbindlist(lapply(sort(rr$CD8_200r)[seq(5,nrow(rr)-5)], function(cc) {
+#   rr[, tipMMR := factor(ifelse(CD8_200r > cc, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+#   return(data.table(cutoff=cc, hr=as.numeric(km_plot(rr[pMMR=="pMMR"&PFSDays > 0], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1]), numtip = table(rr$tipMMR)["tipMMR"], cell="CD8"))
+# }))
+# hrs.cd8 <- rbindlist(lapply(sort(rr$CD8_200r)[seq(5,nrow(rr)-5)], function(cc) {
+#   rr[, tipMMR := factor(ifelse(CD8_200r > cc, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+#   return(data.table(cutoff=cc, hr=as.numeric(km_plot(rr[pMMR=="pMMR"&PFSDays > 0], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1]), numtip = table(rr$tipMMR)["tipMMR"], cell="CD8"))
+# }))
+# hrs.rand <- rbindlist(lapply(sort(rr$rand)[seq(5,nrow(rr)-5)], function(cc) {
+#   rr[, tipMMR := factor(ifelse(rand > cc, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+#   return(data.table(cutoff=cc, hr=as.numeric(km_plot(rr[pMMR=="pMMR"&PFSDays > 0], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1]), numtip = table(rr$tipMMR)["tipMMR"], cell="rand"))
+# }))
+# hrs <- rbind(hrs.cd3, hrs.cd8, hrs.rand)
+# 
+# rr[, tipMMR := factor(ifelse(CD8_200r > 50, ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
+# km_plot(rr[pMMR=="pMMR" & PFSDays > 90], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE)
+# 
+# # plot of HR by number of samples designated as tipMMR
+# g <- ggplot(hrs, aes(x=numtip, y=hr, color=cell)) + geom_point() + theme_jw()
 ```
 
 
@@ -190,8 +186,17 @@ table(grepl("y", redcap$TNM_At_Diagnosis))
 
 ```{r clinical-figures}
 
-# grade
+# grade - pMMR vs tipMMR
 g <- ggplot(redcap, aes(x = Grade, fill = pMMR, group=pMMR)) +
+  geom_bar(color="black") +
+  labs(x = "Histological grade",
+       y = "Count") +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw() + theme(legend.position = "none")
+save_pdf(g, "grade_bar.pdf", width=3, height=3)
+
+# grade - with tipMMR
+g <- ggplot(rr, aes(x = Grade, fill = tipMMR, group=tipMMR)) +
   geom_bar(color="black") +
   labs(x = "Histological grade",
        y = "Count") +
@@ -208,6 +213,15 @@ g <- ggplot(redcap, aes(x = Gender, fill = pMMR, group=pMMR)) +
   theme_jw() + theme(legend.position = "none")
 save_pdf(g, "gender_bar.pdf", width=2, height=3)
 
+# Gender with tipMMR
+g <- ggplot(rr, aes(x = Gender, fill = tipMMR, group=tipMMR)) +
+  geom_bar(color="black", position="dodge") +
+  labs(x = "Gender",
+       y = "Count") +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw() + theme(legend.position = "none")
+save_pdf(g, "gender_bar_tipMMR.pdf", width=2, height=3)
+
 # location
 g <- ggplot(redcap, aes(x = Location, fill = pMMR, group=pMMR)) +
   geom_bar(color="black") +
@@ -216,6 +230,17 @@ g <- ggplot(redcap, aes(x = Location, fill = pMMR, group=pMMR)) +
   scale_fill_manual(values = pMMR_colors) +
   theme_jw() + theme(legend.position = "none")
 save_pdf(g, "location_bar.pdf", width=6, height=3)
+
+# location with tipMMR
+rr_complete <- as.data.table(tidyr::complete(rr, Location, tipMMR, fill = list(n = 0)))
+rr_complete[, count := sum(!is.na(Slide_ID)), by=c("tipMMR","Location")]
+g <- ggplot(rr_complete, aes(x = Location, fill = tipMMR, group=tipMMR)) +
+  geom_bar(aes(y=count), color="black", position="dodge", stat="identity") +
+  labs(x = "Anatomical location",
+       y = "Count") +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw() + theme(legend.position = "none")
+save_pdf(g, "location_bar_tipmmr.pdf", width=6, height=3)
 
 # stage
 g <- ggplot(redcap, aes(x = Stage_At_Diagnosis, fill = pMMR, group=pMMR)) +
@@ -240,7 +265,7 @@ save_pdf(g, "age_box.pdf", width=3, height=3)
 ```{r mutations}
 
 # reshape the mutation data
-long_data <- redcap %>%
+long_data <- rr %>%
   gather(key = "Mutation", value = "Status", APC, p53, KRAS, BRAF, PIK3CA, SOX9, FBXW7, TCF7L2, CTNNB1, PTEN, NRAS) %>%
   filter(Status == 1)  # Keep only mutated entries
 
@@ -314,6 +339,17 @@ g <- ggplot(combined_data, aes(y = variable, x = hr, color = source)) +
       geom_vline(aes(xintercept = 1), color = "black", linetype = "dashed") +  # Add vertical red line at HR = 1
   theme(legend.title = element_blank())
 ```
+
+```{r tmb}
+g <- ggplot(rr[!is.na(tmb)], aes(x = tipMMR, y = tmb, fill = tipMMR)) +
+  geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +
+  geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +
+  labs(y = "Mut / Mb") +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw()
+save_pdf(g, "tmb_with_tipmmr.pdf", width=3, height=3)
+```
+
 
 ```{r km-curves}
 g <- km_plot(redcap, "pMMR", "pMMR", c("0"="dMMR", "1"="pMMR"), pfs=FALSE, flip=TRUE) + scale_color_manual(values=pMMR_colors) + scale_fill_manual(values=pMMR_colors)
@@ -439,7 +475,6 @@ g <- ggplot(rr, aes(x=Slide_ID, y=CD8_200r, fill=pMMR)) +
   coord_flip() +
   scale_fill_manual(values=pMMR_colors) +
   theme_jw()
-
 
 ## CD3
 setkey(rr, CD3_200r)
@@ -618,7 +653,18 @@ g <- ggplot(rr_long, aes(x = tipMMR, y = cells_per_mm2, fill = tipMMR)) +
   facet_wrap(~ Metric) +
   theme_jw()
 
-rr_long <- melt(rr, id.vars = "tipMMR", measure.vars = c("PD1_200r", "PD_L1_200r", "CD45RO_200r"), variable.name = "Metric", value.name = "Value")
+# plot ratio of PDL1+ macrophage to tumor
+rr[, ab := CD163pPDL1_200r / PanCKpPDL1_200r]
+g <- ggplot(rr, aes(x = tipMMR, y = ab, fill = tipMMR)) +
+  geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +
+  geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +
+  labs(y = "PD-L1+ m0 / PD-L1+ Tumor") +
+  scale_y_log10()+
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw()
+save_pdf(g, "m0_tumor_pdl1_ratio.pdf", width=3, height=3)
+
+rr_long <- melt(rr, id.vars = "tipMMR", measure.vars = c("PD1_200l", "PD_L1_200l", "CD45RO_200l", "PanCKpPDL1_200lg","CD163pPDL1_200lg", "ab"), variable.name = "Metric", value.name = "Value")
 rr_long[, cells_per_mm2 := Value * 1e6 / (1000^2 * 0.325^2)]
 pd1 = ttest_pairs(rr, "tipMMR","PD1_200r")
 pdl1 = ttest_pairs(rr, "tipMMR","PD_L1_200r")
@@ -643,15 +689,9 @@ save_pdf(g, "dbtest.pdf", width=15, height=15)
 ```
 
 ```{r margins}
-dtr <- rbindlist(lapply(c("~/Sorger/cache/margin5.rds",
-                         "~/Sorger/cache/margin4.rds",
-                         "~/Sorger/cache/core1.rds"), readRDS))
-rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
-
-rr_long <- melt(rr, id.vars = c("tipMMR","margin"), measure.vars = c(#"PD1_200r", "PD_L1_200r", "CD45RO_200r",
-                                                                     "CD3_20g","CD4_20g","CD8_20g"),
-                                                                     #"SMA_200r"), 
+rr_long <- melt(rr, id.vars = c("tipMMR","margin"), measure.vars = c("SMA_200g", "CD68_200g","CD163_200g"),
                 variable.name = "Metric", value.name = "Value")
+
 rr_long[, Metric_margin := interaction(Metric, margin, sep = " - ")]
 rr_long[, cells_per_mm2 := Value * 1e6 / (1000^2 * 0.325^2)]
 
@@ -663,6 +703,272 @@ g <- ggplot(rr_long[margin != "margin5"], aes(x = tipMMR, y = cells_per_mm2, fil
   #scale_fill_manual(values = pMMR_colors) +
   facet_wrap(~ Metric) + theme_jw()
 save_pdf(g, "margin_compare_tcell_boxplot.pdf", width=6, height=3)
+```
+
+```{r histogram_cd3}
+files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/cut/", full.names = TRUE)
+files <- files[grepl("cut$", files)]
+
+# read all the data as the means within the tumor compartment
+dtt <- lapply(files, function(f) {
+  cat(basename(f), "\n")
+  #dt <- fread(cmd=paste("cysift cut -x CD3_200r",f,"- | cysift view -"))
+  dt <- fread(f)
+  
+  setnames(dt, paste0("V",seq(7)), c("sample","cell","cflag","pflag","x","y", "cd3"))
+  dt[, CD3p := bitwAnd(pflag, 4096) > 0]
+  dt[, CD4p := bitwAnd(pflag, 64) > 0]
+  dt[, CD8p := bitwAnd(pflag, 256) > 0]
+  dt[, PanCKp := bitwAnd(pflag, 131072) > 0]
+  #dt[, value := ifelse(bitwAnd(pflag, 4096) > 0, ifelse(bitwAnd(cflag, 4) > 0, "3T", "3S"), ifelse(bitwAnd(cflag, 4) > 0, "T","S"))]
+  dt[, c("cell","cflag","pflag","x","y") := NULL]
+  return(dt)
+})
+jaccard <- sapply(dtt, function(x) { x[, sum(CD3p & !CD8p & !CD4p) / (sum(CD3p))]})
+names(jaccard) <- paste0("LSP",sapply(dtt, function(x) x$sample[1]))
+dtj <- data.table(jaccard = jaccard, Slide_ID = names(jaccard))
+ab <- merge(dtj[!Slide_ID %in% c("LSP10452")], rr[margin=="core1"])
+g <- ggplot(ab, aes(x = tipMMR, y = jaccard, fill = tipMMR)) +
+  geom_boxplot(alpha = 1, width=0.8, outlier.shape=NA) + 
+  geom_jitter(position = position_jitter(width = 0.2), size = 3, alpha = 1, shape=20) +  labs(y = "CD3pCD8nCD4n/CD3p") + scale_fill_manual(values = pMMR_colors) +
+  theme_jw() + theme(legend.position = "none")
+save_pdf(g, "cd3cd4ncd8n_percent.pdf", width=3,height=3)
+
+dtr <- rbindlist(dtt)
+means <- dtr[(value == "T" | value == "3T"), .(mean_cd3 = mean(cd3)), by = .(sample)]
+g <- ggplot(dtr[(value == "T" | value == "3T")], aes(x=cd3, fill=value)) + geom_histogram(position= "dodge", binwidth=50) + theme_jw() + coord_cartesian(xlim=c(0, 7000)) + 
+  facet_wrap(~ sample) + geom_vline(data = means, aes(xintercept = mean_cd3), color = "red")
+save_pdf(g, "cd3_200r_histogram_facet.pdf", width=20, height=20)
+```
+
+```{r jaccard}
+
+files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/pearson/", full.names = TRUE)
+files <- files[grepl("pearson$", files)]
+
+col_range <- colorRampPalette(c("darkblue", "white", "darkred"))(200)
+
+dtt <- lapply(files, function(f) {
+  cat(basename(f), "\n")
+  dt <- fread(f)
+  
+  bl <- c("Hoechst", "Argo550","AF1")
+  dt <- dt[!V1 %in% bl & !V2 %in% bl]
+  
+  # Visualize using ggplot2
+  g <- ggplot(data = dt, aes(x = V1, y = V2)) +
+  geom_tile(aes(fill = V3), color = "white") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), name="Correlation") +
+  #geom_text(aes(label = sprintf("%.2f", value)), vjust = 1) +
+  theme_jw() + ggtitle(sub("\\..*$", "", basename(f))) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), 
+        axis.title.x = element_blank(), axis.title.y = element_blank(), 
+        legend.position = "none")
+  
+ # Create a square matrix of dimensions equal to unique values of V1 and V2
+labels <- unique(c(dt$V1, dt$V2))
+mat <- matrix(0, nrow=length(labels), ncol=length(labels))
+rownames(mat) <- labels
+colnames(mat) <- labels
+
+# Fill the matrix
+for (i in 1:nrow(dt)) {
+  mat[dt$V1[i], dt$V2[i]] <- dt$V3[i]
+  mat[dt$V2[i], dt$V1[i]] <- dt$V3[i]  # since the relationship is symmetric
+}
+  
+  return(list(g=g, mat=mat, name=sub("\\..*$", "", basename(f))))
+})
+save_pdf(gridExtra::grid.arrange(grobs = lapply(dtt, function(x) x$g)), "pearson_facet.pdf", width=30, height=30)
+
+##### NON PARALLEL
+# Calculate pairwise Mantel tests
+n <- length(dtt)
+results <- matrix(NA, n, n)
+rownames(results) <- names(dtt)
+colnames(results) <- names(dtt)
+
+for (i in 1:(n-1)) {
+  cat(i,"\n")
+  for (j in (i+1):n) {
+    test <- mantel(dtt[[i]]$mat, dtt[[j]]$mat, method = "pearson", permutations = 999)
+    results[i, j] <- test$statistic
+    results[j, i] <- test$statistic
+  }
+}
+##########
+
+compute_mantel <- function(pair) {
+  i <- pair[1]
+  j <- pair[2]
+  
+  test <- mantel(dtt[[i]]$mat, dtt[[j]]$mat, method = "pearson", permutations = 999)
+  return(list(i = i, j = j, statistic = test$statistic))
+}
+
+# Create a list of all pairs of indices
+pairs <- list()
+for (i in 1:(n-1)) {
+  for (j in (i+1):n) {
+    pairs <- c(pairs, list(c(i, j)))
+  }
+}
+
+# Determine the number of cores to use; usually one less than all available cores
+num_cores <- detectCores() - 1
+system.time(results_list <- mclapply(pairs, compute_mantel, mc.cores = num_cores))
+
+# extract into results matrix
+results <- matrix(NA, n, n)
+rownames(results) <- sapply(dtt, function(x) x$name)
+colnames(results) <- sapply(dtt, function(x) x$name)
+for (res in results_list) {
+  results[res$i, res$j] <- res$statistic
+  results[res$j, res$i] <- res$statistic
+}
+
+# Plot Mantel similarity matrix
+df_results <- as.data.table(melt(results[!rownames(results) %in% hard_coded_tip, !colnames(results) %in% hard_coded_tip]))
+colnames(df_results) <- c("Matrix1", "Matrix2", "Mantel_r")
+g <- ggplot(df_results, aes(Matrix1, Matrix2, fill = Mantel_r)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  theme_minimal() +
+  labs(title = "Mantel Test Similarity Matrix", fill = "Mantel r")
+
+library(ComplexUpset)
+
+# 1. Calculate the distance matrix.
+# Given that the results are correlation coefficients (from Mantel test),
+# we can calculate the distance as (1 - correlation coefficient).
+# This makes perfect correlations have a distance of 0 and no correlation a distance of 1.
+dist_matrix <- 1 - abs(results[!rownames(results) %in% hard_coded_tip, !colnames(results) %in% hard_coded_tip])
+
+# 2. Perform hierarchical clustering
+clustering <- hclust(as.dist(dist_matrix))
+dendrogram <- as.dendrogram(clustering)
+
+# 3. Rearrange the results matrix based on clustering order
+order <- order.dendrogram(dendrogram)
+clustered_results <- results[order, order]
+
+# 4. Plot the clustered matrix
+df_clustered_results <- melt(clustered_results)
+colnames(df_clustered_results) <- c("Matrix1", "Matrix2", "Mantel_r")
+
+g <- ggplot(df_clustered_results, aes(Matrix1, Matrix2, fill = Mantel_r)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Clustered Mantel Test Similarity Matrix", fill = "Mantel r")
+
+# Using heatmap.2 for visualization with dendrogram
+save_pdf(heatmap.2(clustered_results, 
+          main = "Clustered Mantel Test Similarity Matrix", 
+          notecol="black",      # change font color of cell labels to black
+          density.info="none",  # turns off density plot inside color legend
+          trace="none",         # turns off trace lines inside the heat map
+          margins =c(8,9),      # widens margins around plot
+          dendrogram = "row",   # only draw a row dendrogram
+          col = colorRampPalette(c("blue", "white", "red"))(25),
+          Colv = NULL),          # keep the column order as it is
+         "mantel_dendrogram_pearson_nontip.pdf", width=20, height=20)
+```
+
+```{r contour-plots}
+library(ggplot2)
+
+files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/margin/", full.names = TRUE)
+files <- files[grepl("cys$", files)]
+
+#num_cells <- sum(sapply(files, function(f) {
+#  fread(cmd=paste("cysift count", f))$V1
+#}))
+
+header <- header_read(files[1])
+
+bw = 100
+
+# set common levels for cd3
+dt_max <- fread(cmd=paste("cysift clean -m -M",files[57], "- | cysift view -"))
+dt_min <- fread(cmd=paste("cysift clean -m -M",files[5], "- | cysift view -"))
+kde_result_max <- MASS::kde2d(dt_max[bitwAnd(V4, 4096) > 0,V5], dt_max[bitwAnd(V4, 4096) > 0, V6], n=bw)
+kde_result_min <- MASS::kde2d(dt_min[bitwAnd(V4, 4096) > 0,V5], dt_min[bitwAnd(V4, 4096) > 0, V6], n=bw)
+common_levels_cd3 <- seq(min(kde_result_min$z), max(kde_result_max$z), length.out = 30)[seq(2,30)]
+
+# set common levels for tumor
+dt_max <- fread(cmd=paste("cysift clean -m -M",files[1], "- | cysift view -"))
+dt_min <- fread(cmd=paste("cysift clean -m -M",files[1], "- | cysift view -"))
+kde_result_max <- MASS::kde2d(dt_max[bitwAnd(V3, 1) > 0,V5], dt_max[bitwAnd(V3, 1) > 0, V6], n=bw)
+kde_result_min <- MASS::kde2d(dt_min[bitwAnd(V3, 1) > 0,V5], dt_min[bitwAnd(V3, 1) > 0, V6], n=bw)
+common_levels_tumor <- seq(min(kde_result_min$z), max(kde_result_max$z), length.out = 30)[seq(2,30)]
+
+# get all of the cd3_200 values
+cd3 <- lapply(files, function(f) {
+  cat(basename(f), "\n")
+  dt <- fread(cmd=paste("cysift cut -x CD3_200r",f,"- | cysift view -"))
+  return(dt$V7)
+})
+cd3a_function <- ecdf(unlist(cd3))
+
+
+# get all of the cd3_200 / panck values
+cd3pank <- lapply(files, function(f) {
+  cat(basename(f), "\n")
+  dt <- fread(cmd=paste("cysift cut -x CD3_200r,PanCK_200r",f,"/tmp/tmpr && cysift view /tmp/tmpr"))
+  return(dt[V7 > 0 & V8 > 0, V8/V7]) # V7 is PanCK
+})
+cp_function <- ecdf(unlist(cd3pank))
+
+# read all the data as the means within the tumor compartment
+dtt <- lapply(files, function(f) {
+  cat(basename(f), "\n")
+  dt <- fread(cmd=paste("cysift cut -x PanCK_200l,CD3_200r",f,"- | cysift view -"))
+  setnames(dt, paste0("V",seq(8)), c("sample","cell","cflag","pflag","x","y", "cd3","pk"))
+  #setnames(dt, paste0("V",seq(7,ncol(dt))), header$id[header$tag_type %in% c("CA","MA")])
+  dt[, Slide_ID := sub("^(LSP[0-9]+).*", "\\1", basename(f))]
+  dt[, ratio := cd3/pk]
+  dt[pk == 0, ratio := -1]
+  dt[, ratio_z := cp_function(ratio)]
+  dt[cd3==0, ratio_z := 0]
+  #dt[, margin := "stroma_n5"]
+  
+  dt[, value := ifelse(bitwAnd(pflag, 4096) > 0, ifelse(bitwAnd(cflag, 4) > 0, "CD3", "CD3"), ifelse(bitwAnd(cflag, 4) > 0, "tumor","stroma"))]
+  
+  # CD3 KDE
+ # kde_result <- MASS::kde2d(dt[value == "CD3",x], dt[value == "CD3",y], n = bw)
+ # kde_df_cd3 <- as.data.table(expand.grid(x = kde_result$x, y = kde_result$y))
+ # kde_df_cd3[, z := as.vector(kde_result$z)]
+  
+  # TUMOR KDE
+  #kde_result <- MASS::kde2d(dt[value == "tumor",x], dt[value == "tumor",y], n = bw)
+  #kde_df_tumor <- as.data.table(expand.grid(x = kde_result$x, y = kde_result$y))
+  #kde_df_tumor[, z := as.vector(kde_result$z)]
+  
+  lim.low = 0
+  lim.high = 10000
+  dt[cd3 < lim.low,cd3 := lim.low]
+  dt[cd3 > lim.high, cd3 := lim.high]
+
+  #dt[, cd3value := cd3_function(cd3)]
+  #dt[, ratio := ifelse(ratio > lim.high, lim.high, ratio)]
+  
+  g <- ggplot() +
+    geom_point(data=dt[sample(.N, 1e5)], aes(x=x,y=y,color=cd3), 
+               size=0.1) + 
+    scale_color_gradient2(low = "#67a9cf", mid = "#f7f7f7", high = "#ef8a62", 
+                          midpoint = lim.high/2, limits = c(lim.low, lim.high), 
+                          guide = "colourbar", aesthetics = "color") +
+   # geom_contour(data = kde_df_tumor, aes(x=x,y=y,z=z),color = "darkred", alpha = 0.5) + 
+       #geom_contour(data = kde_df_cd3, aes(x=x,y=y,z=z),color = "black", alpha = 0.5, linewidth=0.3) + ggtitle(dt$Slide_ID[1]) + 
+    theme_jw() +
+    coord_fixed(ratio = 1)
+  return(g)
+})
+ge <- gridExtra::grid.arrange(grobs = dtt, ncol = 10, nrow = 7)
+save_pdf(gridExtra::grid.arrange(grobs = dtt, ncol = 10, nrow = 8), "kde_cd3.pdf", width=20, height=20)
 ```
 
 

@@ -142,6 +142,23 @@ private:
   
 };
 
+class RescaleProcessor : public CellProcessor {
+
+public:
+  void SetParams(float factor) {
+    m_factor = factor;
+  }
+
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+
+private:
+
+  float m_factor = 1;
+  
+};
+
 class HallucinateProcessor : public CellProcessor {
 
 public:
@@ -284,8 +301,11 @@ class PhenoProcessor : public CellProcessor {
   
  public:
   
-  void SetParams(PhenoMap p) {
+  void SetParams(PhenoMap p, float scale,
+		 float random_scale) {
     m_p = p;
+    m_scale = scale;
+    m_random_scale = random_scale;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -299,6 +319,10 @@ class PhenoProcessor : public CellProcessor {
 
   // map of all of the gates (string - pair<float,float>)
   PhenoMap m_p;
+
+  float m_scale = 1;
+
+  float m_random_scale = 0;
 
 };
 
@@ -452,14 +476,17 @@ class LogProcessor : public CellProcessor {
   
 };
 
+
 class ROIProcessor : public CellProcessor {
 
  public:
   
   void SetParams(bool label,
-		 const std::vector<Polygon>& rois) {
+		 const std::vector<Polygon>& rois,
+		 bool bl) {
     m_label = label;
     m_rois = rois;
+    m_blacklist_remove = bl;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -471,6 +498,8 @@ class ROIProcessor : public CellProcessor {
   std::vector<Polygon> m_rois;
 
   bool m_label;
+
+  bool m_blacklist_remove = false;
 
 };
 

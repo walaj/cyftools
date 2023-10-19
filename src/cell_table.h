@@ -73,7 +73,9 @@ public:
   //////
   int PlotPNG(const std::string& file,
 	      float scale_factor,
-	      const std::string& module
+	      const std::string& module,
+	      const std::string& roifile,
+	      const std::string& title	      
 	      ) const;
   
   //////
@@ -149,7 +151,7 @@ public:
   //////
   void PrintPearson(bool csv, bool sort) const;
 
-  void PrintJaccardSimilarity(bool csv, bool sort) const;
+  void PrintJaccardSimilarity(bool csv, bool sort, bool subset_score) const;
   
   //////
   // Image ops
