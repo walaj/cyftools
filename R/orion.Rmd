@@ -14,6 +14,12 @@ library(forestplot)
 library(survminer)
 source("~/git/cysift/R/helpers.R")
 source("~/Sorger/projects/orion/R/orion_helpers.R")
+
+generate_random_string <- function(string_length = 8) {
+  characters <- c(letters, LETTERS, 0:9)  # alphanumeric characters
+  random_string <- paste0(sample(characters, string_length, replace = TRUE), collapse = "")
+  return(random_string)
+}
 ```
 
 ```{r load-data, include=FALSE}
@@ -44,6 +50,31 @@ redcap[, side := {
     "Rectal"
   }
 }, by="Slide_ID"]
+```
+
+```{r plot-tipness}
+
+## read all of the CD3
+f <- data.table::fread("~/Sorger/projects/orion/orion_1_74/cut/tumor_cd3_200r")
+f[, type := "T"]
+si <- data.table::fread("~/Sorger/projects/orion/orion_1_74/cut/stroma_cd3_200r")
+si[, type := "S"]
+fsi <- rbind(f, si)
+g <- ggplot(fsi[sample(.N, 1e5)], aes(x=V1, fill=type)) + 
+  geom_histogram(position="dodge", binwidth=30) + 
+  theme_jw()
+tt <- ecdf(f$V1)
+mm_tumor <- median(f$V1)
+
+#system("cysift subsample -r 0.1 ~/Sorger/projects/orion/orion_1_74/margin/LSP10353.ptrdim.cys - | cysift view - > /tmp/tmpr", intern=TRUE)
+dt <- data.table::fread("/tmp/tmpr")
+header <- header_read("~/Sorger/projects/orion/orion_1_74/margin/LSP10353.ptrdim.cys")
+setnames(dt, paste0("V",seq(6)), c("sample","cell","cflag","pflag","x","y"))
+setnames(dt, paste0("V",seq(7,ncol(dt))), header$id[header$tag_type %in% c("CA","MA")])
+dt[CD3_200r > 5000, CD3_200r := 5000]
+g <- ggplot(dt, aes(x=x, y=y, color=CD3_200r)) + theme_jw() + geom_point() + 
+   scale_color_gradient2(low = "blue", mid = "white", high = "red", 
+                        midpoint = mm_tumor) + coord_fixed()
 ```
 
 ```{r plot-setup-stuff, include=FALSE}
@@ -79,25 +110,77 @@ if (FALSE) {
   # read all the data as the means within the tumor compartment
   dtt <- lapply(files, function(f) {
     cat(basename(f), "\n")
-    dt <- fread(cmd=paste("cysift filter",f,"/tmp/tmp.cys && cysift mean /tmp/tmp.cys - | cysift view -"))
+    fv = "-A 1 -T"
+    tmpfile <- paste0("/tmp/", generate_random_string(8))
+
+    system(paste("cysift filter", fv, f, tmpfile))
+    dt <- fread(cmd=paste("cysift mean", tmpfile, " - | cysift view -"))
+    
     setnames(dt, paste0("V",seq(6)), c("sample","cell","x","y","pflag","cflag"))
     setnames(dt, paste0("V",seq(7,ncol(dt))), header$id[header$tag_type %in% c("CA","MA")])
+    
+    dt[ , allcount       := fread(cmd=paste("cysift count", tmpfile))$V1]
+
+    # indivdual cell counts
+    cat("...cell count\n")
+    drr = fread(cmd=paste("cysift cellcount", tmpfile," - -a 133120 -a 10240 -a 36864 -a 32832 | cysift view -"))
+    dt[, cd31count := drr$V28]
+    dt[, cd45count := drr$V29]
+    dt[, cd68count := drr$V30]
+    dt[ ,cd4count. := drr$V32]
+    dt[, foxp3count:= drr$V33]
+    dt[, cd8count  := drr$V34]
+    dt[, cd45rocount  := drr$V35]
+    dt[, cd20count := drr$V36]
+    dt[, pdl1count := drr$V37]
+    dt[, cd3count := drr$V38]
+    dt[, cd163count := drr$V39]
+    dt[, pd1count := drr$V41]
+    dt[, panckcount := drr$V43]
+    dt[, smacount := drr$V44]
+    dt[ , pdl1panckcount := drr$V45]
+    dt[ , pdl1cd163count := drr$V46]
+    dt[ , cd3pd1count    := drr$V47]
+    dt[ , cd4pd1count    := drr$V48]
+    
+    cat("...means\n")
+    tmpfile2 <- paste0("/tmp/", generate_random_string(8))
+
+    drr <- fread(cmd=paste("cysift filter -a 131072", tmpfile, tmpfile2, "&& cysift mean", tmpfile2, "-",
+                           "| cysift view -"))
+    file.remove(tmpfile2)
+    
+    dt[, panckcd3_20r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD3_20r") + 6)]]]
+    dt[, panckcd4_20r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD4_20r") + 6)]]]
+    dt[, panckcd8_20r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD8_20r") + 6)]]]
+    dt[, panckcd3_200r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD3_200r") + 6)]]]
+    dt[, panckcd4_200r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD4_200r") + 6)]]]
+    dt[, panckcd8_200r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD8_200r") + 6)]]]
+    dt[, panckcd163pdl1_200r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD163pPDL1_200r") + 6)]]]
+    
     dt[, Slide_ID := sub("^(LSP[0-9]+).*", "\\1", basename(f))]
-    dt[, margin := "stroma_n5"]
+    dt[, margin := "tumor_A1"]
+    file.remove(tmpfile)
     return(dt)
   })
+  
   dtr <- rbindlist(dtt)
   rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
-  saveRDS(dtr, "~/Sorger/cache/stroma_n5.rds", compress=FALSE)
+  saveRDS(dtr, "~/Sorger/cache/stroma_N5_cut.rds", compress=FALSE)
 } else {
   
-  dtr <- rbindlist(lapply(c("~/Sorger/cache/margin5.rds",
-                         "~/Sorger/cache/margin4.rds",
-                         "~/Sorger/cache/stroma_n5.rds",
-                         "~/Sorger/cache/core1.rds"), readRDS))
-rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
-hard_coded_tip <- c("LSP14418", "LSP14398", "LSP14423", "LSP14438", "LSP14393", "LSP14403", "LSP14458", "LSP10771", "LSP14388", "LSP14468", "LSP14483", "LSP10388", "LSP14448")
-rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
+  #dtr <- rbindlist(lapply(c("~/Sorger/cache/margin5.rds",
+  #                       "~/Sorger/cache/margin4.rds",
+  #                       "~/Sorger/cache/stroma_n5.rds",
+  #                       "~/Sorger/cache/core1.rds"), readRDS))
+  dtr <- rbindlist(lapply(c("~/Sorger/cache/stroma_A4N1_cut.rds",
+                            "~/Sorger/cache/core_A1N4_cut.rds",
+                            "~/Sorger/cache/stroma_N5_cut.rds",
+                            "~/Sorger/cache/tumor_A5_cut.rds"), readRDS))
+  rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
+  hard_coded_tip <- c("LSP14418", "LSP14398", "LSP14423", "LSP14438", "LSP14393", "LSP14403", "LSP14458", "LSP10771", "LSP14388", "LSP14468", "LSP14483", "LSP10388", "LSP14448")
+  hard_coded_tip_core = c("LSP14468", "LSP14448", "LSP14403", "LSP15280","LSP14418","LSP14438","LSP10388","LSP14388")
+  rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
   
 }
 
@@ -127,6 +210,64 @@ if (FALSE) {
 }
 
 ```
+
+
+```{r imaging-km}
+rr <- merge(data.table::copy(redcap), dtr[margin=="core1"], by = "Slide_ID", all.x = TRUE)
+ix <- rep(TRUE, nrow(rr))
+survival_object <- Surv(rr$PFSDays[ix], ifelse(rr$PFSCensor[ix]==0,1,0))
+
+all_200r <- c("CD31_200r","CD45_200r","CD68_200r","CD4_200r",
+                   "FOXP3_200r","CD8_200r","CD45RO_200r","CD20_200r",
+                   "PD_L1_200r","CD3_200r","CD163_200r","Ecad_200r",
+                  "PD1_200r","Ki67_200r","PanCK_200r","SMA_200r")
+all_200g <- c("CD31_200g","CD45_200g","CD68_200g","CD4_200g",
+                   "FOXP3_200g","CD8_200g","CD45RO_200g","CD20_200g",
+                   "PD_L1_200g","CD3_200g","CD163_200g","Ecad_200g",
+                  "PD1_200g","Ki67_200g","PanCK_200g","SMA_200g")
+all_200gl <- c("CD31_200gl","CD45_200gl","CD68_200gl","CD4_200gl",
+                   "FOXP3_200gl","CD8_200gl","CD45RO_200gl","CD20_200gl",
+                   "PD_L1_200gl","CD3_200gl","CD163_200gl","Ecad_200gl",
+                  "PD1_200gl","Ki67_200gl","PanCK_200gl","SMA_200gl")
+
+all_hr <- lapply(all_200r, function(x) {
+  label = x;
+   #                 x = "rand"
+  #rr[, rand := sample(1000, .N)]
+  median_cut <- median(rr[[x]][ix])
+  cox_model <- coxph(survival_object ~ rr[[x]][ix] >= median_cut)
+cat(x, "\n")
+  # Extract the coefficients from the Cox model
+  coefficients <- cox_model$coefficients
+  hr <- exp(coefficients)
+  hr <- data.table(
+    variable = names(coefficients),
+    HR = hr,
+    lower = exp(as.data.table(confint(cox_model, level = 0.95))$`2.5 %`),
+    upper = exp(as.data.table(confint(cox_model, level = 0.95))$`97.5 %`)
+  )
+  hr$variable <- factor(hr$variable, levels = hr$variable[order(-hr$HR)])
+  hr$label = label
+  return(hr)
+                  })
+hr <- rbindlist(all_hr)
+# Create the forest plot
+g <- ggplot(
+  data = hr,
+  aes(x = label, y = HR, ymin = lower, ymax = upper)) +
+  geom_pointrange(size = 0.8) +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  coord_flip() +
+  xlab("Covariate") +
+  ylab("Hazard Ratio") +
+  theme_jw()
+
+```
+
+```{r plot-tippness}
+
+```
+
 
 ```{r random-hr-tip, include=FALSE}
 
@@ -688,14 +829,109 @@ g <- ggplot(fplot, aes(x=V5, y=V6, color=cluster)) + geom_point(size=0.1, shape=
 save_pdf(g, "dbtest.pdf", width=15, height=15)
 ```
 
+```{r margins-raw-count}
+
+
+
+# Example usage:
+
+read_data_for_margin <- function(f, margin_type, a_value, n_value) {
+  
+  tmpfile <- paste0("/tmp/", generate_random_string(8))
+  
+    cd163pdl1_cmd <- paste("cysift filter", ifelse(!is.null(n_value), paste("-N", n_value), ""), ifelse(!is.null(a_value), paste("-A", a_value), ""), "-a 10240 -T", f, tmpfile, "&& cysift count", tmpfile)
+    cd163pdl1 <- fread(cmd=cd163pdl1_cmd)$V1
+
+    panckpdl1_cmd <- paste("cysift filter", ifelse(!is.null(n_value), paste("-N", n_value), ""), ifelse(!is.null(a_value), paste("-A", a_value), ""), "-a 133120 -T", f, tmpfile, "&& cysift count", tmpfile)
+    panckpdl1 <- fread(cmd=panckpdl1_cmd)$V1
+
+    allcells_cmd <- paste("cysift filter", ifelse(!is.null(n_value), paste("-N", n_value), ""), ifelse(!is.null(a_value), paste("-A", a_value), ""), "-T", f, tmpfile, "&& cysift count", tmpfile)
+    allcells <- fread(cmd=allcells_cmd)$V1
+    
+    panck_allcells_cmd <- paste("cysift filter -a 131072", ifelse(!is.null(n_value), paste("-N", n_value), ""), ifelse(!is.null(a_value), paste("-A", a_value), ""), "-T", f, tmpfile, "&& cysift count", tmpfile)
+    panck <- fread(cmd=panck_allcells_cmd)$V1
+    
+       cd163_allcells_cmd <- paste("cysift filter -a 8192", ifelse(!is.null(n_value), paste("-N", n_value), ""), ifelse(!is.null(a_value), paste("-A", a_value), ""), "-T", f, tmpfile, "&& cysift count", tmpfile)
+    cd163 <- fread(cmd=cd163_allcells_cmd)$V1
+
+    dt <- data.table(Slide_ID = sub("^(LSP[0-9]+).*", "\\1", basename(f)), 
+                     cd163pdl1=cd163pdl1, 
+                     panckpdl1=panckpdl1,
+                     panck=panck,
+                     cd163=cd163,
+                     margin=margin_type, 
+                     allcells=allcells)
+    
+    file.remove(tmpfile)
+    return(dt)
+}
+
+files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/margin/", full.names = TRUE)
+files <- files[grepl("cys$", files)]
+header <- header_read(files[1])
+
+system.time(dtt <- parallel::mclapply(files, function(f) {
+  
+    cat(basename(f), "\n")
+    dt_a4 <- read_data_for_margin(f, "A4", 4, NULL)
+    dt_stroma_margin <- read_data_for_margin(f, "stroma_margin", 4, 1)
+    dt_tumor_core <- read_data_for_margin(f, "tumor_core", 1, 4)
+    dt_stroma_core <- read_data_for_margin(f, "stroma_core", NULL, 5)
+
+    return(rbind(dt_a4, dt_tumor_core, dt_stroma_core, dt_stroma_margin))
+}, mc.cores=8))
+
+dtr <- rbindlist(dtt)
+dtr[, cd163_frac := cd163pdl1 / allcells]
+dtr[, panck_frac := panckpdl1 / allcells]
+dtr[, pdl1_ratio := cd163pdl1 / panckpdl1]
+
+ratios <- dtr[margin == "stroma_margin", .(Slide_ID, stroma_cd163pdl1 = cd163pdl1)][
+  dtr, on = .(Slide_ID)][
+    margin == "tumor_core", .(Slide_ID, cd163pdl1_ratio = stroma_cd163pdl1/cd163pdl1)]
+
+
+# Merge the ratio back onto the original data.table
+dtr <- merge(dtr, ratios, by = "Slide_ID", all.x = TRUE)
+
+rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
+hard_coded_tip <- c("LSP14418", "LSP14398", "LSP14423", "LSP14438", "LSP14393", "LSP14403", "LSP14458", "LSP10771", "LSP14388", "LSP14468", "LSP14483", "LSP10388", "LSP14448")
+rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
+  #saveRDS(dtr, "~/Sorger/cache/margin_pdl1.rds", compress=FALSE)
+  
+aa <- rr[, .(Slide_ID, tipMMR,cd163_frac, margin, cd163pdl1_ratio, panck_frac)][margin=="stroma_margin"]
+setkey(aa, panck_frac)
+clevels <- aa$Slide_ID
+aa[,Slide_ID := factor(Slide_ID, levels=clevels)]
+g <- ggplot(aa, aes(x=Slide_ID, y=panck_frac, fill=tipMMR)) + 
+geom_bar(stat="identity")+
+coord_flip() +
+scale_fill_manual(values=pMMR_colors) + 
+  theme_jw()
+
+rr_long <- melt(rr, id.vars = c("tipMMR","margin"), measure.vars = c("pdl1_ratio", "panck_frac","cd163_frac"),
+                variable.name = "Metric", value.name = "Value")
+rr_long[, Metric_margin := interaction(Metric, margin, sep = " - ")]
+rr_long[, cells_per_mm2 := Value * 1e6 / (1000^2 * 0.325^2)]
+
+g <- ggplot(rr_long, aes(x = tipMMR, y = cells_per_mm2, fill = margin)) +
+    geom_boxplot(alpha = 0.4, width=0.8, outlier.shape=NA) +
+    #geom_jitter(aes(color=margin), size = 1, alpha = 0.7, shape=20) +
+    labs(y = "Cells / mm2") +
+    scale_y_log10() + 
+    #scale_fill_manual(values = pMMR_colors) +
+    facet_wrap(~ Metric) + theme_jw()
+  
+```
+
 ```{r margins}
-rr_long <- melt(rr, id.vars = c("tipMMR","margin"), measure.vars = c("SMA_200g", "CD68_200g","CD163_200g"),
+rr_long <- melt(rr, id.vars = c("tipMMR","margin"), measure.vars = c("PanCKpPDL1_200lg","CD163pPDL1_200lg"),
                 variable.name = "Metric", value.name = "Value")
 
 rr_long[, Metric_margin := interaction(Metric, margin, sep = " - ")]
 rr_long[, cells_per_mm2 := Value * 1e6 / (1000^2 * 0.325^2)]
 
-g <- ggplot(rr_long[margin != "margin5"], aes(x = tipMMR, y = cells_per_mm2, fill = margin)) +
+g <- ggplot(rr_long, aes(x = tipMMR, y = cells_per_mm2, fill = margin)) +
   geom_boxplot(alpha = 0.4, width=0.8, outlier.shape=NA) +
   #geom_jitter(aes(color=margin), size = 1, alpha = 0.7, shape=20) +
   labs(y = "Cells / mm2") +
@@ -712,7 +948,7 @@ files <- files[grepl("cut$", files)]
 # read all the data as the means within the tumor compartment
 dtt <- lapply(files, function(f) {
   cat(basename(f), "\n")
-  #dt <- fread(cmd=paste("cysift cut -x CD3_200r",f,"- | cysift view -"))
+  dt <- fread(cmd=paste("cysift cut -x CD3_200r",f,"- | cysift view -"))
   dt <- fread(f)
   
   setnames(dt, paste0("V",seq(7)), c("sample","cell","cflag","pflag","x","y", "cd3"))

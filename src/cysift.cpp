@@ -63,7 +63,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  info        - Display detailed information\n"
 "  summary     - Display brief information\n"    
 "  count       - Count cells\n"
-"  head        - Returns first lines of a file\n"  
+"  head        - Returns first lines of a file\n"
 " --- Low-level processing ---\n"
 "  cereal      - Create a .cys format file from a CSV\n"    
 "  cut         - Select only given markers and metas\n"
@@ -679,11 +679,14 @@ static int jaccardfunc(int argc, char** argv) {
 
 static int cellcountfunc(int argc, char** argv) {
 
-  const char* shortopts = "v";
+  const char* shortopts = "va:";
+  std::vector<uint64_t> additional_flags;
+  std::string tmp_string;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
+    case 'a' : arg >> tmp_string; additional_flags.push_back(std::stoi(tmp_string)); break;
     default: die = true;
     }
   }
@@ -696,6 +699,7 @@ static int cellcountfunc(int argc, char** argv) {
       "\n"
       "Arguments:\n"
       "  [cysfile]                 Input .cys file path or '-' to stream from stdin.\n"
+      "  -a                        Additional AND flag combos to test\n"
       "\n"
       "Optional Options:\n"
       "  -v, --verbose             Increase output to stderr.\n"
@@ -707,8 +711,10 @@ static int cellcountfunc(int argc, char** argv) {
     return 1;
   }
   
+  
   CellCountProcessor cellp;
-  cellp.SetCommonParams(opt::outfile, cmd_input, opt::verbose); // really shouldn't need any of these  
+  cellp.SetCommonParams(opt::outfile, cmd_input, opt::verbose); // really shouldn't need any of these
+  cellp.SetParams(additional_flags);
 
   if (table.StreamTable(cellp, opt::infile)) 
     return 1; // non-zero status on StreamTable

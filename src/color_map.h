@@ -21,6 +21,7 @@ extern ColorMap color_map4;
 extern ColorMap color_map8;
 extern ColorMap color_map12;
 
+extern Color color_deep_pink;
 extern Color color_red;
 extern Color color_light_red;
 extern Color color_purple;

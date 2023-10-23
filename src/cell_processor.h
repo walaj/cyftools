@@ -190,7 +190,9 @@ class CellCountProcessor : public CellProcessor {
 
 public:
 
-  void SetParams() {}
+  void SetParams(const std::vector<uint64_t>& af) {
+    m_additional_flags = af;
+  }
   
   int ProcessHeader(CellHeader& header) override;
   
@@ -201,7 +203,11 @@ public:
  private:
 
   std::vector<size_t> m_counts;
-  
+
+  std::vector<uint64_t> m_additional_flags;
+
+  size_t m_num_marker_tags = 0;
+
 };
 
 class HeadProcessor : public CellProcessor {

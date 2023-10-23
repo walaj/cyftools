@@ -1505,7 +1505,8 @@ int CellTable::PlotPNG(const std::string& file,
 	c = color_cyan;
       else if (! (cf & TUMOR_FLAG) && ! (cf & MARGIN_FLAG))
 	c = color_dark_green;
-
+      if (IS_FLAG_SET(pf, ORION_PDL1) && IS_FLAG_SET(pf, ORION_CD163))
+      	c = color_deep_pink;
       
     } else if (module == "prostate") { 
     
@@ -1528,6 +1529,7 @@ int CellTable::PlotPNG(const std::string& file,
       } else {
 	c = color_gray_90;
       }
+      
     } else if (module == "orion") {
 
       if (pflag.testAndOr(2048,0) && pflag.testAndOr(32768,0)) // T-cell - PD-1+ 

@@ -105,19 +105,24 @@ int CellCountProcessor::ProcessHeader(CellHeader& header) {
   m_header = header;
 
   // initialize the count vector
-  size_t num_marker_tags = header.GetMarkerTags().size();
-  m_counts = std::vector<size_t>(num_marker_tags);
+  m_num_marker_tags = header.GetMarkerTags().size();
+  m_counts = std::vector<size_t>(m_num_marker_tags + m_additional_flags.size());
 
   m_header.ClearMeta();
 
+  // add single markers
   for (const auto& m : header.GetMarkerTags()) {
     m_header.addTag(Tag(Tag::CA_TAG, m.id + "_count", ""));
+  }
+
+  // add additional flag markers
+  for (const auto& m : m_additional_flags) {
+    m_header.addTag(Tag(Tag::CA_TAG, std::to_string(m) + "_count", ""));
   }
 
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
 
   m_header.SortTags();
-
   
   // just in time, make the output stream
   this->SetupOutputStream();
@@ -131,11 +136,18 @@ int CellCountProcessor::ProcessHeader(CellHeader& header) {
 
 int CellCountProcessor::ProcessLine(Cell& cell) {
 
-  for (size_t i = 0; i < m_counts.size(); i++) {
+  for (size_t i = 0; i < m_num_marker_tags; i++) {
     CellFlag f(cell.pflag);
     cy_uint to_test = static_cast<cy_uint>(std::pow(2, i));
-    //    std::cerr << " i " << i << " totest " << to_test << " f " << f << " test " << f.testAndOr(to_test,0) << std::endl;
     if (f.testAndOr(to_test, 0))
+      m_counts[i]++;
+  }
+
+  // additional flags
+  for (size_t i = m_num_marker_tags; i < (m_num_marker_tags + m_additional_flags.size()); i++) {
+    //if (cell.id==33)
+    //std::cerr << " i " << i << " m_additiona  "<< m_additional_flags[i-m_num_marker_tags] << std::endl;
+    if (IS_FLAG_SET(cell.pflag, m_additional_flags[i - m_num_marker_tags]))
       m_counts[i]++;
   }
 
@@ -147,7 +159,7 @@ void CellCountProcessor::EmitCell() const {
   Cell cell;
 
   // add markers as dummies
-  for (size_t i = 0; i < m_counts.size(); i++)
+  for (size_t i = 0; i < m_num_marker_tags; i++)
     cell.cols.push_back(0);
 
   // add the count data

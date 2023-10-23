@@ -1,6 +1,7 @@
 #include "color_map.h"
 #include <stdexcept>
 
+Color color_deep_pink = {255,20,147};
 Color color_red = {255,0,0};
 Color color_light_red = {255,102,102};
 Color color_cyan = {0,255,255};
