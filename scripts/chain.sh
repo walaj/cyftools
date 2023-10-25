@@ -50,7 +50,7 @@ if [[ ! -f "$input_file" ]]; then
 else
     echo "...running: cysift chain on ${base}"
     cmd="cysift pheno ${V} $input_file -t $pheno_file - |\
-    		      cysift filter - - -a 4 ${V} |\
+    		      cysift filter - - -a 131072 ${V} |\
 		      cysift tumor - - -f 0.50 -k 25 -t ${T} ${V} |\
 		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |\
 		      cysift delaunay -l 20 - ${output_file}"
