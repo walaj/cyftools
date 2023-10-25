@@ -63,7 +63,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  info        - Display detailed information\n"
 "  summary     - Display brief information\n"    
 "  count       - Count cells\n"
-"  head        - Returns first lines of a file\n"  
+"  head        - Returns first lines of a file\n"
 " --- Low-level processing ---\n"
 "  cereal      - Create a .cys format file from a CSV\n"    
 "  cut         - Select only given markers and metas\n"
@@ -78,6 +78,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  sampleselect- Select a particular sample from a multi-sample file\n"
 "  pheno       - Phenotype cells (set the phenotype flags)\n"
 "  cellcount   - Provide total slide cell count for each cell type\n"
+"  rescale     - Rescale the x and y coordinates\n"
 " --- Numeric ---\n"
 "  mean        - Collapse to mean of each column\n"  
 "  divide      - Divide two columns\n"
@@ -110,6 +111,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  synth       - Various approaches for creating synthetic data\n"  
 "\n";
 
+static int rescalefunc(int argc, char** argv);
 static int islandfunc(int argc, char** argv);
 static int marginfunc(int argc, char** argv);
 static int trimfunc(int argc, char** argv);
@@ -227,6 +229,8 @@ int main(int argc, char **argv) {
     return(tumorfunc(argc, argv));
   } else if (opt::module == "cut") {
     val = cutfunc(argc, argv);
+  } else if (opt::module == "rescale") {
+    val = rescalefunc(argc, argv);
   } else if (opt::module == "cereal") {
     val = cerealfunc(argc, argv);
   } else if (opt::module == "mean") {
@@ -299,6 +303,39 @@ static void build_table() {
     std::cerr << "Warning: Table with no cells? Error in upstream operation?" << std::endl;
   }
   
+}
+
+static int rescalefunc(int argc, char** argv) {
+  const char* shortopts = "vf:";
+
+  float factor = 1;
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'f' : arg >> factor; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift rescale [cysfile]\n"
+      "  Rescale the x and y coordinates\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
+      "    -f <float>     Scale factor (default 1)\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  RescaleProcessor res;
+  res.SetCommonParams(opt::outfile, cmd_input, opt::verbose); 
+  res.SetParams(factor);
+  
+  if (table.StreamTable(res, opt::infile)) 
+    return 1; // non-zero status on StreamTable
+  return 0;
 }
 
 static int reheaderfunc(int argc, char** argv) {
@@ -596,14 +633,16 @@ static int jaccardfunc(int argc, char** argv) {
 
   bool sorted = false;
   bool csv_print = false;
+  bool subset_score = false;
 
-  const char* shortopts = "vjs";
+  const char* shortopts = "vjsS";
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'j' : csv_print = true; break;
     case 's' : sorted = true; break;
+    case 'S' : subset_score = true; break;      
     default: die = true;
     }
   }
@@ -620,6 +659,8 @@ static int jaccardfunc(int argc, char** argv) {
       "Optional Options:\n"
       "  -j                        Output as a CSV file.\n"
       "  -s                        Sort the output by Jaccard score.\n"
+      "  -S                        Modified Jaccard such that divisand is min of size of A and B.\n"
+      "                            (This effectively gives score of 1 if A is subset of B or vice versa).\n"
       "  -v, --verbose             Increase output to stderr.\n"
       "\n"
       "Example:\n"
@@ -631,18 +672,21 @@ static int jaccardfunc(int argc, char** argv) {
   
   build_table();
 
-  table.PrintJaccardSimilarity(csv_print, sorted);
+  table.PrintJaccardSimilarity(csv_print, sorted, subset_score);
 
   return 0;
 }
 
 static int cellcountfunc(int argc, char** argv) {
 
-  const char* shortopts = "v";
+  const char* shortopts = "va:";
+  std::vector<uint64_t> additional_flags;
+  std::string tmp_string;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
+    case 'a' : arg >> tmp_string; additional_flags.push_back(std::stoi(tmp_string)); break;
     default: die = true;
     }
   }
@@ -655,6 +699,7 @@ static int cellcountfunc(int argc, char** argv) {
       "\n"
       "Arguments:\n"
       "  [cysfile]                 Input .cys file path or '-' to stream from stdin.\n"
+      "  -a                        Additional AND flag combos to test\n"
       "\n"
       "Optional Options:\n"
       "  -v, --verbose             Increase output to stderr.\n"
@@ -666,8 +711,10 @@ static int cellcountfunc(int argc, char** argv) {
     return 1;
   }
   
+  
   CellCountProcessor cellp;
-  cellp.SetCommonParams(opt::outfile, cmd_input, opt::verbose); // really shouldn't need any of these  
+  cellp.SetCommonParams(opt::outfile, cmd_input, opt::verbose); // really shouldn't need any of these
+  cellp.SetParams(additional_flags);
 
   if (table.StreamTable(cellp, opt::infile)) 
     return 1; // non-zero status on StreamTable
@@ -1189,17 +1236,21 @@ static int ldarunfunc(int argc, char** argv) {
 }
 
 static int plotpngfunc(int argc, char** argv) {
-  const char* shortopts = "vf:m:";
+  const char* shortopts = "vf:m:r:t:";
   
 #ifdef HAVE_CAIRO
   
   float scale_factor = 0.25f;
+  std::string roifile;
   string colname;
+  std::string title;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'f' : arg >> scale_factor; break;
+    case 'r' : arg >> roifile; break;
+    case 't' : arg >> title; break;
     case 'm' : arg >> colname; break;      
     default: die = true;
     }
@@ -1216,8 +1267,10 @@ static int plotpngfunc(int argc, char** argv) {
       "  <output_png>              Output PNG file path.\n"
       "\n"
       "Options:\n"
+      "  -r <roifile>              Plot rois\n"
       "  -f <float>                Fractional scale factor. Default: 0.25. (1 means each pixel is 1 x-unit; smaller values result in a smaller image)\n"
-      "  -m <string>               Module (prostate, tumor, orion)\n"                 
+      "  -m <string>               Module (prostate, tumor, orion)\n"
+      "  -t <string>               Title to display\n"
       "  -v, --verbose             Increase output to stderr.\n"
       "\n"
       "Example:\n"
@@ -1230,7 +1283,7 @@ static int plotpngfunc(int argc, char** argv) {
   // stream into memory
   build_table();
   
-  table.PlotPNG(opt::outfile, scale_factor, colname);
+  table.PlotPNG(opt::outfile, scale_factor, colname, roifile, title);
   
   return 0;
 
@@ -1734,7 +1787,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "radialdens" || opt::module == "margin" ||
 	 opt::module == "scramble" || opt::module == "scatter" ||
 	 opt::module == "hallucinate" || opt::module == "summary" ||
-	 opt::module == "island" || 
+	 opt::module == "island" || opt::module == "rescale" || 
 	 opt::module == "jaccard" || opt::module == "cellcount" ||
 	 opt::module == "synth" || opt::module == "trim" || 
 	 opt::module == "sampleselect" || opt::module == "dbscan" || 
@@ -1753,15 +1806,17 @@ static void parseRunOptions(int argc, char** argv) {
 }
 
 static int roifunc(int argc, char** argv) {
-  const char* shortopts = "vn:r:";
+  const char* shortopts = "vn:r:b";
   
   std::string roifile;
+  bool blacklist = false;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'n' : arg >> opt::n; break;
-    case 'r' : arg >> roifile;
+    case 'r' : arg >> roifile; break;
+    case 'b' : blacklist = true; break;
     default: die = true;
     }
   }
@@ -1772,7 +1827,8 @@ static int roifunc(int argc, char** argv) {
       "Usage: cysift roi [cysfile] <options>\n"
       "  Subset or label the cells to only those contained in the rois\n"
       "  cysfile: filepath or a '-' to stream to stdin\n"
-      "  -r                        ROI file\n"
+      "  -r <roifile>              ROI file\n"
+      "  -b                        Flag to look for \"blacklist\" keyword and remove cells in these regions\n"
       "  -l                        Output all cells and add \"roi\" column with ROI label\n"      
       "  -v, --verbose             Increase output to stderr"
       "\n";
@@ -1789,7 +1845,7 @@ static int roifunc(int argc, char** argv) {
 
   ROIProcessor roip;
   roip.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  roip.SetParams(false, rois);// false is placeholder for label function, that i need to implement
+  roip.SetParams(false, rois, blacklist);// false is placeholder for label function, that i need to implement
 
   if (table.StreamTable(roip, opt::infile))
     return 1; // non-zero status in StreamTable
@@ -2426,13 +2482,17 @@ static int spatialfunc(int argc, char** argv) {
 }
   
 static int phenofunc(int argc, char** argv) {
-  const char* shortopts = "vt:";
+  const char* shortopts = "vt:s:r:";
   std::string file;
+  float scale = 1;
+  float random_scale = 0;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 't' : arg >> file; break;
+    case 's' : arg >> scale; break;
+    case 'r' : arg >> random_scale; break;
     default: die = true;
     }
   }
@@ -2443,7 +2503,9 @@ static int phenofunc(int argc, char** argv) {
       "Usage: cysift pheno [cysfile]\n"
       "  Phenotype cells (set the flags) with threshold file\n"
       "    cysfile: filepath or a '-' to stream to stdin\n"
-      "    -t               File that holds gates: marker(string), low(float), high(float)\n"
+      "    -t <file>        File that holds gates: marker(string), low(float), high(float)\n"
+      "    -s <float>       How much to scale the gate, for purposes of robustness testing (s=1 is no scaling)\n"
+      "    -r <float>       Randomly vary the gates by +/- factor of r (e.g. r=0.2 -> s=[0.8-1.2])\n"
       "    -v, --verbose    Increase output to stderr\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -2464,7 +2526,7 @@ static int phenofunc(int argc, char** argv) {
 
   PhenoProcessor phenop;
   phenop.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  phenop.SetParams(pheno);
+  phenop.SetParams(pheno, scale, random_scale);
 
   if (table.StreamTable(phenop, opt::infile))
     return 1; // non-zero StreamTable status

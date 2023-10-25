@@ -283,8 +283,8 @@ void add_legend_cairo(cairo_t* crp, int font_size,
     
     // Draw the label
     cairo_set_source_rgb(crp, 0, 0, 0); // Set color to black for the text
-      cairo_move_to(crp, legend_x, legend_y + i*(legend_height+legend_padding) + legend_height);
-      cairo_show_text(crp, labels[i].c_str());
+    cairo_move_to(crp, legend_x, legend_y + i*(legend_height+legend_padding) + legend_height);
+    cairo_show_text(crp, labels[i].c_str());
   }
 #else
   std::cerr << "Warning: Can't plot, need to build with Cairo library" << std::endl;
@@ -308,4 +308,19 @@ double jaccardSimilarity(const std::vector<bool>& v1, const std::vector<bool>& v
     if (unionCount == 0) return 0.0; // to avoid division by zero
     
     return static_cast<double>(intersectionCount) / unionCount;
+}
+
+double jaccardSubsetSimilarity(const std::vector<bool>& v1, const std::vector<bool>& v2) {
+    int intersectionCount = 0;
+    int minSizeCount = std::min(v1.size(), v2.size());
+
+    for (size_t i = 0; i < v1.size(); i++) {
+        if (v1[i] && v2[i]) {
+            intersectionCount++;
+        }
+    }
+
+    if (minSizeCount == 0) return 0.0; // to avoid division by zero
+    
+    return static_cast<double>(intersectionCount) / minSizeCount;
 }

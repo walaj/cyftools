@@ -59,6 +59,8 @@ float pearsonCorrelation(const std::vector<T>& v1, const std::vector<T>& v2) {
   return static_cast<float>(num / (std::sqrt(den_v1) * std::sqrt(den_v2))); 
 }
 
+double jaccardSubsetSimilarity(const std::vector<bool>& v1, const std::vector<bool>& v2);
+
 double jaccardSimilarity(const std::vector<bool>& v1, const std::vector<bool>& v2);
 
 void add_legend_cairo(cairo_t* crp, int font_size,

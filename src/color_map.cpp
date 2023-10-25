@@ -1,13 +1,16 @@
 #include "color_map.h"
 #include <stdexcept>
 
+Color color_deep_pink = {255,20,147};
 Color color_red = {255,0,0};
 Color color_light_red = {255,102,102};
 Color color_cyan = {0,255,255};
 Color color_light_green = {144, 238, 144};
 Color color_dark_green = {0,100,0};
 Color color_gray = {100,100,100};
+Color color_gray_90 = {100,100,100,0.1};
 Color color_purple = {128,0,128};
+Color color_dark_blue = {56,108,176};
 
   //https://colorbrewer2.org/#type=qualitative&scheme=Set1&n=4
   ColorMap color_map4 = {

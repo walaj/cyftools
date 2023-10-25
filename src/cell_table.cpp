@@ -1,4 +1,5 @@
 #include "cell_table.h"
+#include "polygon.h"
 #include "cysift.h"
 #include "csv.h"
 #include "color_map.h"
@@ -1303,7 +1304,7 @@ void CellTable::initialize_cols() {
   
 }
 
-void CellTable::PrintJaccardSimilarity(bool csv, bool sort) const {
+void CellTable::PrintJaccardSimilarity(bool csv, bool sort, bool subset_score) const {
 
   // collect the marker data in one structure
   std::vector<Tag> markers = m_header.GetMarkerTags();
@@ -1332,7 +1333,9 @@ void CellTable::PrintJaccardSimilarity(bool csv, bool sort) const {
   std::vector<std::vector<float>> correlation_matrix(n, std::vector<float>(n, 0));
   for (size_t i = 0; i < n; i++) {
     for (size_t j = i + 1; j < n; j++) {
-      correlation_matrix[i][j] = jaccardSimilarity(data.at(i), data.at(j));
+      correlation_matrix[i][j] = subset_score ?
+	jaccardSubsetSimilarity(data.at(i), data.at(j)) :
+        jaccardSimilarity(data.at(i), data.at(j));      
     }
   }
   
@@ -1383,7 +1386,9 @@ void CellTable::PrintJaccardSimilarity(bool csv, bool sort) const {
 
 int CellTable::PlotPNG(const std::string& file,
 		       float scale_factor,
-		       const std::string& module
+		       const std::string& module,
+		       const std::string& roifile,
+		       const std::string& title
 		       ) const {
   
 #ifdef HAVE_CAIRO
@@ -1391,9 +1396,11 @@ int CellTable::PlotPNG(const std::string& file,
   std::random_device rd; 
   std::mt19937 gen(rd()); 
   std::uniform_int_distribution<> dis(0,1);
-  
-  const float radius_size = 3.0f;
-  const float alpha_val = 0.5f;
+
+  const float micron_per_pixel = 0.325f;
+    
+  const float radius_size = 1.5f;
+  const float alpha_val = 0.8f;
   constexpr float TWO_PI = 2.0 * M_PI;
   
   // get the x y coordinates of the cells
@@ -1406,7 +1413,8 @@ int CellTable::PlotPNG(const std::string& file,
   // open PNG for drawing
   cairo_surface_t *surfacep = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width*scale_factor, height*scale_factor);
   cairo_t *crp = cairo_create (surfacep);
-  cairo_set_source_rgb(crp, 0, 0, 0); // background color
+  cairo_set_source_rgb(crp, 1, 1, 1); // background color
+  cairo_paint(crp);
 
   ColorMap cm;
   std::vector<std::string> labels;
@@ -1420,8 +1428,18 @@ int CellTable::PlotPNG(const std::string& file,
 	"Stroma + Margin",
 	"Stroma"
       };
+  } else if (module == "pdl1") {
+    cm = {color_light_red, color_red, color_light_green, color_dark_green};
+
+    labels = {
+      "Tumor PD-L1 neg",
+      "Tumor PD-L1 pos",
+      "CD163 PD-L1 neg",
+      "CD163 PD-L1 pos"
+    };
+    
   } else if (module == "orion") {
-      cm = {color_light_red, color_light_red,
+      cm = {color_red, color_light_red,
 		 color_purple, color_dark_green, color_light_green,
 		 color_cyan, color_gray};
       labels = {
@@ -1436,7 +1454,7 @@ int CellTable::PlotPNG(const std::string& file,
       
   } else if (module == "prostate") {
 
-      cm = {color_light_red, color_light_red,
+      cm = {color_light_red, color_red,
 		     color_purple, color_dark_green, color_gray};
       labels = {
 	"T-cell PD-1 pos",
@@ -1445,8 +1463,19 @@ int CellTable::PlotPNG(const std::string& file,
 	"AMCAR-pos",
 	"Stromal"
       };
+  } else if (module == "tcell") {
+      cm = {color_light_red, color_red,
+		     color_purple, color_dark_green, color_dark_blue};
+      labels = {
+	"CD3pCD4p",
+	"CD3pCD8p",
+	"CD3p-only",
+	"CD4p-only",
+	"CD8p-only"
+      };
+
   }
-  
+
   // loop and draw
   size_t count = 0;
   for (size_t j = 0; j < CellCount(); j++) { // loop the cells
@@ -1476,7 +1505,8 @@ int CellTable::PlotPNG(const std::string& file,
 	c = color_cyan;
       else if (! (cf & TUMOR_FLAG) && ! (cf & MARGIN_FLAG))
 	c = color_dark_green;
-
+      if (IS_FLAG_SET(pf, ORION_PDL1) && IS_FLAG_SET(pf, ORION_CD163))
+      	c = color_deep_pink;
       
     } else if (module == "prostate") { 
     
@@ -1490,6 +1520,15 @@ int CellTable::PlotPNG(const std::string& file,
 	c = color_dark_green;
       else
 	c = color_gray;
+    } else if (module == "pdl1") {
+      
+      if (IS_FLAG_SET(pf, ORION_PANCK)) {
+	c = IS_FLAG_SET(pf, ORION_PDL1) ? color_red : color_light_red;
+      } else if (IS_FLAG_SET(pf, ORION_CD163)) {
+	c = IS_FLAG_SET(pf, ORION_PDL1) ? color_dark_green : color_light_green;
+      } else {
+	c = color_gray_90;
+      }
       
     } else if (module == "orion") {
 
@@ -1507,14 +1546,31 @@ int CellTable::PlotPNG(const std::string& file,
 	c = color_cyan;      
       else
 	c = color_gray;
-
-  
-    }    
-    cairo_set_source_rgba(crp, c.redf(), c.greenf(), c.bluef(), alpha_val);
-    cairo_arc(crp, x*scale_factor, y*scale_factor, radius_size, 0, TWO_PI);
-    cairo_line_to(crp, x*scale_factor, y*scale_factor);
-    cairo_fill(crp);
+      
+    } else if (module == "tcell") {
+      
+      if (pflag.testAndOr(4096,0) && pflag.testAndOr(64,0)) //CD3pCD4p
+	c = color_light_red;
+      else if (pflag.testAndOr(4096,0) && pflag.testAndOr(256,0)) //CD3pCD8p
+	c = color_light_red;
+      else if (pflag.testAndOr(4096,0) && !IS_FLAG_SET(pf, 64) && !IS_FLAG_SET(pf, 256))
+	c = color_purple;
+      else if (IS_FLAG_SET(pf,64) && !IS_FLAG_SET(pf,4096)) // CD4+CD3-
+	c = color_dark_green;
+      else if (IS_FLAG_SET(pf,256) && !IS_FLAG_SET(pf,4096)) //CD8+CD3-
+	c = color_dark_blue;
+      else// all other
+	c = color_gray_90;
+    } else {
+      std::cerr << "ERROR: UNKNOWN MODULE. Must be one of: orion, prostate, tcell, tumor" << std::endl;
+      assert(false);
+    }
     
+    cairo_set_source_rgba(crp, c.redf(), c.greenf(), c.bluef(), c.alphaf());
+    cairo_arc(crp, x*scale_factor, y*scale_factor, radius_size, 0, TWO_PI);
+    //cairo_line_to(crp, x*scale_factor, y*scale_factor);
+    cairo_fill(crp); 
+
     // red radius
     /*    if (pflag.testAndOr(147456,0) && j % 100000 == 0) { //dis(gen) < 0.00002)  {
       cairo_set_source_rgb(crp, 1, 0, 0);
@@ -1524,6 +1580,51 @@ int CellTable::PlotPNG(const std::string& file,
       }*/
   }
 
+  ////////
+  // ROI
+  // read in the roi file
+  if (!roifile.empty()) {
+    std::vector<Polygon> rois = read_polygons_from_file(roifile);
+    
+    for (const auto& polygon : rois) {
+      
+      if (polygon.size() == 0)
+	continue;
+      
+      // Move to the first vertex
+      auto firstVertex = *polygon.begin();
+      cairo_move_to(crp, firstVertex.first*scale_factor*micron_per_pixel, firstVertex.second*scale_factor*micron_per_pixel);
+      
+      // Draw lines to each subsequent vertex
+      for (const auto& v : polygon) {
+	
+	// draw the points
+	//cairo_set_source_rgba(crp, 1, 0, 0, 1);
+	//cairo_arc(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel, 10, 0, TWO_PI);
+	//cairo_fill(crp);
+	
+	cairo_line_to(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel);
+      }
+      
+      // Close the polygon
+      cairo_close_path(crp);
+      
+      // Set the source color for fill and line (red with high alpha for transparency)
+      cairo_set_source_rgba(crp, 0, 1, 0, 0.5); // Red with alpha = 0.2
+      
+      // Fill the polygon
+      cairo_fill_preserve(crp);
+      
+      // Set the source color for the boundary (solid red)
+      cairo_set_source_rgb(crp, 1, 0, 0); // Solid red
+      
+      // Draw the boundary
+      cairo_stroke(crp);
+    }
+  }
+  
+  ///////
+  // LEGEND
   int legend_width = 3500*scale_factor;
   int legend_height = 400*scale_factor; // Height of each color box
   int font_size = 70;
@@ -1531,13 +1632,30 @@ int CellTable::PlotPNG(const std::string& file,
   int legend_x = width*scale_factor - legend_width - legend_padding;
   int legend_y = legend_padding;
 
-  add_legend_cairo(crp, font_size, legend_width, legend_height, legend_x, legend_y,
-		   cm, labels);
+  const bool legend_on = true;
+  if (legend_on) {
+    add_legend_cairo(crp, font_size, legend_width, legend_height, legend_x, legend_y,
+		     cm, labels);
+  }
+
+  const bool title_on = true && !title.empty();
+  if (title_on) {
+    std::cerr << title << std::endl;
+    cairo_select_font_face(crp, "Arial",
+			   CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    font_size = 50;
+    cairo_set_font_size(crp, font_size); // Adjust font size to your needs
+
+    // Draw the label
+    cairo_set_source_rgb(crp, 0, 0, 0); // Set color to black for the text
+    cairo_move_to(crp, 100, 100); 
+    cairo_show_text(crp, title.c_str());
+  }
   
   cairo_destroy (crp);
   cairo_surface_write_to_png (surfacep, file.c_str());
   cairo_surface_destroy (surfacep);
-  
+
 #else
   std::cerr << "Unable to make PNG -- need to include / link Cairo library" << std::endl;
 #endif
