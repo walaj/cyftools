@@ -785,8 +785,8 @@ int ROIProcessor::ProcessHeader(CellHeader& header) {
 
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
 
-  Tag roi_tag(Tag::CA_TAG,"roi", "");
-  m_header.addTag(roi_tag);
+  //Tag roi_tag(Tag::CA_TAG,"roi", "");
+  //m_header.addTag(roi_tag);
   
   m_header.SortTags();
 
@@ -880,10 +880,14 @@ int ROIProcessor::ProcessLine(Cell& cell) {
     // if point is in this polygon, add the polygon id number to the roi
     if (polygon.PointIn(cell.x,cell.y)) {
 
-      if (m_blacklist_remove && (polygon.Text == "blacklist" || polygon.Name == "blacklist"))
+      if (m_blacklist_remove && (polygon.Text.find("blacklist") != std::string::npos || polygon.Name.find("blacklist") != std::string::npos)) {
 	print_line = false;
-      else 
+      } else if (polygon.Text.find("normal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) {
+	CLEAR_FLAG(cell.cflag, TUMOR_FLAG);
 	print_line = true;
+      } else {
+	print_line = true;
+      }
       
       // uncomment below if want to prevent over-writing existing
       // break;

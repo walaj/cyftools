@@ -46,11 +46,11 @@ for infile in $HOMEBASE/rawcsv/*.csv; do
 	#check_file_exists "$HOMEBASE/header/${base}.header.csv"
 	#~/git/cysift/scripts/cerealed.sh "$HOMEBASE/header/${base}.header.csv" "$HOMEBASE/clean/${base}.cys" 2>/dev/null
 
-	#check_file_exists "$HOMEBASE/clean/${base}.cys"
-	#sbatch ~/git/cysift/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrd.cys" "$HOMEBASE/pheno/${base}.phenotype.csv"
+	check_file_exists "$HOMEBASE/clean/${base}.cys"
+	sbatch ~/git/cysift/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrd.cys" "$HOMEBASE/pheno/${base}.phenotype.csv" "${HOMEBASE}/roi/${base}.roi.csv"
 
-	check_file_exists "${HOMEBASE}/chain/${base}.ptrd.cys"
-	sbatch ~/git/cysift/scripts/margin_noisland.sh "${HOMEBASE}/chain/${base}.ptrd.cys" "${HOMEBASE}/margin_noisland/${base}.ptrdim.cys"
+	#check_file_exists "${HOMEBASE}/chain/${base}.ptrd.cys"
+	#sbatch ~/git/cysift/scripts/margin_noisland.sh "${HOMEBASE}/chain/${base}.ptrd.cys" "${HOMEBASE}/margin_noisland/${base}.ptrdim.cys"
 	
 	#check_file_exists "${base}.cys"
 	#~/git/cysift/scripts/phenotype.sh "${base}.cys" "${base}.phenotype.cys" "${base}.phenotype.csv"
