@@ -44,6 +44,13 @@ else
     exit 1
 fi
 
+## set the roi file
+if [[ -f "$roi_file" ]]; then
+    roicmd="cysift roi - - -b -r $roi_file |"
+else
+    roicmd=""
+fi
+
 if [[ ! -f "$input_file" ]]; then
     echo "Error in chain.sh: File '$input_file' does not exist."
     exit 1
