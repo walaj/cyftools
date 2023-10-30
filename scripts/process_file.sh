@@ -10,8 +10,8 @@ source ~/git/cysift/scripts/config.sh
 # prepare the matlab file
 #matlab -nodisplay -r "run('/home/jaw34/git/cysift/matlab/jerry.m'); exit;"
 
-HOMEBASE=/n/scratch3/users/j/jaw34/projects/prostate/
-#HOMEBASE=/n/scratch3/users/j/jaw34/projects/orion/orion_1_74
+#HOMEBASE=/n/scratch3/users/j/jaw34/projects/prostate/
+HOMEBASE=/n/scratch3/users/j/jaw34/projects/orion/orion_1_74
 for infile in $HOMEBASE/rawcsv/*.csv; do
 
     if [[ ! $infile =~ rar ]]; then
@@ -38,7 +38,6 @@ for infile in $HOMEBASE/rawcsv/*.csv; do
 	#check_file_exists "$HOMEBASE/rawcsv/${base}.rar.csv"
 	#~/git/cysift/scripts/pheno.sh $infile "$HOMEBASE/pheno/${base}.phenotype.csv"
 	
-
 	## Put the cysift headers onto the csv files
 	#check_file_exists "$HOMEBASE/pheno/${base}.phenotype.csv"
 	#~/git/cysift/scripts/header.sh "$HOMEBASE/rawcsv/${base}.rar.csv" "$HOMEBASE/header/${base}.header.csv"
@@ -48,10 +47,10 @@ for infile in $HOMEBASE/rawcsv/*.csv; do
 	#~/git/cysift/scripts/cerealed.sh "$HOMEBASE/header/${base}.header.csv" "$HOMEBASE/clean/${base}.cys" 2>/dev/null
 
 	check_file_exists "$HOMEBASE/clean/${base}.cys"
-	sbatch ~/git/cysift/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrd.cys" "$HOMEBASE/pheno/${base}.phenotype.csv"
-
+	sbatch ~/git/cysift/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrd.cys" "$HOMEBASE/pheno/${base}.phenotype.csv" "${HOMEBASE}/roi/${base}.roi.csv"
+	
 	#check_file_exists "${HOMEBASE}/chain/${base}.ptrd.cys"
-	#sbatch ~/git/cysift/scripts/margin.sh "${HOMEBASE}/chain/${base}.ptrd.cys" "${HOMEBASE}/margin/${base}.ptrdim.cys"
+	#sbatch ~/git/cysift/scripts/margin_noisland.sh "${HOMEBASE}/chain/${base}.ptrd.cys" "${HOMEBASE}/margin_noisland/${base}.ptrdim.cys"
 	
 	#check_file_exists "${base}.cys"
 	#~/git/cysift/scripts/phenotype.sh "${base}.cys" "${base}.phenotype.cys" "${base}.phenotype.csv"

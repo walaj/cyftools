@@ -10,6 +10,7 @@
 input_file=$1
 output_file=$2
 pheno_file=$3
+roi_file=$4
 
 source ~/git/cysift/scripts/config.sh
 
@@ -43,15 +44,31 @@ else
     exit 1
 fi
 
+## set the roi file
+if [[ -f "$roi_file" ]]; then
+    roicmd="cysift roi - - -b -r $roi_file |"
+else
+    roicmd=""
+fi
 
 if [[ ! -f "$input_file" ]]; then
     echo "Error in chain.sh: File '$input_file' does not exist."
     exit 1
+elif [[ "$input_file" == *"LSP10388"* || "$input_file" == *"LSP10353"* || "$input_file" == *"LSP10375"* || "$input_file" == *"LSP10364"* ]]; then
+    # Your slightly different command here
+    echo "Running the rescale version for LSP10388, LSP10353, LSP10375, or LSP10364"
+    cmd="cysift rescale $input_file -f 1.015625 - | cysift pheno ${V} - -t $pheno_file - |\
+    		      cysift filter - - -a 131072 ${V} |\
+		      cysift tumor - - -f 0.33 -k 25 -t ${T} ${V} | $roicmd \
+		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |\
+		      cysift delaunay -l 20 - ${output_file}"
+    echo "$cmd"
+    eval "$cmd"    
 else
     echo "...running: cysift chain on ${base}"
     cmd="cysift pheno ${V} $input_file -t $pheno_file - |\
-    		      cysift filter - - -a 4 ${V} |\
-		      cysift tumor - - -f 0.50 -k 25 -t ${T} ${V} |\
+    		      cysift filter - - -a 131072 ${V} |\
+		      cysift tumor - - -f 0.33 -k 25 -t ${T} ${V} | $roicmd \
 		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |\
 		      cysift delaunay -l 20 - ${output_file}"
     echo "$cmd"

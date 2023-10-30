@@ -16,8 +16,8 @@ if [[ ! -f "$input_file" ]]; then
     echo "Error: File '$input_file' does not exist."
     exit 1
 else
-    #echo "... running: gunzip -c $input_file | cysift radialdens - - -f ${RAD} | cysift clean - -G $output_file    "
-    #gunzip -c $input_file | cysift radialdens - - -f ${RAD} | cysift clean - -G $output_file
-    echo "... running: cysift island $input_file - -n 5000 -T | cysift island - - -S -n 5000 | cysift margin - ${output_file}"
-    cysift island $input_file - -n 5000 -T | cysift island - - -S -n 5000 | cysift margin - ${output_file}
+    cmd="cysift margin -d $input_file ${output_file}"
+    echo "$cmd"
+    eval "$cmd"
+##    cysift island $input_file - -n 5000 -T | cysift island - - -S -n 5000 | cysift margin - ${output_file}
 fi
