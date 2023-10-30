@@ -122,7 +122,6 @@ if (FALSE) {
     dt[ , allcount       := fread(cmd=paste("cysift count", tmpfile))$V1]
 
     # indivdual cell counts
-    cat("...cell count\n")
     drr = fread(cmd=paste("cysift cellcount", tmpfile," - -a 133120 -a 10240 -a 36864 -a 32832 | cysift view -"))
     dt[, cd31count := drr$V28]
     dt[, cd45count := drr$V29]
@@ -143,7 +142,7 @@ if (FALSE) {
     dt[ , cd3pd1count    := drr$V47]
     dt[ , cd4pd1count    := drr$V48]
     
-    cat("...means\n")
+    ## radial means
     tmpfile2 <- paste0("/tmp/", generate_random_string(8))
 
     drr <- fread(cmd=paste("cysift filter -a 131072", tmpfile, tmpfile2, "&& cysift mean", tmpfile2, "-",

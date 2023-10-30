@@ -147,10 +147,13 @@ int CellCountProcessor::ProcessLine(Cell& cell) {
   for (size_t i = m_num_marker_tags; i < (m_num_marker_tags + m_additional_flags.size()); i++) {
     //if (cell.id==33)
     //std::cerr << " i " << i << " m_additiona  "<< m_additional_flags[i-m_num_marker_tags] << std::endl;
-    if (IS_FLAG_SET(cell.pflag, m_additional_flags[i - m_num_marker_tags]))
+    if (m_additional_flags[i-m_num_marker_tags] == 0) {
+      m_counts[i] += (cell.pflag == 0);
+    } else if (IS_FLAG_SET(cell.pflag, m_additional_flags[i - m_num_marker_tags])) {
       m_counts[i]++;
+    }
   }
-
+  
   return CellProcessor::NO_WRITE_CELL;
 }
 

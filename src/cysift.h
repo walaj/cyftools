@@ -26,6 +26,9 @@
 // Macro to test if any of the flags are set
 #define IS_FLAG_SET_OR(flags, flag) ((flags) & (flag))
 
+// are all flags off
+#define ARE_FLAGS_OFF(flags, flag) (((flags) & (flag)) == 0)
+
 // Macro to set a flag
 #define SET_FLAG(flags, flag) ((flags) |= (flag))
 
