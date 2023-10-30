@@ -876,13 +876,13 @@ int ROIProcessor::ProcessLine(Cell& cell) {
 
   // Loop the table and check if the cell is in the ROI
   bool print_line = m_blacklist_remove;
-  
+
   // Loop through all polygons and check if the point is inside any of them
   for (const auto &polygon : m_rois) {
-    
+
     // if point is in this polygon, add the polygon id number to the roi
     if (polygon.PointIn(cell.x,cell.y)) {
-
+      
       if (m_blacklist_remove && (polygon.Text.find("blacklist") != std::string::npos || polygon.Name.find("blacklist") != std::string::npos)) {
 	print_line = false;
       } else if (polygon.Text.find("normal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) {

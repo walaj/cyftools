@@ -1806,20 +1806,28 @@ static void parseRunOptions(int argc, char** argv) {
 }
 
 static int roifunc(int argc, char** argv) {
-  const char* shortopts = "vn:r:b";
+  const char* shortopts = "vn:r:bm:";
   
   std::string roifile;
   bool blacklist = false;
+  float micron_per_pixel = 0;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'n' : arg >> opt::n; break;
     case 'r' : arg >> roifile; break;
+    case 'm' : arg >> micron_per_pixel; break;
     case 'b' : blacklist = true; break;
     default: die = true;
     }
   }
+
+  if (micron_per_pixel == 0) {
+    std::cerr << "WARNING: Must input a micron-per-pixel scale factor" << std::endl;
+    die = true;
+  }
+    
   
   if (die || roifile.empty() || in_out_process(argc, argv)) {
     
@@ -1828,6 +1836,7 @@ static int roifunc(int argc, char** argv) {
       "  Subset or label the cells to only those contained in the rois\n"
       "  cysfile: filepath or a '-' to stream to stdin\n"
       "  -r <roifile>              ROI file\n"
+      "  -m <float>                Microns per pixel scale factor\n"
       "  -b                        Flag to look for \"blacklist\" keyword and remove cells in these regions\n"
       "  -l                        Output all cells and add \"roi\" column with ROI label\n"      
       "  -v, --verbose             Increase output to stderr"
@@ -1838,6 +1847,15 @@ static int roifunc(int argc, char** argv) {
 
   // read in the roi file
   std::vector<Polygon> rois = read_polygons_from_file(roifile);
+
+  // scale the polygons
+  for (auto& p : rois) {
+    for (auto& v : p.vertices) {
+      v.first *= micron_per_pixel;
+      v.second *= micron_per_pixel;
+    }
+  }
+    
 
   if (opt::verbose)
     for (const auto& c : rois)
