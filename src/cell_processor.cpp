@@ -517,6 +517,23 @@ void CountProcessor::PrintCount() {
   std::cout << m_count << std::endl;
 }
 
+int MagnifyProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+  
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  m_header.SortTags();
+  
+  // just in time output
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+
+  return HEADER_NO_ACTION; 
+
+}
+
 int RescaleProcessor::ProcessHeader(CellHeader& header) {
   m_header = header;
   
@@ -535,6 +552,24 @@ int RescaleProcessor::ProcessHeader(CellHeader& header) {
 }
 
 int RescaleProcessor::ProcessLine(Cell& cell) {
+  
+  size_t i = 0;
+  size_t marker_i = 0;
+  for (auto& m : m_header.GetDataTags()) {
+    if (m.type == Tag::MA_TAG) {
+      if (!IS_FLAG_I_SET(cell.pflag, marker_i)) {
+	cell.cols[i] = 0;
+      }
+      marker_i++;
+    }
+    i++;
+  }
+  
+  return WRITE_CELL;
+}
+
+
+int MagnifyProcessor::ProcessLine(Cell& cell) {
 
   cell.x = cell.x * m_factor;
   cell.y = cell.y * m_factor;
@@ -1012,7 +1047,7 @@ int ViewProcessor::ProcessHeader(CellHeader& header) {
 
   std::unordered_set<size_t> to_remove;
   
-  // find indicies of columns to display
+  // find indices of columns to display
   size_t i = 0;
   if (m_to_view.size()) {
     for (const auto& t : header.GetAllTags()) {
@@ -1033,10 +1068,23 @@ int ViewProcessor::ProcessHeader(CellHeader& header) {
     m_header.Cut(to_remove);
   }
 
-  
   // print it, that's all
-  if (m_print_header || m_header_only) 
+  if (m_print_header || m_header_only) {
     m_header.Print();
+  // or print as csv version 
+  } else if (m_csv_header) {
+    std::cout << "sid,cid,cflag,pflag,x,y,"; 
+    const auto& tags = m_header.GetDataTags();
+    for (auto it = tags.begin(); it != tags.end(); ++it) {
+      std::cout << it->id;
+      if (std::next(it) != tags.end()) {
+        std::cout << ",";
+      }
+    }
+    std::cout << std::endl;
+  } else if (m_adjacent) {
+    ; // no print
+  }
   
   return m_header_only ? ONLY_WRITE_HEADER : HEADER_NO_ACTION;
   
@@ -1046,7 +1094,7 @@ int ViewProcessor::ProcessLine(Cell& cell) {
 
   // classic view, no cut
   if (!m_to_view.size())  {
-    cell.Print(m_round);
+    m_adjacent ? cell.PrintWithHeader(m_round, m_header) : cell.Print(m_round);    
     return NO_WRITE_CELL; // don't output, since already printing it
   }
   
@@ -1062,7 +1110,8 @@ int ViewProcessor::ProcessLine(Cell& cell) {
     }
   }
   cell.cols = cols_new;
-  cell.Print(m_round);
+  
+  m_adjacent ? cell.PrintWithHeader(m_round, m_header) : cell.Print(m_round);
     
   return NO_WRITE_CELL; // don't output, since already printing it
 }

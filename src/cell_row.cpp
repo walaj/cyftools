@@ -84,6 +84,32 @@ static void printValue(double value, int precision) {
         std::cout << std::fixed << std::setprecision(precision) << roundedValue;
     }
 }
+
+void Cell::PrintWithHeader(int round, const CellHeader& header) const {
+
+  char d = ',';
+
+  uint32_t sampleID = static_cast<uint32_t>(id >> 32); // Extract the first 32 bits
+  uint32_t cellID = static_cast<uint32_t>(id & 0xFFFFFFFF); // Extract the second 32 bits
+  
+  std::cout << "sid:" << sampleID << d << "cid:" << cellID << d << "cflag:" <<cflag <<
+    d << "pflag:" << pflag << d << "x:";
+  printValue(x, round);
+  std::cout << d << "y:";
+  printValue(y, round);  
+
+  // print cols
+  size_t i = 0;
+  for (const auto& t : header.GetDataTags()) {
+    std::cout << d;
+    std::cout << t.id << ":";
+    printWithoutScientific(cols.at(i), round);
+    i++;
+  }
+  
+  std::cout << std::endl;  
+}
+
 void Cell::Print(int round) const {
 
   char d = ',';

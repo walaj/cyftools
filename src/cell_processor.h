@@ -145,6 +145,20 @@ private:
 class RescaleProcessor : public CellProcessor {
 
 public:
+  void SetParams() {}
+  
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+
+private:
+  
+};
+
+
+class MagnifyProcessor : public CellProcessor {
+
+public:
   void SetParams(float factor) {
     m_factor = factor;
   }
@@ -515,6 +529,8 @@ class ViewProcessor : public CellProcessor {
   
   void SetParams(bool print_header,
 		 bool header_only,
+		 bool rheader,
+		 bool adjacent,
 		 int round,
 		 const std::unordered_set<std::string>& include
 		 ) {
@@ -523,7 +539,8 @@ class ViewProcessor : public CellProcessor {
     m_header_only = header_only;
     m_round = round;
     m_to_view = include;
-    
+    m_csv_header = rheader;
+    m_adjacent = adjacent;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -532,6 +549,10 @@ class ViewProcessor : public CellProcessor {
   
  private:
 
+  bool m_csv_header = false;
+
+  bool m_adjacent = false;
+  
   bool m_header_only;
   
   bool m_print_header;
