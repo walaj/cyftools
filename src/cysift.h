@@ -23,6 +23,8 @@
 // Macro to test if a flag is set
 #define IS_FLAG_SET(flags, flag) (((flags) & (flag)) == (flag))
 
+#define IS_FLAG_I_SET(flags, i) ((flags & (1ull << (i))) != 0)
+
 // Macro to test if any of the flags are set
 #define IS_FLAG_SET_OR(flags, flag) ((flags) & (flag))
 

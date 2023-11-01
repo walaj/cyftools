@@ -78,7 +78,8 @@ static const char *RUN_USAGE_MESSAGE =
 "  sampleselect- Select a particular sample from a multi-sample file\n"
 "  pheno       - Phenotype cells (set the phenotype flags)\n"
 "  cellcount   - Provide total slide cell count for each cell type\n"
-"  rescale     - Rescale the x and y coordinates\n"
+"  magnify     - Rescale the x and y coordinates\n"
+"  rescale     - Rescale the marker intensities similar to scimap\n"
 " --- Numeric ---\n"
 "  mean        - Collapse to mean of each column\n"  
 "  divide      - Divide two columns\n"
@@ -111,6 +112,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  synth       - Various approaches for creating synthetic data\n"  
 "\n";
 
+static int magnifyfunc(int argc, char** argv);
 static int rescalefunc(int argc, char** argv);
 static int islandfunc(int argc, char** argv);
 static int marginfunc(int argc, char** argv);
@@ -231,6 +233,8 @@ int main(int argc, char **argv) {
     val = cutfunc(argc, argv);
   } else if (opt::module == "rescale") {
     val = rescalefunc(argc, argv);
+  } else if (opt::module == "magnify") {
+    val = magnifyfunc(argc, argv);
   } else if (opt::module == "cereal") {
     val = cerealfunc(argc, argv);
   } else if (opt::module == "mean") {
@@ -305,13 +309,14 @@ static void build_table() {
   
 }
 
-static int rescalefunc(int argc, char** argv) {
+static int magnifyfunc(int argc, char** argv) {
   const char* shortopts = "vf:";
 
   float factor = 1;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
+    case 'v' : opt::verbose = true; break;      
     case 'f' : arg >> factor; break;
     default: die = true;
     }
@@ -320,7 +325,7 @@ static int rescalefunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
-      "Usage: cysift rescale [cysfile]\n"
+      "Usage: cysift magnify [cysfile]\n"
       "  Rescale the x and y coordinates\n"
       "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -f <float>     Scale factor (default 1)\n"
@@ -329,7 +334,7 @@ static int rescalefunc(int argc, char** argv) {
     return 1;
   }
 
-  RescaleProcessor res;
+  MagnifyProcessor res;
   res.SetCommonParams(opt::outfile, cmd_input, opt::verbose); 
   res.SetParams(factor);
   
@@ -337,6 +342,38 @@ static int rescalefunc(int argc, char** argv) {
     return 1; // non-zero status on StreamTable
   return 0;
 }
+
+static int rescalefunc(int argc, char** argv) {
+  const char* shortopts = "v";
+
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cysift rescale [cysfile]\n"
+      "  Rescale the marker intensities similar to scimap\n"
+      "    cysfile: filepath or a '-' to stream to stdin\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  RescaleProcessor res;
+  res.SetCommonParams(opt::outfile, cmd_input, opt::verbose); 
+  //res.SetParams(factor);
+  
+  if (table.StreamTable(res, opt::infile)) 
+    return 1; // non-zero status on StreamTable
+  return 0;
+}
+
 
 static int reheaderfunc(int argc, char** argv) {
 
@@ -1787,6 +1824,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "radialdens" || opt::module == "margin" ||
 	 opt::module == "scramble" || opt::module == "scatter" ||
 	 opt::module == "hallucinate" || opt::module == "summary" ||
+	 opt::module == "magnify" ||
 	 opt::module == "island" || opt::module == "rescale" || 
 	 opt::module == "jaccard" || opt::module == "cellcount" ||
 	 opt::module == "synth" || opt::module == "trim" || 
@@ -1874,8 +1912,10 @@ static int roifunc(int argc, char** argv) {
 
 static int viewfunc(int argc, char** argv) {
   
-  const char* shortopts = "vn:hHx:";
+  const char* shortopts = "vn:hHRAx:";
   int precision = 2;
+  bool rheader = false;  // view as csv with csv header
+  bool adjacent = false; // view as name:value
   std::string cut; // list of markers, csv separated, to cut on
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1883,11 +1923,18 @@ static int viewfunc(int argc, char** argv) {
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'n' : arg >> precision; break;
-    case 'x' : arg >> cut; break;      
+    case 'x' : arg >> cut; break;
+    case 'A' : adjacent = true; break;
+    case 'R' : rheader = true; break;
     case 'h' : opt::header = true; break;
     case 'H' : opt::header_only = true; break;
     default: die = true;
     }
+  }
+
+  if (rheader + adjacent + opt::header_only + opt::header > 1) {
+    std::cerr << "Warning: Can only chose one of A, R, h, H" << std::endl;
+    die = true;
   }
   
   if (die || in_only_process(argc, argv)) {
@@ -1900,6 +1947,8 @@ static int viewfunc(int argc, char** argv) {
       "  <cysfile>                  File path or '-' to stream from stdin.\n"
       "\n"
       "Optional Options:\n"
+      "  -R                         Flag to print with header in csv format\n"
+      "  -A                         Flag to print as name:value format\n"      
       "  -x <fields>                Comma-separated list of fields to trim output to.\n"
       "  -n <decimals>              Number of decimals to keep. Default is -1 (no change).\n"
       "  -H                         View only the header.\n"
@@ -1925,7 +1974,7 @@ static int viewfunc(int argc, char** argv) {
   table.setVerbose(opt::verbose);
   
   ViewProcessor viewp;
-  viewp.SetParams(opt::header, opt::header_only, precision, tokens);
+  viewp.SetParams(opt::header, opt::header_only, rheader, adjacent, precision, tokens);
 
   table.StreamTable(viewp, opt::infile);
   
