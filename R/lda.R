@@ -3,10 +3,10 @@ library(jsonlite)
 library(reshape2)
 library(ggplot2)
 
-model_file <- "~/Desktop/lda7M.200r.50its.12t.tumor.json"
-model_file <- c("~/Sorger/orion/tmp/scramble.s0.l42.json",
-                "~/Sorger/orion/tmp/scramble.s0.l100.json",
-                "~/Sorger/orion/tmp/scramble.s0.l200.json")
+model_file <- "~/Sorger/projects/prostate/lda_model"
+#model_file <- c("~/Sorger/orion/tmp/scramble.s0.l42.json",
+#                "~/Sorger/orion/tmp/scramble.s0.l100.json",
+#                "~/Sorger/orion/tmp/scramble.s0.l200.json")
 
 beta_dt <- rbindlist(lapply(model_file, function(x) {
   # Replace "path_to_your_file.json" with the actual path to your JSON file
