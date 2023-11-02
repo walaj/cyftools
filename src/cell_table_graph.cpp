@@ -90,9 +90,13 @@ void CellTable::UMAP(int num_neighbors) {
 #pragma omp parallel for num_threads(m_threads)
   for (size_t i = 0; i < nobs; ++i) {
     if (i % 50000 == 0 && m_verbose)
-      std::cerr << "...working on cell " <<
-	AddCommas(i) << " with thread " <<
-	omp_get_thread_num() << " K " << num_neighbors << std::endl;
+      std::cerr << "...processing cell "
+		<< std::setw(12) << std::left << AddCommas(i) // Set width to 12 and left justify
+		<< " on thread "
+		<< std::setw(2) << std::left << omp_get_thread_num() // Set width to 2 and left justify
+		<< " K "
+		<< std::setw(3) << std::left << num_neighbors // Set width to 3 and left justify
+		<< std::endl;      
     
     JNeighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
     
