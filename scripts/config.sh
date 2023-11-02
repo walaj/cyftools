@@ -25,7 +25,7 @@ function check_file_exists {
 function contains_string {
     local list="$1"
     local string_to_check="$2"
-    local match_found=0
+    local match_found=1
 
     IFS=',' read -ra ADDR <<< "$list"
     for i in "${ADDR[@]}"; do
