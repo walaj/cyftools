@@ -729,32 +729,27 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint dist) {
     
     // verbose printing
     if (i % 50000 == 0 && m_verbose)
-      std::cerr << "...working on cell " << AddCommas(i) << 
-	" K " << num_neighbors << " Dist: " << dist <<
+      std::cerr << "...working on cell " << setw(8) << AddCommas(i) << 
+	" K " << setw(3) << num_neighbors << " Dist: " << dist <<
 	std::endl;
     
     JNeighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
+
+    // distance trim
+    neigh.erase(
+		std::remove_if(neigh.begin(), neigh.end(), 
+			       [dist](const std::pair<int, float>& p) { return p.second > dist; }),
+		neigh.end()
+		);
     
-    CellNode node;
-    
-    // add the cell flags to count marks
-    std::vector<cy_uint> cflag_vec(neigh.size());
-    for (size_t j = 0; j < neigh.size(); j++) {
-      cflag_vec[j] = m_cflag_ptr->at(neigh.at(j).first);
-    }
-
-    assert(cflag_vec.size() == neigh.size());
-
-    // make the node
-    node = CellNode(neigh, cflag_vec);
-
     // finally do tumor stuff
-    node.sort_ascending_distance();
     float tumor_cell_count = 0;
-    for (size_t j = 0; j < node.size(); j++) {
+    for (size_t j = 0; j < neigh.size(); j++) {
+      
+      size_t indexr = neigh.at(j).first;
       
       //debug
-      /*      size_t indexr = node.neighbors_.at(j).first;
+      /*
       if (m_x_ptr->at(i) == 453 & m_y_ptr->at(i) == 5421)      
 	std::cerr << " x " << m_x_ptr->at(indexr) << " y " <<
 	  m_y_ptr->at(indexr) << " panck " << IS_FLAG_SET(node.m_flags.at(j), MARK_FLAG) <<
@@ -765,11 +760,11 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint dist) {
 	  " id " << m_id_ptr->at(indexr) << std::endl;
       */
       
-      if (IS_FLAG_SET(node.m_flags.at(j), MARK_FLAG)) {
+      if (IS_FLAG_SET(m_cflag_ptr->at(indexr), MARK_FLAG)) {
       	tumor_cell_count++;
       }
     }
-
+    
     // debug
     /*if (m_x_ptr->at(i) == 453 & m_y_ptr->at(i) == 5421)
       std::cerr << " node size " << node.size() <<
@@ -777,7 +772,7 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint dist) {
 	tumor_cell_count << std::endl;
     */
     
-    if (tumor_cell_count / static_cast<float>(node.size()) >= frac)
+    if (tumor_cell_count / static_cast<float>(neigh.size()) >= frac)
       SET_FLAG((*m_cflag_ptr)[i], TUMOR_FLAG); 
 
   }// end for

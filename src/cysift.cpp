@@ -1667,9 +1667,9 @@ static int tumorfunc(int argc, char** argv) {
 
   const char* shortopts = "vt:k:f:d:";
 
-  float dist = 200;
-  int n = 20;
-  float frac = 0.75;
+  float dist = 100000;
+  int n = 25;
+  float frac = 0.50;
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -1689,9 +1689,9 @@ static int tumorfunc(int argc, char** argv) {
       "Usage: cysift tumor [cysfile]\n"
       "  Set the flag on whether a cell is in the tumor region, using marked cells\n"
       "    cysfile: filepath or a '-' to stream to stdin\n"
-      "    -k [20]               Number of neighbors\n"
-      "    -f [0.75]             Fraction of neighbors\n"
-      "    -d [200]              Max distance to consider\n"
+      "    -k [25]               Number of neighbors\n"
+      "    -f [0.50]             Fraction of neighbors\n"
+      "    -d [100000]            Max distance to consider\n"
       "    -v, --verbose         Increase output to stderr\n"
       "  Example: cysift filter -a 4 <in.cys> - | cysift tumor - <out.cys>\n"
       "\n";
