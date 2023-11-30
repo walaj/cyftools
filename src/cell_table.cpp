@@ -99,9 +99,10 @@ struct jline_eq {
     }
 };
 
-bool CellTable::ContainsColumn(const std::string& name) const {
-  return m_table.count(name) > 0;
+bool CellTable::HasColumn(const std::string& col) const {
+  return m_table.find(col) != m_table.end();
 }
+
 
 CellTable::CellTable(size_t num_cells) {
 
@@ -1247,10 +1248,6 @@ void CellTable::SubsetROI(const std::vector<Polygon> &polygons) {
   }
 }
 
-bool CellTable::HasColumn(const std::string& col) const {
-  return m_table.find(col) != m_table.end();
-}
-
 void CellTable::print_correlation_matrix(const std::vector<std::string>& labels,
 					 const std::vector<std::vector<float>>& correlation_matrix,
 					 bool sort) const {
@@ -1393,11 +1390,18 @@ int CellTable::PlotPNG(const std::string& file,
   
 #ifdef HAVE_CAIRO
 
+  // jerry column
+  const auto region_it = m_table.find("Region");
+  if (region_it == m_table.end()) {
+    std::cerr << "Warning: 'Region' not found in the table." << std::endl;
+  }
+  
   std::random_device rd; 
   std::mt19937 gen(rd()); 
   std::uniform_int_distribution<> dis(0,1);
 
   const float micron_per_pixel = 0.325f;
+  //const float micron_per_pixel = 1.0f;
     
   const float radius_size = 1.5f;
   const float alpha_val = 0.8f;
@@ -1421,21 +1425,35 @@ int CellTable::PlotPNG(const std::string& file,
 
   if (module == "tumor") {
       cm = {color_purple, color_red,
-		     color_cyan, color_dark_green}; 
+	    color_cyan, color_dark_green
+	    //	    color_dark_blue, color_deep_pink,
+      }; 
       labels = {
 	"Tumor + Margin",
 	"Tumor + Core",    
 	"Stroma + Margin",
 	"Stroma"
+	//"Jerry only", //CD163 PD-L1 neg",
+	//"Jerry + tumor" //CD163 PD-L1 pos",
       };
   } else if (module == "pdl1") {
     cm = {color_light_red, color_red, color_light_green, color_dark_green};
 
     labels = {
-      "Tumor PD-L1 neg",
-      "Tumor PD-L1 pos",
+      "PanCK PD-L1 neg",
+      "PanCK PD-L1 pos",
       "CD163 PD-L1 neg",
       "CD163 PD-L1 pos"
+    };
+  } else if (module == "prostateimmune") {
+
+    cm = {color_light_red, color_yellow, color_deep_pink, color_light_green}; 
+
+    labels = {
+      "CD3+",
+      "CD8+",
+      "CD20+",
+      "FOXP3+"
     };
     
   } else if (module == "orion") {
@@ -1446,8 +1464,8 @@ int CellTable::PlotPNG(const std::string& file,
 	"T-cell PD-1 pos",
 	"T-cell PD-1 neg",    
 	"B-cell",
-	"Tumor-cell - PD-L1 pos",
-	"Tumor-cell - PD-L1 neg",
+	"PanCK - PD-L1 pos",
+	"PanCK - PD-L1 neg",
 	"Other PD-L1 pos",
 	"Stromal"
       };
@@ -1463,6 +1481,7 @@ int CellTable::PlotPNG(const std::string& file,
 	"AMCAR-pos",
 	"Stromal"
       };
+      
   } else if (module == "tcell") {
       cm = {color_light_red, color_red,
 		     color_purple, color_dark_green, color_dark_blue};
@@ -1473,7 +1492,6 @@ int CellTable::PlotPNG(const std::string& file,
 	"CD4p-only",
 	"CD8p-only"
       };
-
   }
 
   // loop and draw
@@ -1498,15 +1516,25 @@ int CellTable::PlotPNG(const std::string& file,
     if (module == "tumor") {
       
       if (cf & TUMOR_FLAG && cf & MARGIN_FLAG)
-	c = color_purple;
+	c = color_red;
       else if (cf & TUMOR_FLAG && ! (cf & MARGIN_FLAG))
 	c = color_red;
       else if (! (cf & TUMOR_FLAG) && cf & MARGIN_FLAG)
 	c = color_cyan;
       else if (! (cf & TUMOR_FLAG) && ! (cf & MARGIN_FLAG))
 	c = color_dark_green;
+
+      // override temporary
+      /*      if (IS_FLAG_SET(pf, ORION_CD163))
+	c = color_dark_blue;
       if (IS_FLAG_SET(pf, ORION_PDL1) && IS_FLAG_SET(pf, ORION_CD163))
       	c = color_deep_pink;
+      */
+
+      //debug jerry
+      if (region_it->second->at(j) == 1) {
+      	c = IS_FLAG_SET(cf, TUMOR_FLAG) ? color_deep_pink : color_dark_blue;
+      }
       
     } else if (module == "prostate") { 
     
@@ -1520,6 +1548,25 @@ int CellTable::PlotPNG(const std::string& file,
 	c = color_dark_green;
       else
 	c = color_gray;
+
+      //overrite
+      if (IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
+	c = color_deep_pink;
+    } else if (module == "prostateimmune") {
+
+      if (IS_FLAG_SET(pf, PROSTATE_CD3))
+	c = color_light_red;
+      else if (IS_FLAG_SET(pf, PROSTATE_CD8))
+	c = color_yellow;
+      else if (IS_FLAG_SET(pf, PROSTATE_CD20)) 
+	c = color_deep_pink;
+      else if (IS_FLAG_SET(pf, PROSTATE_FOXP3)) 
+	c = color_dark_green;
+      else
+	c = color_gray;
+
+      
+
     } else if (module == "pdl1") {
       
       if (IS_FLAG_SET(pf, ORION_PANCK)) {
@@ -1538,7 +1585,7 @@ int CellTable::PlotPNG(const std::string& file,
 	c = color_light_red;
       else if (pflag.testAndOr(1024,0)) // B-cell
 	c = color_purple;
-      else if (pflag.testAndOr(0,18432) || pflag.testAndOr(0,133120)) // PD-L1 POS tumor cell
+      else if (pflag.testAndOr(0,18432) || pflag.testAndOr(0,ORION_PANCK)) // PD-L1 POS tumor cell
 	c = color_dark_green;
       else if (pflag.testAndOr(147456,0)) // PD-L1 NEG tumor cell
 	c = color_light_green;
@@ -1632,7 +1679,7 @@ int CellTable::PlotPNG(const std::string& file,
   int legend_x = width*scale_factor - legend_width - legend_padding;
   int legend_y = legend_padding;
 
-  const bool legend_on = true;
+  const bool legend_on = false;
   if (legend_on) {
     add_legend_cairo(crp, font_size, legend_width, legend_height, legend_x, legend_y,
 		     cm, labels);
@@ -1709,8 +1756,9 @@ void CellTable::FlagToFlag(const bool clear_flag_to,
   }
 }
 
-void CellTable::ScramblePflag(int seed, bool lock_flags) {
+void CellTable::ScramblePflag(int seed, bool lock_flags, bool phenotype_only) {
 
+  
   validate();
   
   // flags are locked, so we are permuting flags
@@ -1724,6 +1772,12 @@ void CellTable::ScramblePflag(int seed, bool lock_flags) {
 
   // make a random number generator
   std::default_random_engine rng(seed);
+
+#ifdef USE_64_BIT
+#define BIT_LITERAL 1ULL // Unsigned long long literal for 64-bit
+#else
+#define BIT_LITERAL 1u // Unsigned integer literal for 32-bit
+#endif
   
   // flags are not locks, so we are permutting individual bits
 #ifdef USE_64_BIT  
@@ -1738,17 +1792,23 @@ void CellTable::ScramblePflag(int seed, bool lock_flags) {
       cy_uint val = m_pflag_ptr->getData().at(i);
       bits.push_back((val >> bitPos) & 1);
     }
+
+    // skip if nothing to scramble
+    int sum = std::accumulate(bits.begin(), bits.end(), 0);
+    if (!sum) {
+      continue;
+    }
     
-    // Shuffle these bits
+    // Shuffle these bits across cells
     std::shuffle(bits.begin(), bits.end(), rng);
     
     // Set these shuffled bits back to the vector
     for (size_t i = 0; i < new_flags.size(); ++i) {
-      new_flags[i] &= ~(1u << bitPos);           // Clear the bit at bitPos (should already be cleared)
-      new_flags[i] |= (bits[i] << bitPos);       // Set the bit at bitPos if bits[i] is 1
+      new_flags[i] &= ~(BIT_LITERAL << bitPos);
+      new_flags[i] |= (static_cast<cy_uint>(bits[i]) << bitPos);      
     }
   }
-
+  
   // assign the new flags
   m_pflag_ptr = std::make_shared<NumericColumn<cy_uint>>(new_flags);
   validate();

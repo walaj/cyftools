@@ -737,7 +737,7 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint dist) {
     
     CellNode node;
     
-    // add the pheno flags
+    // add the cell flags to count marks
     std::vector<cy_uint> cflag_vec(neigh.size());
     for (size_t j = 0; j < neigh.size(); j++) {
       cflag_vec[j] = m_cflag_ptr->at(neigh.at(j).first);
@@ -752,18 +752,40 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint dist) {
     node.sort_ascending_distance();
     float tumor_cell_count = 0;
     for (size_t j = 0; j < node.size(); j++) {
+      
+      //debug
+      /*      size_t indexr = node.neighbors_.at(j).first;
+      if (m_x_ptr->at(i) == 453 & m_y_ptr->at(i) == 5421)      
+	std::cerr << " x " << m_x_ptr->at(indexr) << " y " <<
+	  m_y_ptr->at(indexr) << " panck " << IS_FLAG_SET(node.m_flags.at(j), MARK_FLAG) <<
+	  " cflag " << m_cflag_ptr->at(indexr) <<
+	  " cflag2 " << cflag_vec[j] << 
+	  " pflag " <<
+	  m_pflag_ptr->at(indexr) <<
+	  " id " << m_id_ptr->at(indexr) << std::endl;
+      */
+      
       if (IS_FLAG_SET(node.m_flags.at(j), MARK_FLAG)) {
-	tumor_cell_count++;
+      	tumor_cell_count++;
       }
     }
+
+    // debug
+    /*if (m_x_ptr->at(i) == 453 & m_y_ptr->at(i) == 5421)
+      std::cerr << " node size " << node.size() <<
+	" frac " << frac << " tumor_cell_count " <<
+	tumor_cell_count << std::endl;
+    */
     
     if (tumor_cell_count / static_cast<float>(node.size()) >= frac)
       SET_FLAG((*m_cflag_ptr)[i], TUMOR_FLAG); 
 
-    // clear the mark
-    CLEAR_FLAG((*m_cflag_ptr)[i], MARK_FLAG);
-    
   }// end for
+
+  // clear the marks now that all done
+  for (size_t i = 0; i < nobs; ++i) {
+    CLEAR_FLAG((*m_cflag_ptr)[i], MARK_FLAG);
+  }
   
 #else
   std::cerr << "Warning: tumor call function requires including header library knncolle (https://github.com/LTLA/knncolle)" <<
@@ -829,6 +851,9 @@ void CellTable::TumorMargin(float dist) {
 
     const bool cell_is_tumor = IS_FLAG_SET(m_cflag_ptr->at(i), TUMOR_FLAG);
 
+    // clear current margin flag
+    CLEAR_FLAG((*m_cflag_ptr)[i], MARGIN_FLAG); 
+    
     // loop the nodes connected to each cell
     for (size_t n = 0; n < ind.size(); n++) {
       const uint32_t ncflag = m_cflag_ptr->at(ind.at(n)); // neighbor c flag
@@ -1002,8 +1027,8 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
 
   validate();
   
-  // store the densities
-  std::vector<std::shared_ptr<FloatCol>> dc(inner.size());
+  // store the densities plus total cell count
+  std::vector<std::shared_ptr<FloatCol>> dc(inner.size() + 1);
   for(auto& ptr : dc) {
     ptr = std::make_shared<FloatCol>();
     ptr->resize(m_pflag_ptr->size());
@@ -1142,11 +1167,11 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
     // do the density calculation for each condition
     // remember, i is iterator over cells, j is over conditions
     for (size_t j = 0; j < area.size(); ++j) {
-      float value = cell_count[j] * 1000000 / area[j]; // density per 1000 square pixels
+      float value = cell_count[j] * 1000000 / area[j]; // density per 1000 square um
       if (normalize_local[j] != 0) // normalize to cell count in the radius
 	value = total_cell_count[j] == 0 ? 0 : value / total_cell_count[j];
-      if (normalize_global[j] != 0 && flag_count[j] != 0) // normalize to cell count in the image
-	value = total_cell_count[j] == 0 ? 0 : value / flag_count[j] * total_image_cell_count;
+      //if (normalize_global[j] != 0 && flag_count[j] != 0) // normalize to cell count in the image
+      //	value = total_cell_count[j] == 0 ? 0 : value / flag_count[j] * total_image_cell_count;
       dc[j]->SetNumericElem(value, i);
     }
   
@@ -1155,7 +1180,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
       std::cerr << std::fixed << "...cell " << std::setw(11) << AddCommas(i) 
 		<< " thr " << std::setw(2) << omp_get_thread_num() 
 		<< " %done: " << std::setw(3) << static_cast<int>(static_cast<float>(countr) / m_pflag_ptr->size() * 100) 
-		<< " density: ";
+		<< " count: ";
       
       for (size_t j = 5; j < dc.size(); j++) {
 	std::cerr << std::setw(12) << static_cast<int>(std::round(dc.at(j)->getData().at(i))) << " ";

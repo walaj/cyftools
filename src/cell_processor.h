@@ -261,7 +261,7 @@ class CutProcessor : public CellProcessor {
   
   std::unordered_set<std::string> m_include;
   
-  std::unordered_set<size_t> m_to_remove;
+  std::unordered_set<size_t> m_data_to_keep;
 
 };
 

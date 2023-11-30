@@ -884,12 +884,14 @@ static int hallucinatefunc(int argc, char** argv) {
 
 static int scramblefunc(int argc, char** argv) {
 
-  const char* shortopts = "vPs:";
+  const char* shortopts = "vPs:p";
   bool lock_flags = false;
+  bool phenotype_only = false; // scramble only the phenotype flags, leaving cell flags intact
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'P' : lock_flags = true; break;
+    case 'p' : phenotype_only = true; break;
     case 'v' : opt::verbose = true; break;
     case 's' : arg >> opt::seed; break;
     default: die = true;
@@ -900,7 +902,7 @@ static int scramblefunc(int argc, char** argv) {
 
     const char *USAGE_MESSAGE = 
       "Usage: cysift scramble <input_cysfile> [output_cysfile]\n"
-      "  Scrambles the cell flag labels among cells. Essentially, cell frequencies stay the same\n"
+      "  Scrambles the phenotype and cell flags among cells. Essentially, cell frequencies stay the same\n"
       "  and slide morphology, but the labels on each cell are scrambled.\n"
       "\n"
       "Arguments:\n"
@@ -909,6 +911,7 @@ static int scramblefunc(int argc, char** argv) {
       "\n"
       "Optional Options:\n"
       "  -P                        Flag to lock phenotype flags (just permute which cells they go to).\n"
+      "  -p                        Flag to scramble only the phenotype flags (keeping cell flags intact)\n"
       "  -s <int>                  Random seed.\n"
       "  -v, --verbose             Increase output to stderr.\n"
       "\n"
@@ -923,7 +926,7 @@ static int scramblefunc(int argc, char** argv) {
 
   table.SetupOutputWriter(opt::outfile);
 
-  table.ScramblePflag(opt::seed, lock_flags);
+  table.ScramblePflag(opt::seed, lock_flags, phenotype_only);
 
   // print it
   table.OutputTable();
@@ -1165,7 +1168,7 @@ static int ldacreatefunc(int argc, char** argv) {
   std::vector<std::string> markers;
   for (const auto& s : tokens) {
 
-    if (!table.ContainsColumn(s)) {
+    if (!table.HasColumn(s)) {
       std::cerr << "Error: Requested column " << s << " not in table" << std::endl;
       return 1;
     }
@@ -1569,21 +1572,21 @@ static int cutfunc(int argc, char** argv) {
 
     const char *USAGE_MESSAGE = 
       "Usage: cysift cut <input_cysfile> <output_cysfile> -x <marker1,marker2,...> [options]\n"
-      "  Cut the file to only certain markers and output to a .cys file or stream to stdout.\n"
+      "  Cut the file to only certain meta or markers and output to a .cys file or stream to stdout.\n"
       "\n"
       "Arguments:\n"
       "  <input_cysfile>           Input .cys file path or '-' to stream from stdin.\n"
       "  <output_cysfile>          Output .cys file path or '-' to stream as a cys-formatted stream to stdout.\n"
       "\n"
       "Required Options:\n"
-      "  -x <markers>              Comma-separated list of markers to cut to.\n"
+      "  -x <markers>              Comma-separated list of meta or markers to cut to.\n"
       "\n"
       "Optional Options:\n"
       "  -v                        Increase output to stderr.\n"
       "\n"
       "Example:\n"
-      "  cysift cut input.cys output_cut.cys -x marker1,marker2\n"
-      "  cysift cut input.cys - -x marker1,marker2,marker3 -v\n";
+      "  cysift cut input.cys output_cut.cys -x marker1,meta1\n"
+      "  cysift cut input.cys - -x marker1,marker2,meta1 -v\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
