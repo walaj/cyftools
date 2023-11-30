@@ -60,9 +60,10 @@ if [[ ! -f "$input_file" ]]; then
 elif [[ "$input_file" == *"LSP10388"* || "$input_file" == *"LSP10353"* || "$input_file" == *"LSP10375"* || "$input_file" == *"LSP10364"* ]]; then
     # Your slightly different command here
     echo "Running the rescale version for LSP10388, LSP10353, LSP10375, or LSP10364"
-    cmd="cysift rescale $input_file -f 1.015625 - | cysift pheno ${V} - -t $pheno_file - |\
+    cmd="cysift magnify $input_file -f 1.015625 - | cysift pheno ${V} - -t $pheno_file - |\
     		      cysift filter - - -a $TUMOR_MARKER ${V} |\
 		      cysift tumor - - -f 0.25 -k 25 -t ${T} ${V} | $roicmd \
+		      cysift margin -d 100 - - |\
 		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |\
 		      cysift delaunay -l 20 - ${output_file}"
     echo "$cmd"
@@ -72,6 +73,7 @@ else
     cmd="cysift pheno ${V} $input_file -t $pheno_file - |\
     		      cysift filter - - -a $TUMOR_MARKER ${V} |\
 		      cysift tumor - - -f 0.25 -k 25 -t ${T} ${V} | $roicmd \
+		      cysift margin -d 100 - - |\
 		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |\
 		      cysift delaunay -l 20 - ${output_file}"
     echo "$cmd"
