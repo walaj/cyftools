@@ -44,6 +44,8 @@ class Tag {
   
   Tag(const std::string& line);
 
+  bool isData() const { return type == Tag::MA_TAG || type == Tag::CA_TAG; }
+  
   friend std::ostream& operator<<(std::ostream& os, const Tag& tag);
 
   template <class Archive>

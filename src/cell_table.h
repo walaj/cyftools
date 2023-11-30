@@ -101,8 +101,6 @@ public:
 
   friend std::ostream& operator<<(std::ostream& os, const CellTable& table);
 
-  bool ContainsColumn(const std::string& name) const;
-
   size_t CellCount() const;
 
   void PlotASCII(int width, int height) const;
@@ -166,7 +164,7 @@ public:
   //////
   // Null model ops
   //////
-  void ScramblePflag(int seed, bool lock_flags);
+  void ScramblePflag(int seed, bool lock_flags, bool phenotype_only);
   
   //////
   // Subsetting / filtering ops

@@ -381,8 +381,6 @@ int MarkProcessor::ProcessLine(Cell& cell) {
     write_cell = true;
   }
 
-  //std::cerr << " WRITE CELL " << write_cell << std::endl;
-  
   ///////
   // FIELD
   ///////
@@ -410,14 +408,12 @@ int MarkProcessor::ProcessLine(Cell& cell) {
       case optype::EQUAL_TO: write_cell              = write_cell = m_or_toggle ? (write_cell || (value == cc.second)) : (write_cell && (value == cc.second));  break;
       default: assert(false);
       } 
-
-      //std::cerr << " write_cell after " << write_cell << std::endl;
     }
     
   }
 
   write_cell = write_cell && flag_write_cell;
-  
+
   // writing all cells with marks, so can clear the mark
   if (m_trim && write_cell) {
     CLEAR_FLAG(cell.cflag, MARK_FLAG);
@@ -628,17 +624,28 @@ int CutProcessor::ProcessHeader(CellHeader& header) {
 
   m_header = header;
 
-  // find indicies of columns to remove
-  size_t i = 0;
+  // find indicies of columns to keep
+  size_t i = 0; // all tag index
+  std::unordered_set<size_t> m_to_remove;  
+  size_t d = 0; // data tag index
+
   for (const auto& t : header.GetAllTags()) {
 
-    // don't cut non-data tags
-    if (t.type != Tag::MA_TAG && t.type != Tag::CA_TAG)
+    // skip non-data
+    if (!t.isData()) {
+      i++;
       continue;
-    
-    if (!m_include.count(t.id)) {
-      m_to_remove.insert(i);
     }
+
+    // remove meta/marker not in list (for header Cut)
+    if (!m_include.count(t.id)) 
+      m_to_remove.insert(i);
+    else
+      // store the data index, for lookup in cell table
+      m_data_to_keep.insert(d);
+
+    // update iterators
+    d++;
     i++;
   }
   
@@ -663,11 +670,11 @@ int CutProcessor::ProcessLine(Cell& cell) {
   // just transfer to a new set of columns,
   // not including what is to be cut
   std::vector<float> cols_new;
-  assert(cell.cols.size() >= m_to_remove.size());
-  cols_new.reserve(cell.cols.size() - m_to_remove.size());
+  assert(cell.cols.size() >= m_data_to_keep.size());
+  cols_new.reserve(m_data_to_keep.size());
   
   for (size_t i = 0; i < cell.cols.size(); i++) {
-    if (!m_to_remove.count(i)) {
+    if (m_data_to_keep.count(i)) {
       cols_new.push_back(cell.cols.at(i));
     }
   }
@@ -910,7 +917,7 @@ int CleanProcessor::ProcessLine(Cell& cell) {
 int ROIProcessor::ProcessLine(Cell& cell) {
 
   // Loop the table and check if the cell is in the ROI
-  bool print_line = m_blacklist_remove;
+  bool print_line = true; //m_blacklist_remove;
 
   // Loop through all polygons and check if the point is inside any of them
   for (const auto &polygon : m_rois) {
@@ -922,7 +929,11 @@ int ROIProcessor::ProcessLine(Cell& cell) {
 	print_line = false;
       } else if (polygon.Text.find("normal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) {
 	CLEAR_FLAG(cell.cflag, TUMOR_FLAG);
+	CLEAR_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);	
 	print_line = true;
+      } else if (polygon.Text.find("tumor") != std::string::npos || polygon.Name.find("tumor") != std::string::npos) {
+	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);
+	print_line = true;	
       } else {
 	print_line = true;
       }

@@ -3,7 +3,7 @@ library(jsonlite)
 library(reshape2)
 library(ggplot2)
 
-model_file <- "~/Sorger/projects/prostate/lda_model"
+model_file <- "~/Sorger/projects/prostate/scramble/lda_model_scramble"
 #model_file <- c("~/Sorger/orion/tmp/scramble.s0.l42.json",
 #                "~/Sorger/orion/tmp/scramble.s0.l100.json",
 #                "~/Sorger/orion/tmp/scramble.s0.l200.json")
@@ -18,7 +18,7 @@ beta_dt <- rbindlist(lapply(model_file, function(x) {
     data.table(t(json_content$LDAModel$beta))  # transpose to get one row per array
   setnames(beta_dt, colnames(beta_dt), paste("Topic", seq(ncol(beta_dt))))
   markers <- json_content$LDAModel$markers
-  markers_name <- sub("_200r$", "", markers)
+  markers_name <- sub("_20r$", "", markers)
   beta_dt[, marker :=  markers_name]
   beta_dt[, model := basename(x)]
   return (beta_dt)
@@ -39,9 +39,8 @@ g <- ggplot(beta_long, aes(x = factor(marker), y = Distribution, fill=model)) +
   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
         axis.title.x = element_blank(),axis.title.y = element_blank()) +
   facet_wrap(~ Topic, scales = "free") +
-  
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=6),
-        legend.text = element_text(size = 6)) 
+        legend.text = element_text(size = 6)) + coord_flip()
 
 pdf("~/Sorger/figs/lda_scramble_3seedsonscramble.pdf", width=8, height=6, useDingbats = FALSE)
 print(g)
