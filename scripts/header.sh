@@ -5,7 +5,7 @@ source ~/git/cysift/scripts/config.sh
 input_file=$1
 output_file=$2
 
-base=$(basename "$input_file" .csv)
+base=$(basename "$input_file" .rar.csv)
 
 if [[ ! -f "$input_file" ]]; then
     echo "Error: File '$input_file' does not exist."
@@ -26,7 +26,7 @@ elif contains_string "$prostate" "$base"; then
     echo "header.sh: detected Prostate"
     header="/home/jaw34/projects/prostate/header.txt"
 else
-    echo "header.sh: Warning: $input_file doesn't fit into cycif, prostate, orion, etc"
+    echo "header.sh: Warning: $input_file doesn't fit into cycif, prostate, orion, etc. Base: $base"
     exit 1
 fi
 
