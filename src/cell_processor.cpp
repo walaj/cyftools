@@ -505,7 +505,10 @@ int CountProcessor::ProcessHeader(CellHeader& header) {
 }
 
 int CountProcessor::ProcessLine(Cell& cell) {
-  m_count++;
+  
+  if (IS_FLAG_SET(cell.cflag, m_c_and_flags) && IS_FLAG_SET(cell.pflag, m_p_and_flags))
+    m_count++;
+  
   return NO_WRITE_CELL; // do nothing
 }
 
@@ -925,11 +928,13 @@ int ROIProcessor::ProcessLine(Cell& cell) {
     // if point is in this polygon, add the polygon id number to the roi
     if (polygon.PointIn(cell.x,cell.y)) {
       
-      if (m_blacklist_remove && (polygon.Text.find("blacklist") != std::string::npos || polygon.Name.find("blacklist") != std::string::npos)) {
+      if (polygon.Text.find("blacklist") != std::string::npos || polygon.Name.find("blacklist") != std::string::npos ||
+	  polygon.Text.find("rtifact") != std::string::npos || polygon.Name.find("rtifact") != std::string::npos) {
 	print_line = false;
       } else if (polygon.Text.find("normal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) {
 	CLEAR_FLAG(cell.cflag, TUMOR_FLAG);
-	CLEAR_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);	
+	CLEAR_FLAG(cell.cflag, MARGIN_FLAG);	
+	CLEAR_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);
 	print_line = true;
       } else if (polygon.Text.find("tumor") != std::string::npos || polygon.Name.find("tumor") != std::string::npos) {
 	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);

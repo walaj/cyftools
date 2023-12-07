@@ -3007,11 +3007,15 @@ static int sortfunc(int argc, char** argv) {
 
 
 static int countfunc(int argc, char** argv) {
-  const char* shortopts = "v";  
+  const char* shortopts = "va:A:";
+  cy_uint p_and_flags = 0;
+  cy_uint c_and_flags = 0;  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
+    case 'a' : arg >> p_and_flags; break;
+    case 'A' : arg >> c_and_flags; break;      
     default: die = true;
     }
   }
@@ -3022,13 +3026,16 @@ static int countfunc(int argc, char** argv) {
       "Usage: cysift count [cysfile]\n"
       "  Output the number of cells in a file\n"
       "    cysfile: filepath or a '-' to stream to stdin\n"
-      "    -v, --verbose         Increase output to stderr\n"      
+      "    -v, --verbose         Increase output to stderr\n"
+      "    -a                    Phenotype logical AND\n"
+      "    -A                    Cell logical AND\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
   CountProcessor countp;
+  countp.SetParams(p_and_flags, c_and_flags);
   countp.SetCommonParams(opt::outfile, cmd_input, opt::verbose); // really shouldn't need any of these
 
   if (table.StreamTable(countp, opt::infile)) 

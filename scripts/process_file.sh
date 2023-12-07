@@ -12,6 +12,7 @@ source ~/git/cysift/scripts/config.sh
 
 #HOMEBASE=/n/scratch3/users/j/jaw34/projects/prostate/
 HOMEBASE=/n/scratch3/users/j/jaw34/projects/orion/orion_1_74
+HOMEBASE=/Users/jeremiahwala/Sorger/projects/orion/orion_1_74
 for infile in $HOMEBASE/rawcsv/*.csv; do
 
     if [[ ! $infile =~ rar ]]; then
@@ -43,11 +44,11 @@ for infile in $HOMEBASE/rawcsv/*.csv; do
 	#~/git/cysift/scripts/header.sh "$HOMEBASE/rawcsv/${base}.rar.csv" "$HOMEBASE/header/${base}.header.csv"
 
 	## Convert the cysift csv files to cys files
-	check_file_exists "$HOMEBASE/header/${base}.header.csv"
-	~/git/cysift/scripts/cerealed.sh "$HOMEBASE/header/${base}.header.csv" "$HOMEBASE/clean/${base}.cys" 2>/dev/null
+	#check_file_exists "$HOMEBASE/header/${base}.header.csv"
+	#~/git/cysift/scripts/cerealed.sh "$HOMEBASE/header/${base}.header.csv" "$HOMEBASE/clean/${base}.cys" 2>/dev/null
 
 	check_file_exists "$HOMEBASE/clean/${base}.cys"
-	sbatch ~/git/cysift/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrd.cys" "$HOMEBASE/pheno/${base}.phenotype.csv" "${HOMEBASE}/roi/${base}.roi.csv"
+	~/git/cysift/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrd.cys" "$HOMEBASE/pheno/${base}.phenotype.csv" "${HOMEBASE}/roi/${base}.roi.csv"
 
 	#check_file_exists "${HOMEBASE}/chain/${base}.ptrd.cys"
 	#sbatch ~/git/cysift/scripts/margin_noisland.sh "${HOMEBASE}/chain/${base}.ptrd.cys" "${HOMEBASE}/margin_noisland/${base}.ptrdim.cys"

@@ -729,7 +729,7 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint dist) {
     
     // verbose printing
     if (i % 50000 == 0 && m_verbose)
-      std::cerr << "...working on cell " << setw(12) << AddCommas(i) << 
+      std::cerr << "...annoting tumor for cell " << setw(12) << AddCommas(i) << 
 	" K " << setw(3) << num_neighbors << " Dist: " << setw(9) << dist <<
 	" frac " << setw(4) << frac << 
 	std::endl;

@@ -9,6 +9,7 @@ library(data.table)
 library(tidyr)  # For gather()
 library(tidyverse)
 library(ggplot2)
+library(parallel)
 library(survival)
 library(forestplot)
 library(survminer)
@@ -52,6 +53,13 @@ redcap[, side := {
     "Rectal"
   }
 }, by="Slide_ID"]
+
+redcap[, PFSC := ifelse(redcap$PFSCensor==0,1,0)]
+```
+
+```{r kras-km}
+g <- km_plot(rrt, parm="KRAS", parm.name="KRAS", flip=FALSE)
+save_pdf(g, "kras_km.pdf", width=4,height=3)
 ```
 
 ```{r plot-setup-stuff, include=FALSE}
@@ -80,89 +88,148 @@ save_pdf <- function(g, filename, width=10, height=10) {
 
 ```{r cys-read, include=FALSE}
 if (FALSE) {
-  files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/margin_nov/", full.names = TRUE)
+  files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/chain_roi/", full.names = TRUE)
   files <- files[grepl("cys$", files)]
   
   # read all the data as the means within the tumor compartment
-  dtt <- lapply(files, function(f) {
-    cat(basename(f), "\n")
-    fv = "-A 4 -T"
-    tmpfile <- paste0("/tmp/", generate_random_string(8))
-
-    ccmd=paste("cysift scramble",f, "- | cysift filter -", fv, tmpfile)
-    #ccmd=paste("cysift filter",f, fv,tmpfile)
-
-    system(ccmd)
-    dt <- fread(cmd=paste("cysift mean", tmpfile, " - | cysift view - -R"))
-    
-    #setnames(dt, paste0("V",seq(6)), c("sample","cell","x","y","pflag","cflag"))
-    #setnames(dt, paste0("V",seq(7,ncol(dt))), header$id[header$tag_type %in% c("CA","MA")])
-    
-    dt[ , allcount       := fread(cmd=paste("cysift count", tmpfile))$V1]
-
-    # indivdual cell counts
-    drr = fread(cmd=paste("cysift cellcount", tmpfile," - -a 133120 -a 10240 -a 36864 -a 32832 -a 0 | cysift view - -R"))
-    dt[, cd31count := drr$CD31_count]
-    dt[, cd45count := drr$CD45_count]
-    dt[, cd68count := drr$CD68_count]
-    dt[ ,cd4count. := drr$CD4_count]
-    dt[, foxp3count:= drr$FOXP3_count]
-    dt[, cd8count  := drr$CD8a_count]
-    dt[, cd45rocount  := drr$CD45RO_count]
-    dt[, cd20count := drr$CD20_count]
-    dt[, pdl1count := drr$`PD-L1_count`]
-    dt[, cd3count := drr$CD3e_count]
-    dt[, cd163count := drr$CD163_count]
-    dt[, pd1count := drr$`PD-1_count`]
-    dt[, panckcount := drr$`Pan-CK_count`]
-    dt[, smacount := drr$SMA_count]
-    dt[ , pdl1panckcount := drr$`133120_count`]
-    dt[ , pdl1cd163count := drr$`10240_count`]
-    dt[ , cd3pd1count    := drr$`36864_count`]
-    dt[ , cd4pd1count    := drr$`32832_count`]
-    
-    # ## radial means
-    # tmpfile2 <- paste0("/tmp/", generate_random_string(8))
-    # 
-    # drr <- fread(cmd=paste("cysift filter -a 131072", tmpfile, tmpfile2, "&& cysift mean", tmpfile2, "-",
-    #                        "| cysift view -"))
-    # file.remove(tmpfile2)
-    # 
-    # dt[, panckcd3_20r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD3_20r") + 6)]]]
-    # dt[, panckcd4_20r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD4_20r") + 6)]]]
-    # dt[, panckcd8_20r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD8_20r") + 6)]]]
-    # dt[, panckcd3_200r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD3_200r") + 6)]]]
-    # dt[, panckcd4_200r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD4_200r") + 6)]]]
-    # dt[, panckcd8_200r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD8_200r") + 6)]]]
-    # dt[, panckcd163pdl1_200r  := drr[[paste0("V",which(header$id[header$tag_type %in% c("CA","MA")] == "CD163pPDL1_200r") + 6)]]]
-    # 
-    dt[, Slide_ID := sub("^(LSP[0-9]+).*", "\\1", basename(f))]
-    dt[, margin := "scramble"]
-    file.remove(tmpfile)
-    return(dt)
+  nn <- c("tumor"="-A 1", "stroma"="-N 1","all"="", "scramble_tumor"="-A 1", "scramble_stroma"="-N 1","tumor_margin"="-A 5","stroma_margin"="-A 4 -N 1","margin"="-A 4","tumor_core"="-A 1 -N 4","stroma_core"="-N 5","tumor_manual"="-A 8",
+          "tumor_manual_panck"="-A 8 -a 131072")
+  
+  column_mapping = c(cd31count = "CD31_count", cd45count = "CD45_count", cd68count = "CD68_count", cd4count = "CD4_count", foxp3count = "FOXP3_count", cd8count = "CD8a_count", cd45rocount = "CD45RO_count", cd20count = "CD20_count", pdl1count = "PD-L1_count", cd3count = "CD3e_count", cd163count = "CD163_count", pd1count = "PD-1_count", panckcount = "Pan-CK_count", smacount = "SMA_count", pdl1panckcount = "133120_count", pdl1cd163count = "10240_count", cd3pd1count = "36864_count", cd4pd1count = "32832_count",panckcd3count = "135168_count")
+  
+  lapply(seq_along(nn)[11], function(n) {
+    dtt <- lapply(files[1:5], function(f) {
+      
+      cat(basename(f), " - ", names(nn)[n], "\n")
+      tmpfile <- paste0("/tmp/", generate_random_string(8))
+      
+      if (system(paste("cysift count -A 8",f, nn[n]), intern=TRUE)=="0") {
+        cat("no manual annotations for ", basename(f),"\n")
+        return(data.table())
+      }
+      
+      if (grepl("scramble", names(nn)[n])) {
+        ccmd=paste("cysift scramble",f, "- | cysift filter -T -", nn[n], tmpfile)
+      } else { 
+        ccmd=paste("cysift filter -T",f, nn[n],tmpfile)
+      }
+      system(ccmd)
+      
+      dt <- fread(cmd=paste("cysift mean", tmpfile, " - | cysift view - -R"))
+      dt[,c("sid","cid","cflag","pflag","x","y","Hoechst","AF1","CD31","CD45","CD68","Argo550","CD4","FOXP3","CD8a","CD45RO",
+            "CD20","PD-L1","CD3e","CD163","E-cadherin","PD-1","Ki67","Pan-CK","SMA","Area","Region") := NULL]
+      dt[ , allcount       := fread(cmd=paste("cysift count", tmpfile))$V1]
+      
+      # individual cell counts
+      drr = fread(cmd=paste("cysift cellcount", tmpfile," - -a 133120 -a 10240 -a 36864 -a 32832 -a 0 -a 135168 | cysift view - -R"))
+      drr[,c("sid","cid","cflag","pflag","x","y","Hoechst","AF1","CD31","CD45","CD68","Argo550","CD4","FOXP3","CD8a","CD45RO",
+             "CD20","PD-L1","CD3e","CD163","E-cadherin","PD-1","Ki67","Pan-CK","SMA") := NULL]
+      setnames(drr, old=column_mapping, new=names(column_mapping))
+      dt <- cbind(drr, dt)
+      
+      dt[, Slide_ID := sub("^(LSP[0-9]+).*", "\\1", basename(f))]
+      dt[, margin := names(nn)[n]]
+      file.remove(tmpfile)
+      return(dt)
+    })
+    dtr <- rbindlist(dtt)
+    dtr <- dtr[!duplicated(paste(margin, Slide_ID))]
+    saveRDS(dtr, paste0("~/Sorger/cache/orion_",names(nn)[n], ".rds"), compress=FALSE)
   })
   
-  dtr <- rbindlist(dtt)
-  rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
-  saveRDS(dtr, "~/Sorger/cache/scramble_margin_Nov3.rds", compress=FALSE)
 } else {
-  
-  #dtr <- rbindlist(lapply(c("~/Sorger/cache/margin5.rds",
-  #                       "~/Sorger/cache/margin4.rds",
-  #                       "~/Sorger/cache/stroma_n5.rds",
-  #                       "~/Sorger/cache/core1.rds"), readRDS))
-  dtr <- rbindlist(lapply(c("~/Sorger/cache/stroma_core_Nov3.rds",
-                            "~/Sorger/cache/all_margin_Nov3.rds",
-                            "~/Sorger/cache/tumor_core_Nov3.rds",
-                            "~/Sorger/cache/scramble_margin_Nov3.rds",
-                            "~/Sorger/cache/stroma_margin_Nov3.rds"), readRDS))
+  # load the saved data
+  dtr <- rbindlist(lapply(paste0("~/Sorger/cache/orion_",names(nn),".rds"), readRDS))
   rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
-  hard_coded_tip <- c("LSP14418", "LSP14398", "LSP14423", "LSP14438", "LSP14393", "LSP14403", "LSP14458", "LSP10771", "LSP14388", "LSP14468", "LSP14483", "LSP10388", "LSP14448")
-  hard_coded_tip_core = c("LSP14468", "LSP14448", "LSP14403", "LSP15280","LSP14418","LSP14438","LSP10388","LSP14388")
-  rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
+  rrt <- data.table::copy(rr[margin=="tumor"])
 }
 ```
 
+```{r km-by-t-cell-count}
+d1 <- km_plot(rrt, parm="CD8_50r", parm.name="cd3", flip=FALSE, flip.labels=TRUE, return.data=TRUE)
+d2 <- km_plot(rrt, parm="CD3_50r", parm.name="cd3", flip=FALSE, flip.labels=TRUE, return.data=TRUE)
+d1[, strata := paste0(strata, "CD8")]
+d2[, strata := paste0(strata, "CD3")]
+
+dd <- rbind(d1, d2)
+
+# plot the K-M curves
+fill.vals <- c("1CD8"="#3182bd","0CD8"="#9ecae1", "1CD3"="#de2d26","0CD3"="#fc9272")
+g <- ggplot(dd[time < 2400], aes(x = time/365, y = surv, color = strata)) +
+    #geom_ribbon(aes(ymin = lower,ymax = upper, fill=strata),alpha = 0.15, linetype=0) +
+    geom_step(aes(color=strata), size=1) +
+    geom_point(data = dd[censor == 1][time < 2400], aes(x=time/365,y=surv), shape="+", size=3, color="black") + 
+    labs(x = "\nYears", y = ifelse(TRUE,"Progression-Free Survival","Overall Survival\n")) + theme_bw() + 
+    #ggtitle(hr.lab) + 
+    scale_color_manual(values=fill.vals) + 
+    scale_x_continuous(breaks=s<-seq(0,6), labels=s) + 
+    scale_fill_manual(values=fill.vals, guide="none") + 
+    #annotate("text", x = hr.x, y = hr.y,label=hr.lab,hjust = 1, vjust = 1) + 
+    scale_y_continuous(limits=c(0,1), breaks= s<-seq(0, 1, by = 0.2), labels = s) +
+    theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank()) + theme(legend.position = "none")
+save_pdf(g, "cd3_cd8_km.pdf", width=3, height=3)
+```
+
+```{r CD8_200r-distribution}
+rrt <- data.table::copy(rr[margin=="tumor_manual"])
+
+var <- "CD8_50r"
+rrt[, ratio := (CD8_50r + CD3_50r)/2]
+rrt[, ratio := get(var)]
+setkeyv(rrt, "ratio")
+clevels <- rrt$Slide_ID
+rrt[, Slide_ID := factor(Slide_ID, levels=clevels)]
+g <- ggplot(rrt, aes(x=Slide_ID, y=ratio, fill=pMMR)) + 
+  geom_bar(stat="identity")+
+  coord_flip() +
+  scale_fill_manual(values=pMMR_colors) +
+  theme_jw()
+
+hard_coded_tip_combo_50r_manual <- c("LSP14418","LSP14388","LSP14438","LSP15308","LSP10388","LSP10584","LSP14363","LSP14448") 
+
+hard_coded_tip_cd3_50r <-     c("LSP14468","LSP14448","LSP14403","LSP14483","LSP14458","LSP14418","LSP14388","LSP14423","LSP10388","LSP10771")
+rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_cd3_50r, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
+g <- km_plot(rr[pMMR=="pMMR" & !duplicated(Slide_ID)], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE)
+hard_coded_tip_cd8_cd3_50r <- c("LSP14468","LSP14448","LSP14403","LSP14483","LSP14458","LSP14418","LSP14388","LSP14423","LSP10388","LSP10771")
+rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_cd8_cd3_50r, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
+g <- km_plot(rr[pMMR=="pMMR" & !duplicated(Slide_ID)], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE)
+hard_coded_tip_cd8_50r <-     c("LSP14483","LSP14468","LSP14418","LSP14458","LSP10771","LSP10388","LSP14403","LSP10452","LSP10727","LSP14493")
+rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_cd8_50r, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
+g <- km_plot(rr[pMMR=="pMMR" & !duplicated(Slide_ID)], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE)
+rr[, tipMMR := factor(ifelse(Slide_ID %in% c(hard_coded_tip_cd8_50r,hard_coded_tip_cd3_50r,hard_coded_tip_cd8_cd3_50r), ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
+g <- km_plot(rr[pMMR=="pMMR" & !duplicated(Slide_ID)], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE)
+
+# which samples are in which of the three groups
+dtu <- sapply(unique(c(hard_coded_tip_cd3_50r,hard_coded_tip_cd8_cd3_50r,hard_coded_tip_cd8_50r)), function(s) {
+  data.table(cd3=s %in% hard_coded_tip_cd3_50r, 
+             cd8=s %in% hard_coded_tip_cd8_50r,
+             combo=s %in% hard_coded_tip_cd8_cd3_50r)
+})
+
+hard_coded_tip_old <- c("LSP14418", "LSP14398", "LSP14423", "LSP14438", "LSP14393", "LSP14403", "LSP14458", "LSP10771", "LSP14388", "LSP14468", "LSP14483", "LSP10388", "LSP14448")
+
+rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_cd8_cd3_50r, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
+rrt <- rr[margin=="tumor"]
+```
+
+```{r tip-km}
+
+g <- km_plot(rr[pMMR=="pMMR" & !duplicated(Slide_ID)], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE)
+g
+```
+
+```{r quality-control}
+
+# PanCK-CD3 double positive
+rrt[, ratio := panckcd3count / allcount]
+g <- ggplot(rrt, aes(x = tipMMR, y = ratio, fill = tipMMR)) +
+  geom_boxplot(alpha = 1, width=0.8, outlier.shape=NA) + 
+  geom_jitter(position = position_jitter(width = 0.2), size = 3, alpha = 1, shape=20) +  
+  labs(y = "Age") +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw() + theme(legend.position = "none")
+
+```
 
 ```{r cd163-margins}
 
@@ -277,34 +344,6 @@ save_pdf(g, "panck_cd8_20r_km_tumor.pdf", 3,3)
   
 ```
 
-```{r mark-the-tipMMR, include=FALSE}
-if (FALSE) {
-  hard_coded_tip <- c("LSP14418", "LSP14398", "LSP14423", "LSP14438", "LSP14393", "LSP14403", "LSP14458", "LSP10771", "LSP14388", "LSP14468", "LSP14483", "LSP10388", "LSP14448")
-  rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
-} else if (FALSE) {
-  
-  #### MARK THE TIPMMR BY CD3
-  # Slide LSP10716 is the 8/9 ranked by CD3
-  rr[, tipMMR := factor(ifelse(CD3_200r > rr[Slide_ID=="LSP10716", CD3_200r], ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
-  rr$tipMMR <- factor(rr$tipMMR, levels = c("pMMR", "tipMMR", "dMMR"))
-  g <- km_plot(rr[pMMR=="pMMR"], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE)
-  table(rr$tipMMR)
-  rr[tipMMR=="tipMMR", Slide_ID]
-} else {
-  
-  #### MARK THE TIPMMR BY CD8
-  # Slide LSP10716 is the 23rd percetile of dMMR
-  if (FALSE) {
-    rr[, tipMMR := factor(ifelse(CD8_200r > rr[Slide_ID=="LSP10716", CD8_200r], ifelse(pMMR == "dMMR", "dMMR", "tipMMR"), as.character(pMMR)))]
-    g <- km_plot(rr[pMMR=="pMMR"], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE)
-    table(rr$tipMMR)
-    rr[tipMMR=="tipMMR", Slide_ID]
-  }
-}
-
-```
-
-
 ```{r imaging-km}
 rr <- merge(data.table::copy(redcap), dtr[margin=="tumor_A1"], by = "Slide_ID", all.x = TRUE)
 ix <- rep(TRUE, nrow(rr))
@@ -360,25 +399,21 @@ g <- ggplot(
 
 ```
 
-```{r plot-tippness}
-
-```
-
 
 ```{r random-hr-tip, include=FALSE}
 
 ## get distribution of HR for "random" tipMMR, selected from pMMR
-# set.seed(42)
-# rrpmmr <- rr[pMMR == "pMMR"]
-# hrdist <- sapply(seq(5000), function(cc) {
-#   if (cc %% 100 == 0)
-#     cat(cc,"\n")
-#   rrpmmr[, rand_label := "hi"]
-#   rrpmmr[sample(.N, 13), rand_label := "low"]
-#   hr <- as.numeric(km_plot(rrpmmr, parm="rand_label", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1])
-#   return(hr)
-# })
-# saveRDS(hrdist, "~/Sorger/cache/hrdist.rds")
+set.seed(42)
+rrpmmr <- rrt[pMMR == "pMMR"]
+hrdist <- sapply(seq(5000), function(cc) {
+  if (cc %% 100 == 0)
+    cat(cc,"\n")
+  rrpmmr[, rand_label := "hi"]
+  rrpmmr[sample(.N, 13), rand_label := "low"]
+  hr <- as.numeric(km_plot(rrpmmr, parm="rand_label", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1])
+  return(hr)
+})
+saveRDS(hrdist, "~/Sorger/cache/hrdist.rds")
 hrdist <- readRDS("~/Sorger/cache/hrdist.rds")
 
 # plot random distribution of hazard ratios vs tipMMR
@@ -570,7 +605,7 @@ combined_data$variable <- factor(combined_data$variable, levels = hr$variable[or
 g <- ggplot(combined_data, aes(y = variable, x = hr, color = source)) +
   geom_point(aes(x = hr), size = 1.5, position = position_dodge(width = 0.3)) +
   geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.2, position = position_dodge(width = 0.3)) +
-  scale_color_manual(values = c("us" = "black", "lit" = "red")) +
+  scale_color_manual(v galues = c("us" = "black", "lit" = "red")) +
   labs(title = "Hazard Ratios with Confidence Intervals",
        x = "Hazard Ratio",
        y = "Gene") +
@@ -660,11 +695,10 @@ cox_model <- coxph(survival_object ~ redcap$Gender[ix] + redcap$mucinous[ix] + r
 coxsnellR2(cox_model)
 
 # Initialize results
-covariates <- c("Gender", "Age", "stage_num","mucinous", "Grade", "LVI", "PNI", "TIL_num","tmb","APC", "KRAS", "p53", "BRAF", "PIK3CA")
+covariates <- c("Gender", "Age", "stage_num","mucinous", "Grade", "LVI", "PNI", "TIL_num","tmb","APC", "KRAS", "p53", "BRAF", "PIK3CA", "tipMMR")
 results <- data.table(Covariates = character(), R2 = numeric(), R2Lower = numeric(), R2Upper = numeric())
 
 # Loop through covariates
-options(warn = -1)
 for (i in seq_along(covariates)) {
     current_covariates <- covariates[1:i]
     covariate_names <- paste(covariates[i])
@@ -672,14 +706,13 @@ for (i in seq_along(covariates)) {
     r2 <- coxsnellR2(cox_model)
     
     # Bootstrap for error estimates
-    boot_results <- boot(data = redcap[ix], statistic = bootstrapR2, R = 1000, covariates = current_covariates)
+    boot_results <- boot(data = rr[margin=="tumor_core"][ix], statistic = bootstrapR2, R = 1000, covariates = current_covariates)
     lower <- quantile(boot_results$t, probs = 0.025)
     upper <- quantile(boot_results$t, probs = 0.975)
 
     # Store results
     results <- rbind(results, data.frame(Covariates = covariate_names, R2 = r2, R2Lower = lower, R2Upper = upper))
 }
-options(warn = 0)
 
 # Plot results
 library(ggplot2)
@@ -775,38 +808,7 @@ g <- ggplot(rr_long, aes(x = pMMR, y = cells_per_mm2, fill = pMMR)) +
   theme_jw()
 ```
 
-```{r CD8_200r-distribution}
-## CD8
-setkey(rr, CD8_200r)
-cd8_levels <- rr$Slide_ID
-rr[, Slide_ID := factor(Slide_ID, levels=cd8_levels)]
-g <- ggplot(rr, aes(x=Slide_ID, y=CD8_200r, fill=pMMR)) + 
-  geom_bar(stat="identity")+
-  coord_flip() +
-  scale_fill_manual(values=pMMR_colors) +
-  theme_jw()
 
-## CD3 count
-rr[, ratio := panckcd3_200r]
-setkey(rr, ratio)
-clevels <- rr$Slide_ID
-rr[, Slide_ID := factor(Slide_ID, levels=clevels)]
-g <- ggplot(rr, aes(x=Slide_ID, y=ratio, fill=pMMR)) + 
-  geom_bar(stat="identity")+
-  coord_flip() +
-  scale_fill_manual(values=pMMR_colors) +
-  theme_jw()
-
-## CD3
-setkey(rr, CD3_200r)
-cd3_levels <- rr$Slide_ID
-rr[, Slide_ID := factor(Slide_ID, levels=cd3_levels)]
-g <- ggplot(rr, aes(x=Slide_ID, y=CD3_200r, fill=pMMR)) + 
-  geom_bar(stat="identity")+
-  coord_flip() +
-  scale_fill_manual(values=pMMR_colors) +
-  theme_jw()
-```
 
 ```{r TIL-vs-CD3}
 rr[, cells_per_mm2 := CD45_200r * 1e6 / (1000^2 * 0.325^2)]
@@ -1386,12 +1388,17 @@ ge <- gridExtra::grid.arrange(grobs = dtt, ncol = 10, nrow = 7)
 save_pdf(gridExtra::grid.arrange(grobs = dtt, ncol = 10, nrow = 8), "kde_cd3.pdf", width=20, height=20)
 ```
 
-
-
 ```{r scratch}
-
-dt <- fread(cmd=paste("cysift view","~/Sorger/projects/orion/orion_1_74/chain/LSP10353.ptrd.cys", "-R"))
-dt <- dt[x < 5000 & y < 5000]
+#1 tumor
+#2 margin
+dt <- fread(cmd=paste("cysift cut -x Region","~/Sorger/projects/orion/orion_1_74/LSP10507.ptrd.cys", "- | cysift view - -R"))
+dt <- dt[x > 400 & x < 500 & y > 5000 & y < 5500]
 dt[, Region := as.factor(Region)]
-g <- ggplot(dt, aes(x=x,y=y)) + geom_point(aes(color=Region))
+dt[, panck := ifelse(bitAnd(pflag, 131072) > 0,"panck","no")]
+dt[, tumor := ifelse(bitAnd(cflag, 1), "tumor","stroma")]
+dt[, tumor_region := paste0(tumor,Region)]
+dt[x==453 & y == 5421, tumor_region := "special"]
+g <- ggplot(dt, aes(x=x,y=y, color=tumor_region, shape=panck)) + geom_point() + 
+  scale_color_manual(values=c("tumor1"="red","tumor2"="darkred", "stroma0"="gray","stroma1"="black","stroma2"="cyan","tumor0"="purple","special"="pink" ))+ 
+  coord_fixed()
 ```
