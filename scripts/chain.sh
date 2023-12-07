@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH -c 4                               # Request four cores
-#SBATCH -t 0-12:00                         # Runtime in D-HH:MM format
+#SBATCH -t 0-8:00                         # Runtime in D-HH:MM format
 #SBATCH -p short                           # Partition to run in
 #SBATCH --mem=12G                          # Memory total in MiB (for all cores)
 #SBATCH -o hostname_%j.out                 # File to which STDOUT will be written, including job ID (%j)
@@ -60,21 +60,23 @@ if [[ ! -f "$input_file" ]]; then
 elif [[ "$input_file" == *"LSP10388"* || "$input_file" == *"LSP10353"* || "$input_file" == *"LSP10375"* || "$input_file" == *"LSP10364"* ]]; then
     # Your slightly different command here
     echo "Running the rescale version for LSP10388, LSP10353, LSP10375, or LSP10364"
-    cmd="cysift magnify $input_file -f 1.015625 - | cysift pheno ${V} - -t $pheno_file - |\
-    		      cysift filter - - -a $TUMOR_MARKER ${V} |\
-		      cysift tumor - - -f 0.25 -k 25 -t ${T} ${V} | $roicmd \
-		      cysift margin -d 100 - - |\
-		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |\
+    cmd="cysift magnify $input_file -f 1.015625 - | cysift pheno ${V} - -t $pheno_file - |
+    		      cysift filter - - -a $TUMOR_MARKER ${V} |
+		      cysift tumor - - -f 0.50 -k 25 -d 10000 -t ${T} ${V} | $roicmd
+		      cysift island - - -n 5000 -T | cysift island - - -S -n 5000 |
+		      cysift margin -d 100 - - |
+		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |
 		      cysift delaunay -l 20 - ${output_file}"
     echo "$cmd"
-    eval "$cmd"    
+    eval "$cmd"
 else
     echo "...running: cysift chain on ${base}"
-    cmd="cysift pheno ${V} $input_file -t $pheno_file - |\
-    		      cysift filter - - -a $TUMOR_MARKER ${V} |\
-		      cysift tumor - - -f 0.25 -k 25 -t ${T} ${V} | $roicmd \
-		      cysift margin -d 100 - - |\
-		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |\
+    cmd="cysift pheno ${V} $input_file -t $pheno_file - |
+    		      cysift filter - - -a $TUMOR_MARKER ${V} |
+		      cysift tumor - - -f 0.50 -k 25 -d 10000 -t ${T} ${V} | $roicmd
+		      cysift island - - -n 5000 -T | cysift island - - -S -n 5000 |
+		      cysift margin -d 100 - - |
+		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |
 		      cysift delaunay -l 20 - ${output_file}"
     echo "$cmd"
     eval "$cmd"
