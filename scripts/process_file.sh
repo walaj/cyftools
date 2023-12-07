@@ -48,31 +48,10 @@ for infile in $HOMEBASE/rawcsv/*.csv; do
 	#~/git/cysift/scripts/cerealed.sh "$HOMEBASE/header/${base}.header.csv" "$HOMEBASE/clean/${base}.cys" 2>/dev/null
 
 	check_file_exists "$HOMEBASE/clean/${base}.cys"
-	~/git/cysift/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrd.cys" "$HOMEBASE/pheno/${base}.phenotype.csv" "${HOMEBASE}/roi/${base}.roi.csv"
+	sbatch ~/git/cysift/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrdim.cys" "$HOMEBASE/pheno/${base}.phenotype.csv" "${HOMEBASE}/roi/${base}.roi.csv"
 
 	#check_file_exists "${HOMEBASE}/chain/${base}.ptrd.cys"
 	#sbatch ~/git/cysift/scripts/margin_noisland.sh "${HOMEBASE}/chain/${base}.ptrd.cys" "${HOMEBASE}/margin_noisland/${base}.ptrdim.cys"
-	
-	#check_file_exists "${base}.cys"
-	#~/git/cysift/scripts/phenotype.sh "${base}.cys" "${base}.phenotype.cys" "${base}.phenotype.csv"
-
-	#check_file_exists "${base}.phenotype.cys"
-	#sbatch /home/jaw34/git/cysift/scripts/spatial.sh "${base}.phenotype.cys" "${base}.spat.cyz"
-
-	#check_file_exists "${base}.phenotype.cys"
-	#sbatch /home/jaw34/git/cysift/scripts/radial.sh "${base}.phenotype.cys" "${base}.rad.cys"
-
-	#check_file_exists "${base}.rad.cys"
-	#sbatch /home/jaw34/git/cysift/scripts/tumor.sh "${base}.rad.cys" "${base}.tumor.cys"
-
-	#check_file_exists "${base}.tumor.cys"
-	#cysift select -o 131072 -O 1 ${base}.tumor.cys ${base}.tselect.cys
-	
-	   #check_file_exists "${base}.tselect.cys"
-	   #/home/jaw34/git/cysift/scripts/average.sh "${base}.tselect.cys" "${base}.avg.cys"
-	
-	   #check_file_exists "${base}.tselect.cys"
-	   #sbatch /home/jaw34/git/cysift/scripts/frame.sh "${base}.tselect.cys" "${base}.tframe.csv"
 	
     fi
 done

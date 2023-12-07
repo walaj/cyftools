@@ -16,8 +16,7 @@ if [[ ! -f "$input_file" ]]; then
     echo "Error: File '$input_file' does not exist."
     exit 1
 else
-    cmd="cysift margin -d $input_file ${output_file}"
+    cmd="cysift island $input_file - -n 5000 -T | cysift island - - -S -n 5000 | cysift margin - -d 100 ${output_file}"
     echo "$cmd"
     eval "$cmd"
-##    cysift island $input_file - -n 5000 -T | cysift island - - -S -n 5000 | cysift margin - ${output_file}
 fi
