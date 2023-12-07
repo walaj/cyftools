@@ -227,7 +227,7 @@ int main(int argc, char **argv) {
     return(histogramfunc(argc, argv));
   } else if (opt::module == "log10") {
     return(log10func(argc, argv));
-  } else if (opt::module == "tumor") {
+  } else if (opt::module == "annotate") {
     return(tumorfunc(argc, argv));
   } else if (opt::module == "cut") {
     val = cutfunc(argc, argv);
@@ -1665,10 +1665,11 @@ static int meanfunc(int argc, char** argv) {
 
 static int tumorfunc(int argc, char** argv) {
 
-  const char* shortopts = "vt:k:f:d:";
+  const char* shortopts = "vt:k:f:d:F:";
 
   float dist = 100000;
   int n = 25;
+  cy_uint flag_to_set = 0;
   float frac = 0.50;
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1678,20 +1679,27 @@ static int tumorfunc(int argc, char** argv) {
     case 't' : arg >> opt::threads; break;
     case 'k' : arg >> n; break;
     case 'f' : arg >> frac; break;
+    case 'F' : arg >> flag_to_set; break;
     case 'd' : arg >> dist; break;
     default: die = true;
     }
   }
 
+  if (flag_to_set != 1 && flag_to_set != 16) {
+    std::cerr << "-F must be 1 or 16" << std::endl;
+    die = true;
+  }
+
   if (die || in_out_process(argc, argv)) {
   
     const char *USAGE_MESSAGE =
-      "Usage: cysift tumor [cysfile]\n"
-      "  Set the flag on whether a cell is in the tumor region, using marked cells\n"
+      "Usage: cysift annotate [cysfile]\n"
+      "  Using KNN, set the flag on whether a cell is in the region, using marked cells\n"
       "    cysfile: filepath or a '-' to stream to stdin\n"
       "    -k [25]               Number of neighbors\n"
       "    -f [0.50]             Fraction of neighbors\n"
-      "    -d [100000]            Max distance to consider\n"
+      "    -d [100000]           Max distance to consider\n"
+      "    -F [1]                Cflag to set (1=tumor, 16=Tcell)\n"
       "    -v, --verbose         Increase output to stderr\n"
       "  Example: cysift filter -a 4 <in.cys> - | cysift tumor - <out.cys>\n"
       "\n";
@@ -1707,7 +1715,7 @@ static int tumorfunc(int argc, char** argv) {
   
   table.SetupOutputWriter(opt::outfile);
 
-  table.TumorCall(n, frac, dist);
+  table.AnnotateCall(n, frac, dist, flag_to_set);
 
   table.OutputTable();
 
@@ -1816,7 +1824,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "histogram" || opt::module == "log10" ||
 	 opt::module == "crop"  || opt::module == "umap" ||
 	 opt::module == "count" || opt::module == "clean" ||
-	 opt::module == "tumor" || opt::module == "convolve" || 
+	 opt::module == "annotate" || opt::module == "convolve" || 
 	 opt::module == "cat" || opt::module == "cereal" ||
 	 opt::module == "sort" || opt::module == "divide" || 
 	 opt::module == "pearson" || opt::module == "info" ||

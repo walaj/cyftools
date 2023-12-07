@@ -127,7 +127,7 @@ public:
 		      std::vector<std::string> label, std::vector<int> normalize_local,
 		      std::vector<int> normalize_global);
   
-  void TumorCall(int num_neighbors, float frac, cy_uint dist);
+  void AnnotateCall(int num_neighbors, float frac, cy_uint dist, cy_uint flag_to_set);
   
   void TumorMargin(float dist);
 

@@ -938,7 +938,11 @@ int ROIProcessor::ProcessLine(Cell& cell) {
 	print_line = true;
       } else if (polygon.Text.find("tumor") != std::string::npos || polygon.Name.find("tumor") != std::string::npos) {
 	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);
-	print_line = true;	
+	print_line = true;
+      } else if (polygon.Text.find("cd3panck_error") != std::string::npos || polygon.Name.find("cd3panck_error") != std::string::npos) {
+	if (IS_FLAG_SET(cell.pflag, ORION_PANCK))
+	  CLEAR_FLAG(cell.pflag, ORION_CD3);
+	print_line = true;
       } else {
 	print_line = true;
       }

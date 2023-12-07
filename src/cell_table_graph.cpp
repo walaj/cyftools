@@ -717,7 +717,7 @@ CellTable::build_vp_tree(const std::vector<bool>& ix) const {
    
 }
 
-void CellTable::TumorCall(int num_neighbors, float frac, cy_uint dist) {
+void CellTable::AnnotateCall(int num_neighbors, float frac, cy_uint dist, cy_uint flag_to_set) {
 
 #ifdef HAVE_KNNCOLLE
 
@@ -729,9 +729,9 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint dist) {
     
     // verbose printing
     if (i % 50000 == 0 && m_verbose)
-      std::cerr << "...annoting tumor for cell " << setw(12) << AddCommas(i) << 
+      std::cerr << "...annoting for cell " << setw(12) << AddCommas(i) << 
 	" K " << setw(3) << num_neighbors << " Dist: " << setw(9) << dist <<
-	" frac " << setw(4) << frac << 
+	" frac " << setw(4) << frac << " flag " << setw(4) << flag_to_set << 
 	std::endl;
     
     JNeighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
@@ -774,7 +774,7 @@ void CellTable::TumorCall(int num_neighbors, float frac, cy_uint dist) {
     */
     
     if (tumor_cell_count / static_cast<float>(neigh.size()) >= frac)
-      SET_FLAG((*m_cflag_ptr)[i], TUMOR_FLAG); 
+      SET_FLAG((*m_cflag_ptr)[i], flag_to_set); 
 
   }// end for
 

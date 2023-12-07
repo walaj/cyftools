@@ -42,7 +42,7 @@
 	generateToggleButtons(maFields, 'inclusiveContainer', 'inclusive');
 	
 	// For the exclusiveContainer, we'll use the hardcoded array instead of maFields
-	const exclusiveFields = ['Tumor', 'Mark', 'Margin', 'Tumor (Manual ROI)'];
+	const exclusiveFields = ['Tumor', 'Mark', 'Margin', 'Tumor (Manual ROI)', 'Tcell cluster'];
 	generateToggleButtons(exclusiveFields, 'exclusiveContainer', 'exclusive');
     }
 
@@ -97,7 +97,7 @@
     }
 
     // Generate exclusive fields right away
-    const exclusiveFields = ['Tumor', 'Mark', 'Margin', 'Tumor (Manual ROI)'];
+    const exclusiveFields = ['Tumor', 'Mark', 'Margin', 'Tumor (Manual ROI)', 'Tcell cluster'];
     generateToggleButtons(exclusiveFields, 'exclusiveContainer', 'exclusive');
     
   </script>

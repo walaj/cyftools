@@ -1488,17 +1488,26 @@ int CellTable::PlotPNG(const std::string& file,
 
   if (module == "tumor") {
       cm = {color_red, color_purple,
-	    color_dark_green, color_cyan
+	    color_dark_green, color_cyan,
+	    color_deep_pink
 	    //	    color_dark_blue, color_deep_pink,
       }; 
       labels = {
 	"Tumor",
 	"Tumor (M)",    
 	"Stroma",
-	"Stroma (M)"
+	"Stroma (M)",
+	"Tcell cluster"
 	//"Jerry only", //CD163 PD-L1 neg",
 	//"Jerry + tumor" //CD163 PD-L1 pos",
       };
+  } else if (module == "artifact") {
+
+    cm = {color_red};
+    labels={
+      "PanCK CD3"
+    };
+    
   } else if (module == "pdl1") {
     cm = {color_light_red, color_red, color_light_green, color_dark_green};
 
@@ -1573,7 +1582,7 @@ int CellTable::PlotPNG(const std::string& file,
     CellFlag pflag(pf);
     CellFlag cflag(cf);
     
-    Color c;
+    Color c = color_gray;
 
     // Color by tumor / stromal call
     if (module == "tumor") {
@@ -1582,9 +1591,12 @@ int CellTable::PlotPNG(const std::string& file,
 	c = IS_FLAG_SET(cf, MARGIN_FLAG) ? color_purple : color_red;
       else if (!IS_FLAG_SET(cf, TUMOR_FLAG))
 	c = IS_FLAG_SET(cf, MARGIN_FLAG) ? color_cyan : color_dark_green; 
-      else
+      else 
 	assert(false);
 
+      if (IS_FLAG_SET(cf, TCELL_FLAG))
+	c = color_deep_pink;
+      
       // override temporary
       /*      if (IS_FLAG_SET(pf, ORION_CD163))
 	c = color_dark_blue;
@@ -1596,6 +1608,24 @@ int CellTable::PlotPNG(const std::string& file,
       //if (region_it->second->at(j) == 1) {
       // 	c = IS_FLAG_SET(cf, TUMOR_FLAG) ? color_deep_pink : color_dark_blue;
       //}
+
+    } else if (module == "artifact") {
+      
+      if ( IS_FLAG_SET(pf, ORION_CD3) && IS_FLAG_SET(pf, ORION_PANCK))
+	c = color_red;
+      
+      // override temporary
+      /*      if (IS_FLAG_SET(pf, ORION_CD163))
+	c = color_dark_blue;
+      if (IS_FLAG_SET(pf, ORION_PDL1) && IS_FLAG_SET(pf, ORION_CD163))
+      	c = color_deep_pink;
+      */
+
+      //debug jerry
+      //if (region_it->second->at(j) == 1) {
+      // 	c = IS_FLAG_SET(cf, TUMOR_FLAG) ? color_deep_pink : color_dark_blue;
+      //}
+
       
     } else if (module == "prostate") { 
     

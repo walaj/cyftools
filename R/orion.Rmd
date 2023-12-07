@@ -92,13 +92,14 @@ if (FALSE) {
   files <- files[grepl("cys$", files)]
   
   # read all the data as the means within the tumor compartment
-  nn <- c("tumor"="-A 1", "stroma"="-N 1","all"="", "scramble_tumor"="-A 1", "scramble_stroma"="-N 1","tumor_margin"="-A 5","stroma_margin"="-A 4 -N 1","margin"="-A 4","tumor_core"="-A 1 -N 4","stroma_core"="-N 5","tumor_manual"="-A 8",
-          "tumor_manual_panck"="-A 8 -a 131072")
+  nn <- c("tumor"="-A 1", "stroma"="-N 1","all"="", "scramble_tumor"="-A 1", "scramble_stroma"="-N 1","tumor_margin"="-A 5","stroma_margin"="-A 4 -N 1","margin"="-A 4","tumor_core"="-A 1 -N 4","stroma_core"="-N 5","tumor_manual"="-A 8")
   
-  column_mapping = c(cd31count = "CD31_count", cd45count = "CD45_count", cd68count = "CD68_count", cd4count = "CD4_count", foxp3count = "FOXP3_count", cd8count = "CD8a_count", cd45rocount = "CD45RO_count", cd20count = "CD20_count", pdl1count = "PD-L1_count", cd3count = "CD3e_count", cd163count = "CD163_count", pd1count = "PD-1_count", panckcount = "Pan-CK_count", smacount = "SMA_count", pdl1panckcount = "133120_count", pdl1cd163count = "10240_count", cd3pd1count = "36864_count", cd4pd1count = "32832_count",panckcd3count = "135168_count")
+  column_mapping = c(cd31count = "CD31_count", cd45count = "CD45_count", cd68count = "CD68_count", cd4count = "CD4_count", foxp3count = "FOXP3_count", cd8count = "CD8a_count", cd45rocount = "CD45RO_count", cd20count = "CD20_count", pdl1count = "PD-L1_count", cd3count = "CD3e_count", cd163count = "CD163_count", pd1count = "PD-1_count", panckcount = "Pan-CK_count", smacount = "SMA_count", pdl1panckcount = "133120_count", pdl1cd163count = "10240_count", cd3pd1count = "36864_count", cd4pd1count = "32832_count",panckcd3count = "135168_count",
+                     panckcd8count="131328_count")
   
   lapply(seq_along(nn)[11], function(n) {
-    dtt <- lapply(files[1:5], function(f) {
+    cat("working on ", names(nn)[n], "\n")
+    dtt <- mclapply(files, function(f) {
       
       cat(basename(f), " - ", names(nn)[n], "\n")
       tmpfile <- paste0("/tmp/", generate_random_string(8))
@@ -121,7 +122,7 @@ if (FALSE) {
       dt[ , allcount       := fread(cmd=paste("cysift count", tmpfile))$V1]
       
       # individual cell counts
-      drr = fread(cmd=paste("cysift cellcount", tmpfile," - -a 133120 -a 10240 -a 36864 -a 32832 -a 0 -a 135168 | cysift view - -R"))
+      drr = fread(cmd=paste("cysift cellcount", tmpfile," - -a 133120 -a 10240 -a 36864 -a 32832 -a 0 -a 135168 -a 131328 | cysift view - -R"))
       drr[,c("sid","cid","cflag","pflag","x","y","Hoechst","AF1","CD31","CD45","CD68","Argo550","CD4","FOXP3","CD8a","CD45RO",
              "CD20","PD-L1","CD3e","CD163","E-cadherin","PD-1","Ki67","Pan-CK","SMA") := NULL]
       setnames(drr, old=column_mapping, new=names(column_mapping))
@@ -131,7 +132,7 @@ if (FALSE) {
       dt[, margin := names(nn)[n]]
       file.remove(tmpfile)
       return(dt)
-    })
+    }, mc.cores=8)
     dtr <- rbindlist(dtt)
     dtr <- dtr[!duplicated(paste(margin, Slide_ID))]
     saveRDS(dtr, paste0("~/Sorger/cache/orion_",names(nn)[n], ".rds"), compress=FALSE)
@@ -174,7 +175,7 @@ save_pdf(g, "cd3_cd8_km.pdf", width=3, height=3)
 rrt <- data.table::copy(rr[margin=="tumor_manual"])
 
 var <- "CD8_50r"
-rrt[, ratio := (CD8_50r + CD3_50r)/2]
+rrt[, ratio := (CD8_50l + CD3_50l)/2]
 rrt[, ratio := get(var)]
 setkeyv(rrt, "ratio")
 clevels <- rrt$Slide_ID
@@ -185,7 +186,7 @@ g <- ggplot(rrt, aes(x=Slide_ID, y=ratio, fill=pMMR)) +
   scale_fill_manual(values=pMMR_colors) +
   theme_jw()
 
-hard_coded_tip_combo_50r_manual <- c("LSP14418","LSP14388","LSP14438","LSP15308","LSP10388","LSP10584","LSP14363","LSP14448") 
+hard_coded_tip_combo_50l_manual <- c("LSP14468","LSP14483","LSP14418","LSP14388","LSP14438","LSP14458","LSP14448","LSP14393") 
 
 hard_coded_tip_cd3_50r <-     c("LSP14468","LSP14448","LSP14403","LSP14483","LSP14458","LSP14418","LSP14388","LSP14423","LSP10388","LSP10771")
 rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_cd3_50r, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
@@ -208,7 +209,7 @@ dtu <- sapply(unique(c(hard_coded_tip_cd3_50r,hard_coded_tip_cd8_cd3_50r,hard_co
 
 hard_coded_tip_old <- c("LSP14418", "LSP14398", "LSP14423", "LSP14438", "LSP14393", "LSP14403", "LSP14458", "LSP10771", "LSP14388", "LSP14468", "LSP14483", "LSP10388", "LSP14448")
 
-rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_cd8_cd3_50r, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
+rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_combo_50l_manual, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
 rrt <- rr[margin=="tumor"]
 ```
 
