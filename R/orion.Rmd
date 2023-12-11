@@ -88,7 +88,7 @@ save_pdf <- function(g, filename, width=10, height=10) {
 
 ```{r cys-read, include=FALSE}
 if (FALSE) {
-  files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/chain_roi/", full.names = TRUE)
+  files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/chain/", full.names = TRUE)
   files <- files[grepl("cys$", files)]
   
   # read all the data as the means within the tumor compartment
@@ -104,8 +104,8 @@ if (FALSE) {
       cat(basename(f), " - ", names(nn)[n], "\n")
       tmpfile <- paste0("/tmp/", generate_random_string(8))
       
-      if (system(paste("cysift count -A 8",f, nn[n]), intern=TRUE)=="0") {
-        cat("no manual annotations for ", basename(f),"\n")
+      if (system(paste("cysift count",f, nn[n]), intern=TRUE)=="0") {
+        cat("no cells meeting filter criteria for ", basename(f),"\n")
         return(data.table())
       }
       
@@ -140,7 +140,7 @@ if (FALSE) {
   
 } else {
   # load the saved data
-  dtr <- rbindlist(lapply(paste0("~/Sorger/cache/orion_",names(nn),".rds"), readRDS))
+  dtr <- rbindlist(lapply(paste0("~/Sorger/cache/orion_",names(nn),".rds"), readRDS), fill=TRUE)
   rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
   rrt <- data.table::copy(rr[margin=="tumor"])
 }
@@ -186,7 +186,7 @@ g <- ggplot(rrt, aes(x=Slide_ID, y=ratio, fill=pMMR)) +
   scale_fill_manual(values=pMMR_colors) +
   theme_jw()
 
-hard_coded_tip_combo_50l_manual <- c("LSP14468","LSP14483","LSP14418","LSP14388","LSP14438","LSP14458","LSP14448","LSP14393") 
+hard_coded_tip_combo_50l_manual <- c("LSP14483","LSP14418","LSP14468","LSP14458","LSP14388","LSP14453","LSP14393","LSP14493") 
 
 hard_coded_tip_cd3_50r <-     c("LSP14468","LSP14448","LSP14403","LSP14483","LSP14458","LSP14418","LSP14388","LSP14423","LSP10388","LSP10771")
 rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_cd3_50r, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]

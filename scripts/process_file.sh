@@ -10,9 +10,11 @@ source ~/git/cysift/scripts/config.sh
 # prepare the matlab file
 #matlab -nodisplay -r "run('/home/jaw34/git/cysift/matlab/jerry.m'); exit;"
 
-#HOMEBASE=/n/scratch3/users/j/jaw34/projects/prostate/
-HOMEBASE=/n/scratch3/users/j/jaw34/projects/orion/orion_1_74
-HOMEBASE=/Users/jeremiahwala/Sorger/projects/orion/orion_1_74
+PROJ=/Users/jeremiahwala/Sorger/projects/prostate/
+
+HOMEBASE=${PROJ}
+#HOMEBASE=/n/scratch3/users/j/jaw34/projects/orion/orion_1_74
+#HOMEBASE=/Users/jeremiahwala/Sorger/projects/orion/orion_1_74
 for infile in $HOMEBASE/rawcsv/*.csv; do
 
     if [[ ! $infile =~ rar ]]; then

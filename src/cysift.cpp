@@ -3015,15 +3015,19 @@ static int sortfunc(int argc, char** argv) {
 
 
 static int countfunc(int argc, char** argv) {
-  const char* shortopts = "va:A:";
+  const char* shortopts = "va:A:N:";
   cy_uint p_and_flags = 0;
-  cy_uint c_and_flags = 0;  
+  cy_uint c_and_flags = 0;
+  cy_uint p_not_flags = 0;
+  cy_uint c_not_flags = 0;  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'a' : arg >> p_and_flags; break;
-    case 'A' : arg >> c_and_flags; break;      
+    case 'A' : arg >> c_and_flags; break;
+    case 'n' : arg >> p_not_flags; break;
+    case 'N' : arg >> c_not_flags; break;      
     default: die = true;
     }
   }
@@ -3037,13 +3041,15 @@ static int countfunc(int argc, char** argv) {
       "    -v, --verbose         Increase output to stderr\n"
       "    -a                    Phenotype logical AND\n"
       "    -A                    Cell logical AND\n"
+      "    -n                    Phenotype logical NOT\n"
+      "    -N                    Cell logical NOT\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
   CountProcessor countp;
-  countp.SetParams(p_and_flags, c_and_flags);
+  countp.SetParams(p_and_flags, c_and_flags,p_not_flags, c_not_flags);
   countp.SetCommonParams(opt::outfile, cmd_input, opt::verbose); // really shouldn't need any of these
 
   if (table.StreamTable(countp, opt::infile)) 

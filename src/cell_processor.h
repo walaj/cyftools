@@ -395,9 +395,14 @@ class CountProcessor : public CellProcessor {
  public:
   
   void SetParams(cy_uint p_and_flags,
-		 cy_uint c_and_flags) {
+		 cy_uint c_and_flags,
+		 cy_uint p_not_flags,
+		 cy_uint c_not_flags) {
     m_p_and_flags = p_and_flags;
-    m_c_and_flags = c_and_flags;    
+    m_c_and_flags = c_and_flags;
+    m_p_not_flags = p_not_flags;
+    m_c_not_flags = c_not_flags;    
+    
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -410,7 +415,10 @@ class CountProcessor : public CellProcessor {
   size_t m_count = 0;
 
   cy_uint m_p_and_flags = 0;
-  cy_uint m_c_and_flags = 0;  
+  cy_uint m_c_and_flags = 0;
+  cy_uint m_p_not_flags = 0;
+  cy_uint m_c_not_flags = 0;  
+  
 };
 
 

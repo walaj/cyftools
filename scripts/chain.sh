@@ -68,16 +68,16 @@ elif [[ "$input_file" == *"LSP10388"* || "$input_file" == *"LSP10353"* || "$inpu
 		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |
 		      cysift delaunay -l 20 - ${output_file}"
     echo "$cmd"
-    #eval "$cmd"
+    eval "$cmd"
 else
     echo "...running: cysift chain on ${base}"
     cmd="cysift pheno ${V} $input_file -t $pheno_file - |
     		      cysift filter - - -a $TUMOR_MARKER ${V} |
-		      cysift tumor - - -f 0.50 -k 25 -d 10000 -t ${T} ${V} | $roicmd
-		      cysift island - - -n 5000 -T | cysift island - - -S -n 5000 |
-		      cysift margin -d 100 - - |
+		      cysift tumor - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} | $roicmd
+		      cysift island - - -n 000 -T | cysift island - - -S -n 1000 |
+		      cysift margin -d 200 - - |
 		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |
 		      cysift delaunay -l 20 - ${output_file}"
     echo "$cmd"
-    #eval "$cmd"
+    eval "$cmd"
 fi
