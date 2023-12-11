@@ -28,10 +28,12 @@ elif contains_string "$orion41_73" "$input_file"; then
     echo "chain.sh: detected Orion 41-73"
     RAD=/home/jaw34/projects/orion/radial.csv
     TUMOR_MARKER=131072
+    TCELL_MARKER=4096
 elif contains_string "$orion1_40" "$input_file"; then
     echo "chain.sh: detected Orion 1-40"
     RAD=/home/jaw34/projects/orion/radial.csv
-    TUMOR_MARKER=131072    
+    TUMOR_MARKER=131072
+    TCELL_MARKER=4096    
 elif [[ "$input_file" == *"immune"* ]]; then
     echo "chain.sh: detected CyCIF Immune. Need radial file"
     exit 1
@@ -41,7 +43,8 @@ elif [[ "$input_file" == *"tumor"* ]]; then
 elif contains_string "$prostate" "$input_file"; then
     echo "chain.sh: detected Prostate"
     RAD=/home/jaw34/projects/prostate/radial.csv
-    TUMOR_MARKER=4    
+    TUMOR_MARKER=4
+    TCELL_MARKER=2048
 else
     echo "header.sh: Warning: $input_file doesn't fit into cycif, prostate, orion, etc"
     exit 1
@@ -62,22 +65,26 @@ elif [[ "$input_file" == *"LSP10388"* || "$input_file" == *"LSP10353"* || "$inpu
     echo "Running the rescale version for LSP10388, LSP10353, LSP10375, or LSP10364"
     cmd="cysift magnify $input_file -f 1.015625 - | cysift pheno ${V} - -t $pheno_file - |
     		      cysift filter - - -a $TUMOR_MARKER ${V} |
-		      cysift tumor - - -f 0.50 -k 25 -d 10000 -t ${T} ${V} | $roicmd
+		      cysift annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 | $roicmd
+		      cysift filter - - -a $TCELL_MARKER ${V} |
+		      cysift annotate - - -f 0.5 -k 25 -d 100000 -t ${T} ${V} -F 16 | 
 		      cysift island - - -n 5000 -T | cysift island - - -S -n 5000 |
 		      cysift margin -d 100 - - |
 		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |
 		      cysift delaunay -l 20 - ${output_file}"
     echo "$cmd"
-    #eval "$cmd"
+    eval "$cmd"
 else
     echo "...running: cysift chain on ${base}"
     cmd="cysift pheno ${V} $input_file -t $pheno_file - |
     		      cysift filter - - -a $TUMOR_MARKER ${V} |
-		      cysift tumor - - -f 0.50 -k 25 -d 10000 -t ${T} ${V} | $roicmd
+		      cysift annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 | $roicmd
+		      cysift filter - - -a $TCELL_MARKER ${V} |
+		      cysift annotate - - -f 0.5 -k 25 -d 100000 -t ${T} ${V} -F 16 | 
 		      cysift island - - -n 5000 -T | cysift island - - -S -n 5000 |
 		      cysift margin -d 100 - - |
 		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |
 		      cysift delaunay -l 20 - ${output_file}"
     echo "$cmd"
-    #eval "$cmd"
+    eval "$cmd"
 fi
