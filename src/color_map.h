@@ -21,6 +21,16 @@ extern ColorMap color_map4;
 extern ColorMap color_map8;
 extern ColorMap color_map12;
 
+extern Color colorbrewer_3red_dark;
+extern Color colorbrewer_3red_medium;
+extern Color colorbrewer_3red_light;
+extern Color colorbrewer_3green_dark;
+extern Color colorbrewer_3green_medium;
+extern Color colorbrewer_3green_light;
+extern Color colorbrewer_3blue_dark;
+extern Color colorbrewer_3blue_medium;
+extern Color colorbrewer_3blue_light;
+
 extern Color color_deep_pink;
 extern Color color_yellow;
 extern Color color_red;

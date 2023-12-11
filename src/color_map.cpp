@@ -13,6 +13,16 @@ Color color_gray_90 = {100,100,100,0.1};
 Color color_purple = {128,0,128};
 Color color_dark_blue = {56,108,176};
 
+Color colorbrewer_3red_dark     = {222,45 ,38};
+Color colorbrewer_3red_medium   = {252,146,114};
+Color colorbrewer_3red_light    = {254,224,210};
+Color colorbrewer_3green_dark   = {49 ,163,84}; 
+Color colorbrewer_3green_medium = {161,217,155};
+Color colorbrewer_3green_light  = {229,245,224};
+Color colorbrewer_3blue_dark    = {49 ,130,189};
+Color colorbrewer_3blue_medium  = {158,202,225};
+Color colorbrewer_3blue_light   = {222,235,247};
+
   //https://colorbrewer2.org/#type=qualitative&scheme=Set1&n=4
   ColorMap color_map4 = {
     {27,158,119},

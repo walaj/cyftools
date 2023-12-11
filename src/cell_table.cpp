@@ -1420,86 +1420,23 @@ int CellTable::PlotPNG(const std::string& file,
   cairo_set_source_rgb(crp, 1, 1, 1); // background color
   cairo_paint(crp);
 
-  ////////
-  // ROI
-  // read in the roi file
-  if (!roifile.empty()) {
-    std::vector<Polygon> rois = read_polygons_from_file(roifile);
-    
-    for (const auto& polygon : rois) {
-
-      if (polygon.Text.find("tumor") == std::string::npos && polygon.Name.find("tumor") == std::string::npos &&
-	  polygon.Text.find("normal") == std::string::npos && polygon.Name.find("normal") == std::string::npos &&
-	  polygon.Text.find("blacklist") == std::string::npos && polygon.Name.find("blacklist") == std::string::npos &&
-	  polygon.Text.find("rtifact") == std::string::npos && polygon.Name.find("rtifact") == std::string::npos) {
-	std::cerr << "unknown roi name: " << polygon.Text << " -- " << polygon.Name << std::endl;
-	continue;
-      }
-      
-      
-      if (polygon.size() == 0)
-	continue;
-      
-      // Move to the first vertex
-      auto firstVertex = *polygon.begin();
-      cairo_move_to(crp, firstVertex.first*scale_factor*micron_per_pixel, firstVertex.second*scale_factor*micron_per_pixel);
-      
-      // Draw lines to each subsequent vertex
-      for (const auto& v : polygon) {
-	
-	// draw the points
-	//cairo_set_source_rgba(crp, 1, 0, 0, 1);
-	//cairo_arc(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel, 10, 0, TWO_PI);
-	//cairo_fill(crp);
-	
-	cairo_line_to(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel);
-      }
-      
-      // Close the polygon
-      cairo_close_path(crp);
-
-      const float alphaval = 0.4;
-      // Set the source color for fill and line (red with high alpha for transparency)
-      if (polygon.Text.find("tumor") != std::string::npos || polygon.Name.find("tumor") != std::string::npos)
-	cairo_set_source_rgba(crp, 1, 0, 0, alphaval); // Green with alpha = alphaval
-      else if (polygon.Text.find("normal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) 
-	cairo_set_source_rgba(crp, 1, 1, 0, alphaval); // Yellow with alpha = alphaval
-      else if (polygon.Text.find("blacklist") != std::string::npos || polygon.Name.find("blacklist") != std::string::npos ||
-	       polygon.Text.find("rtifact") != std::string::npos || polygon.Name.find("rtifact") != std::string::npos)
-	cairo_set_source_rgba(crp, 0.5, 0.5, 0.5, alphaval); // Gray with alpha = 0.5	
-      else
-	assert(false);
-      
-      // Fill the polygon
-      cairo_fill_preserve(crp);
-      
-      // Set the source color for the boundary (solid red)
-      cairo_set_source_rgb(crp, 1, 0, 0); // Solid red
-      
-      // Draw the boundary
-      cairo_stroke(crp);
-    }
-  }
-
-
-  
+ 
   ColorMap cm;
   std::vector<std::string> labels;
 
   if (module == "tumor") {
-      cm = {color_red, color_purple,
-	    color_dark_green, color_cyan,
-	    color_deep_pink
-	    //	    color_dark_blue, color_deep_pink,
+    cm = {colorbrewer_3red_light, // automated tumor
+	  colorbrewer_3red_medium,// manual
+	  colorbrewer_3red_dark,  // both
+	  colorbrewer_3blue_light, // automated stroma
+	  color_deep_pink
       }; 
       labels = {
-	"Tumor",
-	"Tumor (M)",    
+	"Tumor (Automated)",
+	"Tumor (Manual)",
+	"Tumor (A+M)",
 	"Stroma",
-	"Stroma (M)",
 	"Tcell cluster"
-	//"Jerry only", //CD163 PD-L1 neg",
-	//"Jerry + tumor" //CD163 PD-L1 pos",
       };
   } else if (module == "artifact") {
 
@@ -1586,16 +1523,29 @@ int CellTable::PlotPNG(const std::string& file,
 
     // Color by tumor / stromal call
     if (module == "tumor") {
+
+
+      if      (IS_FLAG_SET(cf, TUMOR_FLAG)  && !IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
+	c = cm[0];
+      else if (!IS_FLAG_SET(cf, TUMOR_FLAG) && IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
+	c = cm[1];
+      else if (IS_FLAG_SET(cf, TUMOR_FLAG) && IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
+	c = cm[2];
+      else if (!IS_FLAG_SET(cf, TUMOR_FLAG)  && !IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
+	c = cm[3];
+
       
-      if ( IS_FLAG_SET(cf, TUMOR_FLAG))
+      
+      /*      if ( IS_FLAG_SET(cf, TUMOR_FLAG))
 	c = IS_FLAG_SET(cf, MARGIN_FLAG) ? color_purple : color_red;
       else if (!IS_FLAG_SET(cf, TUMOR_FLAG))
 	c = IS_FLAG_SET(cf, MARGIN_FLAG) ? color_cyan : color_dark_green; 
       else 
 	assert(false);
-
+      */
+      
       if (IS_FLAG_SET(cf, TCELL_FLAG))
-	c = color_deep_pink;
+	c = cm[4];
       
       // override temporary
       /*      if (IS_FLAG_SET(pf, ORION_CD163))
@@ -1718,6 +1668,67 @@ int CellTable::PlotPNG(const std::string& file,
       }*/
   }
 
+  ////////
+  // ROI
+  // read in the roi file
+  if (!roifile.empty()) {
+    std::vector<Polygon> rois = read_polygons_from_file(roifile);
+    
+    for (const auto& polygon : rois) {
+
+      if (polygon.Text.find("tumor") == std::string::npos && polygon.Name.find("tumor") == std::string::npos &&
+	  polygon.Text.find("normal") == std::string::npos && polygon.Name.find("normal") == std::string::npos &&
+	  polygon.Text.find("blacklist") == std::string::npos && polygon.Name.find("blacklist") == std::string::npos &&
+	  polygon.Text.find("rtifact") == std::string::npos && polygon.Name.find("rtifact") == std::string::npos) {
+	std::cerr << "unknown roi name: " << polygon.Text << " -- " << polygon.Name << std::endl;
+	continue;
+      }
+      
+      if (polygon.size() == 0)
+	continue;
+      
+      // Move to the first vertex
+      auto firstVertex = *polygon.begin();
+      cairo_move_to(crp, firstVertex.first*scale_factor*micron_per_pixel, firstVertex.second*scale_factor*micron_per_pixel);
+      
+      // Draw lines to each subsequent vertex
+      for (const auto& v : polygon) {
+	
+	// draw the points
+	//cairo_set_source_rgba(crp, 1, 0, 0, 1);
+	//cairo_arc(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel, 10, 0, TWO_PI);
+	//cairo_fill(crp);
+	
+	cairo_line_to(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel);
+      }
+      
+      // Close the polygon
+      cairo_close_path(crp);
+
+      const float alphaval = 0.2;
+      // Set the source color for fill and line (red with high alpha for transparency)
+      if (polygon.Text.find("tumor") != std::string::npos || polygon.Name.find("tumor") != std::string::npos)
+	cairo_set_source_rgba(crp, 1, 0, 0, alphaval); // Green with alpha = alphaval
+      else if (polygon.Text.find("normal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) 
+	cairo_set_source_rgba(crp, 1, 1, 0, alphaval); // Yellow with alpha = alphaval
+      else if (polygon.Text.find("blacklist") != std::string::npos || polygon.Name.find("blacklist") != std::string::npos ||
+	       polygon.Text.find("rtifact") != std::string::npos || polygon.Name.find("rtifact") != std::string::npos)
+	cairo_set_source_rgba(crp, 0.5, 0.5, 0.5, alphaval); // Gray with alpha = 0.5	
+      else
+	assert(false);
+      
+      // Fill the polygon
+      cairo_fill_preserve(crp);
+      
+      // Set the source color for the boundary (solid red)
+      cairo_set_source_rgb(crp, 1, 0, 0); // Solid red
+      
+      // Draw the boundary
+      cairo_stroke(crp);
+    }
+  }
+
+  
 
   ///////
   // LEGEND
