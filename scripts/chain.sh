@@ -21,17 +21,25 @@ base="${input_file%%.*}"
 
 # radial file
 
+if [ -d /Users ]; then
+    PROJ_HOME=/Users/jeremiahwala/Sorger/projects
+    PROJ_DATA=/Users/jeremiahwala/Sorger/projects    
+else
+    PROJ_HOME=/home/jaw34/projects/
+    PROJ_DATA=/n/scratch3/users/j/jaw34/
+fi    
+
 if [[ ! -f "$input_file" ]]; then
     echo "Error: File '$input_file' does not exist."
     exit 1
 elif contains_string "$orion41_73" "$input_file"; then
     echo "chain.sh: detected Orion 41-73"
-    RAD=/home/jaw34/projects/orion/radial.csv
+    RAD=${PROJ_HOME}/orion/radial.csv
     TUMOR_MARKER=131072
     TCELL_MARKER=4096
 elif contains_string "$orion1_40" "$input_file"; then
     echo "chain.sh: detected Orion 1-40"
-    RAD=/home/jaw34/projects/orion/radial.csv
+    RAD=${PROJ_HOME}/orion/radial.csv    
     TUMOR_MARKER=131072
     TCELL_MARKER=4096    
 elif [[ "$input_file" == *"immune"* ]]; then
@@ -42,7 +50,7 @@ elif [[ "$input_file" == *"tumor"* ]]; then
     exit 1
 elif contains_string "$prostate" "$input_file"; then
     echo "chain.sh: detected Prostate"
-    RAD=/home/jaw34/projects/prostate/radial.csv
+    RAD=${PROJ_HOME}/prostate/radial.csv
     TUMOR_MARKER=4
     TCELL_MARKER=2048
 else
