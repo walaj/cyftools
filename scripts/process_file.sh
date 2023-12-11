@@ -7,7 +7,7 @@ if [ -d /Users ]; then
     PROJ_DATA=/Users/jeremiahwala/Sorger/projects    
 else
     PROJ_HOME=/home/jaw34/projects/
-    PROJ_DATA=/n/scratch3/users/j/jaw34/
+    PROJ_DATA=/n/scratch3/users/j/jaw34/projects/
 fi    
 
 
@@ -18,8 +18,9 @@ fi
 # prepare the matlab file
 #matlab -nodisplay -r "run('/home/jaw34/git/cysift/matlab/jerry.m'); exit;"
 
-#HOMEBASE=${PROJ_DATA}orion/orion_1_74
-HOMEBASE=${PROJ_DATA}prostate
+#HOMEBASE=${PROJ_DATA}/orion/orion_1_74
+HOMEBASE=${PROJ_DATA}/prostate
+echo "...getting file list from $HOMEBASE"
 for infile in $HOMEBASE/rawcsv/*.csv; do
 
     if [[ ! $infile =~ rar ]]; then
@@ -55,7 +56,7 @@ for infile in $HOMEBASE/rawcsv/*.csv; do
 	#~/git/cysift/scripts/cerealed.sh "$HOMEBASE/header/${base}.header.csv" "$HOMEBASE/clean/${base}.cys" 2>/dev/null
 
 	check_file_exists "$HOMEBASE/clean/${base}.cys"
-	~/git/cysift/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrdim.cys" "$HOMEBASE/phenotype/${base}.phenotype.csv" "${HOMEBASE}/roi/${base}.roi.csv"
+	sbatch ~/git/cysift/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrdim.cys" "$HOMEBASE/phenotype/${base}.phenotype.csv" "${HOMEBASE}/roi/${base}.roi.csv"
 
 	#check_file_exists "${HOMEBASE}/chain/${base}.ptrd.cys"
 	#sbatch ~/git/cysift/scripts/margin_noisland.sh "${HOMEBASE}/chain/${base}.ptrd.cys" "${HOMEBASE}/margin_noisland/${base}.ptrdim.cys"

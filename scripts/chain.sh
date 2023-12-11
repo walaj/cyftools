@@ -94,5 +94,5 @@ else
 		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |
 		      cysift delaunay -l 20 - ${output_file}"
     echo "$cmd"
-    eval "$cmd"
+    #eval "$cmd"
 fi
