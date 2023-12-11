@@ -506,7 +506,8 @@ int CountProcessor::ProcessHeader(CellHeader& header) {
 
 int CountProcessor::ProcessLine(Cell& cell) {
   
-  if (IS_FLAG_SET(cell.cflag, m_c_and_flags) && IS_FLAG_SET(cell.pflag, m_p_and_flags))
+  if (IS_FLAG_SET(cell.cflag, m_c_and_flags) && IS_FLAG_SET(cell.pflag, m_p_and_flags) &&
+      ARE_FLAGS_OFF(cell.cflag, m_c_not_flags) && ARE_FLAGS_OFF(cell.pflag, m_p_not_flags))
     m_count++;
   
   return NO_WRITE_CELL; // do nothing
