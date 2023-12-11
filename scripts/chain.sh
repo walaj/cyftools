@@ -14,8 +14,8 @@ roi_file=$4
 
 source ~/git/cysift/scripts/config.sh
 
-T=4
-V="-v"
+T=1
+#V="-v"
 
 base="${input_file%%.*}"
 
@@ -30,31 +30,31 @@ else
 fi    
 
 if [[ ! -f "$input_file" ]]; then
-    echo "Error: File '$input_file' does not exist."
+    parallel_echo "Error: File '$input_file' does not exist."
     exit 1
 elif contains_string "$orion41_73" "$input_file"; then
-    echo "chain.sh: detected Orion 41-73"
+    parallel_echo "chain.sh: detected Orion 41-73"
     RAD=${PROJ_HOME}/orion/radial.csv
     TUMOR_MARKER=131072
     TCELL_MARKER=4096
 elif contains_string "$orion1_40" "$input_file"; then
-    echo "chain.sh: detected Orion 1-40"
+    parallel_echo "chain.sh: detected Orion 1-40"
     RAD=${PROJ_HOME}/orion/radial.csv    
     TUMOR_MARKER=131072
     TCELL_MARKER=4096    
 elif [[ "$input_file" == *"immune"* ]]; then
-    echo "chain.sh: detected CyCIF Immune. Need radial file"
+    parallel_echo "chain.sh: detected CyCIF Immune. Need radial file"
     exit 1
 elif [[ "$input_file" == *"tumor"* ]]; then
-    echo "chain.sh: detected CyCIF Tumor. Need radial file"
+    parallel_echo "chain.sh: detected CyCIF Tumor. Need radial file"
     exit 1
 elif contains_string "$prostate" "$input_file"; then
-    echo "chain.sh: detected Prostate"
+    parallel_echo "chain.sh: detected Prostate"
     RAD=${PROJ_HOME}/prostate/radial.csv
     TUMOR_MARKER=4
-    TCELL_MARKER=2048
+    TCELL_MARKER=64
 else
-    echo "header.sh: Warning: $input_file doesn't fit into cycif, prostate, orion, etc"
+    parallel_echo "header.sh: Warning: $input_file doesn't fit into cycif, prostate, orion, etc"
     exit 1
 fi
 
@@ -66,24 +66,25 @@ else
 fi
 
 if [[ ! -f "$input_file" ]]; then
-    echo "Error in chain.sh: File '$input_file' does not exist."
+    parallel_echo "Error in chain.sh: File '$input_file' does not exist."
     exit 1
 elif [[ "$input_file" == *"LSP10388"* || "$input_file" == *"LSP10353"* || "$input_file" == *"LSP10375"* || "$input_file" == *"LSP10364"* ]]; then
     # Your slightly different command here
-    echo "Running the rescale version for LSP10388, LSP10353, LSP10375, or LSP10364"
+    parallel_echo "Running the rescale version for LSP10388, LSP10353, LSP10375, or LSP10364"
     cmd="cysift magnify $input_file -f 1.015625 - | cysift pheno ${V} - -t $pheno_file - |
     		      cysift filter - - -a $TUMOR_MARKER ${V} |
 		      cysift annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 | $roicmd
 		      cysift filter - - -a $TCELL_MARKER ${V} |
-		      cysift annotate - - -f 0.5 -k 25 -d 100000 -t ${T} ${V} -F 16 | 
+		      cysift annotate - - -f 0.50 -k 25 -d 100000 -t ${T} ${V} -F 16 | 
 		      cysift island - - -n 5000 -T | cysift island - - -S -n 5000 |
 		      cysift margin -d 100 - - |
 		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |
 		      cysift delaunay -l 20 - ${output_file}"
-    echo "$cmd"
+    echo "$cmd" | tr '\n' ' '
+    echo ""    
     eval "$cmd"
 else
-    echo "...running: cysift chain on ${base}"
+    parallel_echo "...running: cysift chain on ${base}"
     cmd="cysift pheno ${V} $input_file -t $pheno_file - |
     		      cysift filter - - -a $TUMOR_MARKER ${V} |
 		      cysift annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 | $roicmd
@@ -93,6 +94,7 @@ else
 		      cysift margin -d 100 - - |
 		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |
 		      cysift delaunay -l 20 - ${output_file}"
-    echo "$cmd"
-    eval "$cmd"
+    echo "$cmd" | tr '\n' ' '
+    echo ""
+    #eval "$cmd"
 fi

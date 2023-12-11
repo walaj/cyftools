@@ -14,6 +14,8 @@ LSP12617,LSP12619,LSP12621,LSP12623,LSP12625,LSP12627,LSP12629,LSP12631,\
 LSP12633,LSP12635,LSP12637,LSP12639,LSP12641,LSP12643,LSP12645,LSP12647,\
 LSP12649,LSP12651,LSP12653,LSP12655,LSP12657"
 
+PCO=1
+
 function check_file_exists {
     local file="$1"
     if [[ ! -f "$file" ]]; then
@@ -37,3 +39,10 @@ function contains_string {
 
     return $match_found
 }
+
+parallel_echo() {
+    if [ -z "${PCO+x}" ]; then
+        echo "$@"
+    fi
+}
+
