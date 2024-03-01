@@ -1,5 +1,8 @@
 tmp*
 cysift
+cyftools
+*.cyf
+*.cys
 back.*
 new.*
 *.pdf

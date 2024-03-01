@@ -209,7 +209,7 @@ LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB) $(KDLIB) ${TIFFLD} $(MLPACKLIB) \
           $(CAIROLIB) $(GMPLIB)
 
 # Specify the source files
-SRCS = cysift.cpp \
+SRCS = cyftools.cpp \
        cell_table.cpp \
        cell_table_graph.cpp \
        cell_table_lda.cpp \
@@ -235,7 +235,7 @@ SRCS = cysift.cpp \
 OBJS = $(SRCS:.cpp=.o)
 
 # Specify the executable file
-EXEC = cysift
+EXEC = cyftools
 
 # The default target
 all: $(EXEC)

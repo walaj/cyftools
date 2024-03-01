@@ -58,6 +58,7 @@ static const struct option longopts[] = {
 
 static const char *RUN_USAGE_MESSAGE =
 "Usage: cyftools [module] <options> \n"
+"VERSION: 0.1.0\n"
 " --- Information --- \n"
 "  view        - View the cell table as character data\n"
 "  info        - Display detailed information\n"

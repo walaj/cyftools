@@ -2003,7 +2003,7 @@ void CellTable::StreamTableCSV(LineProcessor& proc, const std::string& file) {
       // add the tag to the header
       Tag tag(line);
       m_header.addTag(tag);
-      
+
     } else {
       
       // label that the header has already been read
