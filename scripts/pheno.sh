@@ -11,6 +11,3 @@ if [[ ! -f "$input_file" ]]; then
 else
     Rscript ${HOME}/git/cysift/R/pheno_form.R $input_file $out_file
 fi
-
-
-
