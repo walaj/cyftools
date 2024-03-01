@@ -2000,7 +2000,7 @@ static int viewfunc(int argc, char** argv) {
 
   table.StreamTable(viewp, opt::infile);
   
-  return 0;  
+   return 0;  
 }
 
 static int histogramfunc(int argc, char** argv) {
