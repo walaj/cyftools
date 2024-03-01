@@ -1691,8 +1691,8 @@ static int tumorfunc(int argc, char** argv) {
     }
   }
 
-  if (flag_to_set != 1 && flag_to_set != 16) {
-    std::cerr << "-F must be 1 or 16" << std::endl;
+  if (flag_to_set != 1 && flag_to_set != 16 && flag_to_set != 32) {
+    std::cerr << "-F (c flag to set) must be 1,16,32" << std::endl;
     die = true;
   }
 
@@ -1966,9 +1966,9 @@ static int viewfunc(int argc, char** argv) {
       "  <cysfile>                  File path or '-' to stream from stdin.\n"
       "\n"
       "Optional Options:\n"
-      "  -R                         Flag to print with header in csv format\n"
-      "  -A                         Flag to print as name:value format\n"
-      "  -C                         Flag to print as markers and x,y only for Crevasse\n" 
+      "  -R                         Print (with header) in csv format\n"
+      "  -A                         Print as name:value format for viewing\n"
+      "  -C                         Print as CellID,x,y,...markers... for Crevasse\n" 
       "  -x <fields>                Comma-separated list of fields to trim output to.\n"
       "  -n <decimals>              Number of decimals to keep. Default is -1 (no change).\n"
       "  -H                         View only the header.\n"
@@ -2638,15 +2638,15 @@ static int radialdensfunc(int argc, char** argv) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
+    case 'f' : arg >> file; break;      
     case 't' : arg >> opt::threads; break;
-    case 'R' : arg >> inner; break;
-    case 'r' : arg >> outer; break;
+    case 'r' : arg >> inner; break;
+    case 'R' : arg >> outer; break;
     case 'o' : arg >> logor; break;
     case 'a' : arg >> logand; break;
-    case 'l' : arg >> label; break;
-    case 'f' : arg >> file; break;
     case 'j' : normalize_local = true; break;
     case 'J' : normalize_global = true; break;
+    case 'l' : arg >> label; break;
     default: die = true;
     }
   }
@@ -2657,16 +2657,16 @@ static int radialdensfunc(int argc, char** argv) {
       "Usage: cysift radialdens [cysfile]\n"
       "  Calculate the density of cells away from individual cells\n"
       "    cysfile: filepath or a '-' to stream to stdin\n"
-      "    -r [20]               Outer radius\n"
-      "    -R [0]                Inner radius\n"
+      "    -f                    File for multiple labels [r,R,o,a,j,J,l]\n"
+      "    -r [0]                Inner radius\n"
+      "    -R [20]               Outer radius\n"
       "    -o                    Logical OR flags\n"
       "    -a                    Logical AND flags\n"
-      "    -l                    Label the column\n"
       "    -j                    Flag for normalizing to cell count in radius\n"
-      "    -J                    Flag for normalizing to cell count in slide\n"      
-      "    -f                    File for multiple labels [r,R,o,a,l]\n"
+      "    -J                    Flag for normalizing to cell count in slide\n"
+      "    -l                    Label the column\n"
       "    -t                    Number of threads (default 1)\n"
-      "    -v, --verbose         Increase output to stderr\n"      
+      "    -v, --verbose         Increase output to stderr\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;

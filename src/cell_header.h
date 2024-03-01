@@ -20,7 +20,7 @@ class Tag {
   uint8_t type;
   std::string id;
   std::string data;  
-  int i = -1;
+  int i = -1; // sort order. -1 means don't factor this in for sort. if > -1, then really store the temporal order of creation for the PG tags
   
   Tag() = default;
   
@@ -137,10 +137,15 @@ class CellHeader {
     {
       ar(tags);
     }
-  
+
+private:
   std::vector<Tag> tags;
 
   size_t num_rows = 0;  // Number of rows in the data
+
+  size_t pg_tag_num = 0; // count pg tags, so that newer tags get higher "i" value
+  size_t ma_tag_num = 0; // count pg tags, so that newer tags get higher "i" value
+  size_t ca_tag_num = 0; // count pg tags, so that newer tags get higher "i" value
   
 };
 

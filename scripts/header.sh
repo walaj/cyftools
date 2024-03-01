@@ -12,19 +12,19 @@ if [[ ! -f "$input_file" ]]; then
     exit 1
 elif [[ $orion41_73 == *"$base"* ]]; then
     echo "header.sh: detected Orion 41-73"
-    header="/home/jaw34/projects/orion/header.txt"
+    header="${PROJ_HOME}/orion/header.txt"
 elif [[ $orion1_40 == *"$base"* ]]; then
     echo "header.sh: detected Orion 1-40"
-    header="/home/jaw34/projects/orion/header.txt"
+    header="${PROJ_HOME}/orion/header.txt"
 elif [[ "$input_file" == *"immune"* ]]; then
     echo "header.sh: detected CyCIF Immune"
-    header="/home/jaw34/projects/orion/header.immune.txt"
+    header="${PROJ_HOME}/orion/header.immune.txt"
 elif [[ "$input_file" == *"tumor"* ]]; then
     echo "header.sh: detected CyCIF Tumor"
-    header="/home/jaw34/projects/orion/header.tumor.txt"
+    header="${PROJ_HOME}/orion/header.tumor.txt"
 elif contains_string "$prostate" "$base"; then    
     echo "header.sh: detected Prostate"
-    header="/home/jaw34/projects/prostate/header.txt"
+    header="${PROJ_HOME}/prostate/header.txt"
 else
     echo "header.sh: Warning: $input_file doesn't fit into cycif, prostate, orion, etc. Base: $base"
     exit 1

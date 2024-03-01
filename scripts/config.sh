@@ -16,6 +16,14 @@ LSP12649,LSP12651,LSP12653,LSP12655,LSP12657"
 
 #PCO=1
 
+if [ -d /Users ]; then
+    PROJ_HOME=/Users/jeremiahwala/Sorger/projects/
+    PROJ_DATA=/Users/jeremiahwala/Sorger/projects/   
+else
+    PROJ_HOME=/home/jaw34/projects/
+    PROJ_DATA=/n/scratch3/users/j/jaw34/projects/
+fi    
+
 function check_file_exists {
     local file="$1"
     if [[ ! -f "$file" ]]; then

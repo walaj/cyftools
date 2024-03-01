@@ -68,7 +68,7 @@ void CellHeader::SortTags() {
 
   // we are using the order provided by the tag definitions
   std::sort(tags.begin(), tags.end(), [](const Tag &a, const Tag &b) {
-    if (a.i == -1 || b.i == -1)
+    if (a.type != b.type)
       return a.type < b.type;
     return a.i < b.i;
   });
@@ -117,9 +117,6 @@ bool CellHeader::isConcatenatable(const CellHeader& header) const {
 
 void CellHeader::addTag(const Tag& tag) {
   
-  // ADD: check tag type is valid
-  ///
-
   Tag thistag = tag;
   
   // add the index if not already added
@@ -137,8 +134,18 @@ void CellHeader::addTag(const Tag& tag) {
   // float values in the column
   tags.push_back(thistag);
 
+  // if it's a program tag, update the counter for temporal sorting
+  if (tag.type == Tag::PG_TAG) {
+    tags.back().i = pg_tag_num; 
+    pg_tag_num++;
+  } else if (tag.type == Tag::MA_TAG) {
+    tags.back().i = ma_tag_num; 
+    ma_tag_num++;    
+  } else if (tag.type == Tag::CA_TAG) {
+    tags.back().i = ca_tag_num; 
+    ca_tag_num++;    
+  }
 }
-
 
 std::vector<Tag> CellHeader::GetMarkerTags() const {
 

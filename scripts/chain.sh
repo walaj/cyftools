@@ -14,7 +14,7 @@ roi_file=$4
 
 source ~/git/cysift/scripts/config.sh
 
-T=1
+T=6
 #V="-v"
 
 base="${input_file%%.*}"
@@ -52,7 +52,8 @@ elif contains_string "$prostate" "$input_file"; then
     parallel_echo "chain.sh: detected Prostate"
     RAD=${PROJ_HOME}/prostate/radial.csv
     TUMOR_MARKER=4
-    TCELL_MARKER=64
+    TCELL_MARKER=2048
+    BCELL_MARKER=64
 else
     parallel_echo "header.sh: Warning: $input_file doesn't fit into cycif, prostate, orion, etc"
     exit 1
@@ -89,7 +90,9 @@ else
     		      cysift filter - - -a $TUMOR_MARKER ${V} |
 		      cysift annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 | $roicmd
 		      cysift filter - - -a $TCELL_MARKER ${V} |
-		      cysift annotate - - -f 0.5 -k 25 -d 100000 -t ${T} ${V} -F 16 | 
+		      cysift annotate - - -f 0.5 -k 25 -d 200 -t ${T} ${V} -F 16 |
+		      cysift filter - - -a $BCELL_MARKER ${V} |
+		      cysift annotate - - -f 0.5 -k 25 -d 200 -t ${T} ${V} -F 32 | 
 		      cysift island - - -n 5000 -T | cysift island - - -S -n 5000 |
 		      cysift margin -d 100 - - |
 		      cysift radialdens ${V} - - -t ${T} -f ${RAD} |

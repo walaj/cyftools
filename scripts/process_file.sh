@@ -5,14 +5,6 @@
 
 source ~/git/cysift/scripts/config.sh
 
-if [ -d /Users ]; then
-    PROJ_HOME=/Users/jeremiahwala/Sorger/projects/
-    PROJ_DATA=/Users/jeremiahwala/Sorger/projects/   
-else
-    PROJ_HOME=/home/jaw34/projects/
-    PROJ_DATA=/n/scratch3/users/j/jaw34/projects/
-fi    
-
 
 ## download the data
 #orion data
@@ -21,8 +13,8 @@ fi
 # prepare the matlab file
 #matlab -nodisplay -r "run('/home/jaw34/git/cysift/matlab/jerry.m'); exit;"
 
-HOMEBASE=${PROJ_DATA}/orion/orion_1_74
-#HOMEBASE=${PROJ_DATA}/prostate
+#HOMEBASE=${PROJ_DATA}/orion/orion_1_74
+HOMEBASE=${PROJ_DATA}/prostate
 echo $HOMEBASE/rawcsv/
 parallel_echo "...getting file list from $HOMEBASE"
 for infile in $HOMEBASE/rawcsv/*.csv; do
@@ -40,35 +32,35 @@ for infile in $HOMEBASE/rawcsv/*.csv; do
 	parallel_echo "...process_file.sh: working on sample $base"
 
 	## uncomment to run just the one file
-	if [[ $base != "LSP14483" ]]; then
-	    continue
-	fi
+	##if [[ $base != "LSP14483" ]]; then
+	##    continue
+	##fi
 	
-	#check_file_exists $infile
-	#~/git/cysift/scripts/csv_rearrange.sh $infile "${base}.rar.csv"
+	check_file_exists $infile
+	~/git/cysift/scripts/csv_rearrange.sh $infile "${base}.rar.csv"
 
 	## Get the gates from the *p columns from csv's dumped from matlab files
-	#if ! command -v Rscript &> /dev/null
-	#then
-	#    echo "Rscript could not be found"
-	#    exit
-	#fi
-	#check_file_exists "$HOMEBASE/rawcsv/${base}.rar.csv"
-	#~/git/cysift/scripts/pheno.sh $infile "$HOMEBASE/pheno/${base}.phenotype.csv"
+	if ! command -v Rscript &> /dev/null
+	then
+	    echo "Rscript could not be found"
+	    exit
+	fi
+	check_file_exists "$HOMEBASE/rawcsv/${base}.rar.csv"
+	~/git/cysift/scripts/pheno.sh $infile "$HOMEBASE/phenotype/${base}.phenotype.csv"
 	
 	## Put the cysift headers onto the csv files
-	#check_file_exists "$HOMEBASE/pheno/${base}.phenotype.csv"
-	#~/git/cysift/scripts/header.sh "$HOMEBASE/rawcsv/${base}.rar.csv" "$HOMEBASE/header/${base}.header.csv"
+	check_file_exists "$HOMEBASE/phenotype/${base}.phenotype.csv"
+	~/git/cysift/scripts/header.sh "$HOMEBASE/rawcsv/${base}.rar.csv" "$HOMEBASE/header/${base}.header.csv"
 
 	## Convert the cysift csv files to cys files
-	#check_file_exists "$HOMEBASE/header/${base}.header.csv"
-	#~/git/cysift/scripts/cerealed.sh "$HOMEBASE/header/${base}.header.csv" "$HOMEBASE/clean/${base}.cys" 2>/dev/null
+	check_file_exists "$HOMEBASE/header/${base}.header.csv"
+	~/git/cysift/scripts/cerealed.sh "$HOMEBASE/header/${base}.header.csv" "$HOMEBASE/clean/${base}.cys" 2>/dev/null
 
 	check_file_exists "$HOMEBASE/clean/${base}.cys"
 	~/git/cysift/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrdim.cys" "$HOMEBASE/phenotype/${base}.phenotype.csv" "${HOMEBASE}/rois/${base}.roi.csv"
 
-	#check_file_exists "${HOMEBASE}/chain/${base}.ptrd.cys"
-	#sbatch ~/git/cysift/scripts/margin_noisland.sh "${HOMEBASE}/chain/${base}.ptrd.cys" "${HOMEBASE}/margin_noisland/${base}.ptrdim.cys"
+	check_file_exists "${HOMEBASE}/chain/${base}.ptrd.cys"
+	sbatch ~/git/cysift/scripts/margin_noisland.sh "${HOMEBASE}/chain/${base}.ptrd.cys" "${HOMEBASE}/margin_noisland/${base}.ptrdim.cys"
 	
     fi
 done
