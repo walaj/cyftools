@@ -2070,6 +2070,7 @@ void CellTable::GMM_EM() {
    
  }
 
+ #ifdef HAVE_LDAPLUSPLUS
 const std::vector<std::vector<double>> CellTable::create_inverse_distance_weights() {
 
   validate();
@@ -2099,3 +2100,4 @@ const std::vector<std::vector<double>> CellTable::create_inverse_distance_weight
   
   return W;
 }
+#endif
