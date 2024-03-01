@@ -1,4 +1,5 @@
 #include "cell_row.h"
+#include <cassert>
 
 #include "cell_utils.h"
 
@@ -37,6 +38,30 @@ static void printWithoutScientific(double number, int round) {
         }
         std::cout << out;
 	}*/
+}
+
+void Cell::PrintForCrevasse(const CellHeader& header) const {
+
+  char d = ',';
+
+  uint32_t sampleID = static_cast<uint32_t>(id >> 32); // Extract the first 32 bits
+  uint32_t cellID = static_cast<uint32_t>(id & 0xFFFFFFFF); // Extract the second 32 bits
+
+  std::cout << cellID << d << x << d << y << d;
+
+  size_t i = 0;
+  const auto& tags = header.GetDataTags();
+  for (auto it = tags.begin(); it != tags.end(); ++it) {
+    if (it->type == Tag::MA_TAG) {
+      std::cout << cols.at(i);
+      if (std::next(it) != tags.end() && std::next(it)->type == Tag::MA_TAG) {
+	std::cout << ","; 
+      }
+    }
+    i++;
+  }
+  
+  std::cout << std::endl;
 }
 
 void Cell::set_sample_id(uint32_t new_id) {

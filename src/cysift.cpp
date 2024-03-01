@@ -65,7 +65,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  count       - Count cells\n"
 "  head        - Returns first lines of a file\n"
 " --- Low-level processing ---\n"
-"  cereal      - Create a .cys format file from a CSV\n"    
+"  convert      - Create a .cys format file from a CSV\n"    
 "  cut         - Select only given markers and metas\n"
 "  reheader    - Change the header\n"
 "  clean       - Remove classes of data (e.g. all meta)\n"
@@ -139,7 +139,7 @@ static int ldarunfunc(int argc, char** argv);
 static int meanfunc(int argc, char** argv);
 static int cleanfunc(int argc, char** argv);
 static int countfunc(int argc, char** argv);
-static int cerealfunc(int argc, char** argv);
+static int convertfunc(int argc, char** argv);
 static int catfunc(int argc, char** argv);
 static int radialdensfunc(int argc, char** argv);
 static int subsamplefunc(int argc, char** argv);
@@ -235,8 +235,8 @@ int main(int argc, char **argv) {
     val = rescalefunc(argc, argv);
   } else if (opt::module == "magnify") {
     val = magnifyfunc(argc, argv);
-  } else if (opt::module == "cereal") {
-    val = cerealfunc(argc, argv);
+  } else if (opt::module == "convert") {
+    val = convertfunc(argc, argv);
   } else if (opt::module == "mean") {
     val = meanfunc(argc, argv);
   } else if (opt::module == "info") {
@@ -344,8 +344,8 @@ static int magnifyfunc(int argc, char** argv) {
 }
 
 static int rescalefunc(int argc, char** argv) {
+  
   const char* shortopts = "v";
-
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -506,15 +506,19 @@ static int islandfunc(int argc, char** argv) {
 
 static int marginfunc(int argc, char** argv) {
 
-  const char* shortopts = "vd:t:";
+  const char* shortopts = "vd:t:T:M:";
   float dist = 100;
+  cy_uint tumor_flag = TUMOR_FLAG;
+  cy_uint margin_flag = MARGIN_FLAG;
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'd' : arg >> dist; break;
-    case 't' : arg >> opt::threads; break;      
+    case 't' : arg >> opt::threads; break;
+    case 'T' : arg >> tumor_flag; break;
+    case 'M' : arg >> margin_flag; break;
     default: die = true;
     }
   }
@@ -528,6 +532,8 @@ static int marginfunc(int argc, char** argv) {
       "Arguments:\n"
       "  [cysfile]                 Input .cys file path or '-' to stream from stdin.\n"
       "  -d [100]                  Radius to look at the margin for\n"
+      "  -T [1]                    Flag to label tumor as\n"
+      "  -M [4]                    Flag to label margin as\n"      
       "\n"
       "Optional Options:\n"
       "  -v, --verbose             Increase output to stderr.\n"
@@ -542,7 +548,7 @@ static int marginfunc(int argc, char** argv) {
 
   table.SetupOutputWriter(opt::outfile);
   
-  table.TumorMargin(dist); 
+  table.TumorMargin(dist, tumor_flag, margin_flag); 
   
   table.OutputTable();
   
@@ -1825,7 +1831,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "crop"  || opt::module == "umap" ||
 	 opt::module == "count" || opt::module == "clean" ||
 	 opt::module == "annotate" || opt::module == "convolve" || 
-	 opt::module == "cat" || opt::module == "cereal" ||
+	 opt::module == "cat" || opt::module == "convert" ||
 	 opt::module == "sort" || opt::module == "divide" || 
 	 opt::module == "pearson" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
@@ -1855,9 +1861,9 @@ static void parseRunOptions(int argc, char** argv) {
 }
 
 static int roifunc(int argc, char** argv) {
-  const char* shortopts = "vn:r:bm:";
-  
+
   std::string roifile;
+  const char* shortopts = "vn:r:m:b";
   bool blacklist = false;
   float micron_per_pixel = 0;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1923,10 +1929,11 @@ static int roifunc(int argc, char** argv) {
 
 static int viewfunc(int argc, char** argv) {
   
-  const char* shortopts = "vn:hHRAx:";
+  const char* shortopts = "vn:hHRACx:";
   int precision = 2;
   bool rheader = false;  // view as csv with csv header
   bool adjacent = false; // view as name:value
+  bool crevasse = false; // view as output for crevasse
   std::string cut; // list of markers, csv separated, to cut on
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1934,6 +1941,7 @@ static int viewfunc(int argc, char** argv) {
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'n' : arg >> precision; break;
+    case 'C' : crevasse = true; break;
     case 'x' : arg >> cut; break;
     case 'A' : adjacent = true; break;
     case 'R' : rheader = true; break;
@@ -1943,8 +1951,8 @@ static int viewfunc(int argc, char** argv) {
     }
   }
 
-  if (rheader + adjacent + opt::header_only + opt::header > 1) {
-    std::cerr << "Warning: Can only chose one of A, R, h, H" << std::endl;
+  if (rheader + adjacent + crevasse + opt::header_only + opt::header > 1) {
+    std::cerr << "Warning: Can only chose one of A, R, h, H, C" << std::endl;
     die = true;
   }
   
@@ -1959,7 +1967,8 @@ static int viewfunc(int argc, char** argv) {
       "\n"
       "Optional Options:\n"
       "  -R                         Flag to print with header in csv format\n"
-      "  -A                         Flag to print as name:value format\n"      
+      "  -A                         Flag to print as name:value format\n"
+      "  -C                         Flag to print as markers and x,y only for Crevasse\n" 
       "  -x <fields>                Comma-separated list of fields to trim output to.\n"
       "  -n <decimals>              Number of decimals to keep. Default is -1 (no change).\n"
       "  -H                         View only the header.\n"
@@ -1985,7 +1994,8 @@ static int viewfunc(int argc, char** argv) {
   table.setVerbose(opt::verbose);
   
   ViewProcessor viewp;
-  viewp.SetParams(opt::header, opt::header_only, rheader, adjacent, precision, tokens);
+  viewp.SetParams(opt::header, opt::header_only, rheader, adjacent, crevasse,
+		  precision, tokens);
 
   table.StreamTable(viewp, opt::infile);
   
@@ -2852,7 +2862,7 @@ int debugfunc(int argc, char** argv) {
   return 0;
 }
 
-static int cerealfunc(int argc, char** argv) {
+static int convertfunc(int argc, char** argv) {
   const char* shortopts = "s:v";
   uint32_t sampleid = static_cast<uint32_t>(-1);
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -2870,9 +2880,8 @@ static int cerealfunc(int argc, char** argv) {
   
   if (die || in_out_process(argc, argv)) {
     
-    
     const char *USAGE_MESSAGE =
-      "Usage: cysift <csvfile> [cysfile]\n"
+      "Usage: cysift convert <csvfile> [cysfile]\n"
       "  Convert a CSV file to a .cys formatted file or stream.\n"
       "\n"
       "Arguments:\n"
@@ -2884,10 +2893,11 @@ static int cerealfunc(int argc, char** argv) {
       "\n"
       "Optional Options:\n"
       "  -v, --verbose             Increase output to stderr.\n"
+      "  -h,                       Optionally, supply the header text file here, rather than as appended to csv\n"
       "\n"
       "Example:\n"
-      "  cysift input.csv output.cys\n"
-      "  cysift input.csv - -s 12345\n";
+      "  cysift convert input.csv output.cys\n"
+      "  cysift convert input.csv - -s 12345\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -3092,8 +3102,8 @@ static bool in_out_process(int argc, char** argv) {
   
   return opt::infile.empty() || opt::outfile.empty();
 
-}
 
+}
 // return TRUE if you want the process to die and print message
 static bool in_only_process(int argc, char** argv) {
   

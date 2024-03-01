@@ -19,7 +19,9 @@ class Cell {
 
   void Print(int round) const;
 
-  void PrintWithHeader(int round, const CellHeader& header) const;  
+  void PrintWithHeader(int round, const CellHeader& header) const;
+
+  void PrintForCrevasse(const CellHeader& header) const;
 
   void set_cell_id(uint32_t id);
 

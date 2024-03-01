@@ -164,7 +164,12 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
     cairo_t *crp = cairo_create (surfacep);
     cairo_set_source_rgb(crp, 0, 0, 0); // background color
 
+    // make the legend and color map
     ColorMap cm = getColorMap(m_ldamodel->getNumTopics());
+    ColorLabelMap clm;
+    for (size_t i = 0; i < Zr.rows(); i++) {
+      clm.push_back({cm[i], "Topic " + std::to_string(i+1)});
+    }
 
     topic_highlight -= 1;
     if (topic_highlight >= 0) {
@@ -240,10 +245,6 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
     //cairo_destroy(cr);
   //cairo_surface_destroy(surface);
 
-    std::vector<std::string> labels;
-    for (size_t i = 0; i < Zr.rows(); i++) {
-      labels.push_back("Topic " + std::to_string(i+1));
-    }
 
     /// LEGEND
     int legend_width = 1000*scale_factor; // Width of each color box
@@ -254,7 +255,7 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
     int legend_x = width*scale_factor - legend_width - legend_padding;
     int legend_y = legend_padding;
     add_legend_cairo(crp, font, legend_width, legend_height,
-		     legend_x, legend_y, cm, labels);
+		     legend_x, legend_y, clm);
     /*    
     for (int i = 0; i < 10; ++i) {
       

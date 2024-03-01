@@ -9,6 +9,8 @@ library(data.table)
 library(tidyr)  # For gather()
 library(tidyverse)
 library(ggplot2)
+library(ggbeeswarm)
+library(ggpubr)
 library(parallel)
 library(survival)
 library(forestplot)
@@ -29,6 +31,9 @@ load_redcap()
 
 # re-format pMMR into factor
 redcap$pMMR <- factor(redcap$pMMR, levels = c(0, 1), labels = c("dMMR", "pMMR"))
+
+# rename
+setnames(redcap, "p53","TP53")
 
 # Verify the transformation
 table(redcap$pMMR)
@@ -57,11 +62,6 @@ redcap[, side := {
 redcap[, PFSC := ifelse(redcap$PFSCensor==0,1,0)]
 ```
 
-```{r kras-km}
-g <- km_plot(rrt, parm="KRAS", parm.name="KRAS", flip=FALSE)
-save_pdf(g, "kras_km.pdf", width=4,height=3)
-```
-
 ```{r plot-setup-stuff, include=FALSE}
 # ggplot theme
 theme_jw <- function() {
@@ -80,85 +80,436 @@ pMMR_colors <- c("dMMR" = "#fdc086", "pMMR" = "#5ab4ac", "tipMMR"="#beaed4")
 save_pdf <- function(g, filename, width=10, height=10) {
   filepath <- paste0("~/Sorger/projects/orion/figs_raw_paper/", filename)
   
-  pdf(filepath, useDingbats = FALSE, width, height)
-  print(g)
-  dev.off()
+  ggsave(plot=g, filename=filepath, width=width, height=height, bg="transparent",
+         units="in", device=cairo_pdf)
+  #print(g)
+  #dev.off()
 }
+```
+
+
+```{r kras-km, include=FALSE}
+
+## HOLDER FOR PANEL A
+blank_plot <- ggplot() + 
+  theme_void() +  
+  theme(plot.background = element_rect(fill = "white", colour = "black")) 
+
+## MUTATION COUNT PANEL B
+# reshape the mutation data
+long_data <- redcap %>%
+  gather(key = "Mutation", value = "Status", APC, TP53, KRAS, BRAF, PIK3CA, SOX9, FBXW7, TCF7L2, CTNNB1, PTEN, NRAS) %>%
+  filter(Status == 1)  # Keep only mutated entries
+
+# Compute the total count for each mutation
+mutation_counts <- long_data %>%
+  group_by(Mutation) %>%
+  summarize(Total = n())
+long_data$Mutation <- factor(long_data$Mutation, levels = rev(mutation_counts$Mutation[order(-mutation_counts$Total)]))
+
+# Bar chart of mutation counts
+g_mut <- ggplot(long_data, aes(x = Mutation, fill = as.factor(pMMR))) +
+  geom_bar(color="black") +  # Stacked bar chart
+  coord_flip() +  # Make the bar chart horizontal
+  labs(x = "Mutation",
+       y = "Number samples") +
+  theme_jw() + 
+  theme(legend.position = c(0.65, 0.3), 
+        legend.justification = c(-0.2, -0.3), # Coordinates relative to the plot area
+        legend.box.margin = margin(6, 6, 6, 6), # Adjust spacing around the legend box if necessary
+        legend.margin = margin(-10, -10, -10, -10),
+        text = element_text(family = "Helvetica"),
+        axis.text.x = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.title.y = element_text(size = 9, margin = margin(r = 5)),
+        axis.title.x = element_text(size = 9, margin = margin(t = 2)),
+        plot.title = element_text(size = 9),
+        legend.title = element_blank(),
+        #legend.spacing.y = unit(1, "cm"),
+        legend.text = element_text(size = 9),
+        legend.background = element_blank(),
+        legend.key = element_blank(),
+        axis.line = element_line(colour = "black"),  # Add axis lines
+        panel.background = element_rect(fill = "transparent", colour = NA),  # remove panel background
+        plot.background = element_rect(fill = "transparent", colour = NA)
+        ) + 
+  scale_fill_manual(values = pMMR_colors, name = "MMR status") +
+  scale_y_continuous(expand = c(0, 0))
+
+## KRAS KM PLOT C
+g_kras <- km_plot(redcap, parm="KRAS", parm.name="KRAS", flip=FALSE) + 
+  theme(legend.position = c(0, 0), # Bottom left corner
+        legend.justification = c(-0.2, -0.3), # Coordinates relative to the plot area
+        legend.box.margin = margin(6, 6, 6, 6), # Adjust spacing around the legend box if necessary
+        legend.margin = margin(-10, -10, -10, -10),
+        text = element_text(family = "Helvetica"),
+        axis.text.x = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.title.y = element_text(size = 9, margin = margin(r = 5)),
+        axis.title.x = element_text(size = 9, margin = margin(t = -5)),
+        plot.title = element_text(size = 9),
+        legend.title = element_blank(),
+        #legend.spacing.y = unit(1, "cm"),
+        legend.text = element_text(size = 9),
+        legend.background = element_blank(),
+        legend.key = element_blank(),
+        panel.background = element_rect(fill = "transparent", colour = NA),  # remove panel background
+        plot.background = element_rect(fill = "transparent", colour = NA)
+        ) + 
+  scale_color_manual(name="",values=c("0"="#4575b4", "1"="#d73027"),labels=c("0"="KRAS-wt","1"="KRAS-mut"))+
+  scale_fill_manual(values=c("0"="#4575b4", "1"="#d73027"), guide="none") + 
+  #guides(fill = guide_legend(byrow = TRUE)) + 
+  coord_fixed(ratio=6)
+#save_pdf(g, "kras_km.pdf", width=3.5,height=3)
+
+## MUTATION FOREST PLOT 
+# Known HRs by effect
+known <- data.table()
+#known <- rbind(known, data.table(variable="PIK3CA", hr=1.20, lower=0.98, upper=1.46, pmid="27436848", type="PFS", note=""))
+known <- rbind(known, data.table(variable="PIK3CA", hr=0.96, lower=0.83, upper=1.12, pmid="27436848", type="OS", note=""))
+known <- rbind(known, data.table(variable="APC", hr=0.62, lower=0.44, upper=0.83, pmid="33230914", type="OS", note="pMMR only"))
+#known <- rbind(known, data.table(variable="BRAF", hr=2.25, lower=1.82, upper=2.83, pmid="34843402", type="OS", note=""))
+#known <- rbind(known, data.table(variable="LVI", hr=2.37, lower=0.95, upper=5.89, pmid="24886281", type="OS", note="Stage III"))
+#known <- rbind(known, data.table(variable="PNI", hr=0.99, lower=0.14, upper=7.14, pmid="24886281", type="OS", note="Stage III"))
+known <- rbind(known, data.table(variable="Grade", hr=1.45, lower=0.72, upper=2.90, pmid="24886281", type="OS", note="Poor differentiation. Stage III"))
+known <- rbind(known, data.table(variable="Gender", hr=1.16, lower=0.75, upper=1.80, pmid="24886281", type="OS", note="Male. Stage III"))
+known <- rbind(known, data.table(variable=c("PNI","LVI","mucinous","TP53","KRAS","BRAF","Gender"),hr=c(2.05,2.13,1.63,0.92,1.26,1.57,1.1),lower=c(1.38,1.42,0.93,0.61,0.84,0.64,0.73),upper=c(3.06,3.21,2.88,1.4,1.90,3.87,1.65),pmid="30894685",type="dfs",note="DFS"))
+known[, source := "lit"]
+
+# HR by mutation
+hr <- rbindlist(lapply(nn <- c("APC","TP53","KRAS","BRAF","PIK3CA", "LVI","PNI","Grade", "mucinous", "Gender"), function(x) {
+ rr <- data.table::copy(redcap)
+ flip = FALSE
+ if (x == "Grade") {
+   rr <- redcap[Grade != "Unknown"]
+   flip=FALSE
+   flip.labels=TRUE
+ }
+ dt <- km_plot(redcap, x, x, c("0"="WT", "1"="Mutated"),return.model=TRUE, flip=flip)
+ return(data.table(hr = dt$hr, lower = dt$lower, upper = dt$upper, variable=x))
+}))
+hr$variable <- factor(hr$variable, levels = hr$variable[order(-hr$hr)])
+hr[, source := "us"]
+
+# Combine our cohort with the literature
+combined_data <- rbindlist(list(hr, known), fill = TRUE)
+cdd <- combined_data[!variable %in% c("PNI","LVI") & !(variable == "Gender" & type=="OS")]
+replacements <- c("Mucinous" = "mucinous", "Sex (Male)" = "Gender")
+# Loop over the replacements and update the 'variable' column
+for (old in names(replacements)) {
+  cdd[variable == replacements[old], variable := old]
+  hr[variable == replacements[old], variable := old]
+}
+cdd$variable <- factor(cdd$variable, levels = hr$variable[order(-hr$hr)])
+g_forest <- ggplot(cdd, aes(y = variable, x = hr, color = source)) +
+  geom_point(aes(x = hr), size = 1.5, position = position_dodge(width = 0.3)) +
+  geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.2, position = position_dodge(width = 0.3)) +
+  scale_color_manual(values = c("us" = "black", "lit" = "red"), labels=c("This cohort","Literature")) +
+  labs(x = "Hazard ratio") +
+  theme_jw() +
+  geom_vline(aes(xintercept = 1), color = "black", linetype = "dashed") +  # Add vertical red line at HR = 1
+   theme(legend.position = c(0.50, 0.7), # Bottom left corner
+        legend.justification = c(-0.2, -0.3), # Coordinates relative to the plot area
+        legend.box.margin = margin(6, 6, 6, 6), # Adjust spacing around the legend box if necessary
+        legend.margin = margin(-10, -10, -10, -10),
+        text = element_text(family = "Helvetica"),
+        axis.line = element_line(colour = "black"),
+        axis.text.x = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.title.y = element_blank(),
+        axis.title.x = element_text(size = 9, margin = margin(t = 3)),
+        plot.title = element_text(size = 9),
+        legend.title = element_blank(),
+        #legend.spacing.y = unit(1, "cm"),
+        legend.text = element_text(size = 9),
+        legend.background = element_blank(),
+        legend.key = element_blank(),
+        panel.background = element_rect(fill = "transparent", colour = NA),  # remove panel background
+        plot.background = element_rect(fill = "transparent", colour = NA)
+        ) +
+    scale_x_continuous(limits=c(0,4.7),breaks=c(0,1,2,3,4), expand=c(0,0), labels=c(0,1,2,3,4))
+
+## ASSEMBLE THE FIGURE
+combined_plot_row1 <- ggarrange(blank_plot, g_mut, g_kras, ncol = 3, nrow = 1, widths = c(3.5, 3.5, 3.5), labels=c("A","B","C"))
+combined_plot_row2 <- ggarrange(g_forest, blank_plot, ncol=2, nrow=1, widths=c(3.5, 7), labels=c("D"))
+combined_plot <- ggarrange(combined_plot_row1, combined_plot_row2, nrow=2, widths=c(10.5, 10.5))
+save_pdf(combined_plot, "Figure1_R.pdf", width=10.5, height=6)
 ```
 
 ```{r cys-read, include=FALSE}
-if (FALSE) {
-  files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/chain/", full.names = TRUE)
-  files <- files[grepl("cys$", files)]
+files <- list.files(path = "~/Sorger/projects/orion/orion_1_74/chain/", full.names = TRUE)
+files <- files[grepl("cys$", files)]
   
-  # read all the data as the means within the tumor compartment
-  nn <- c("tumor"="-A 1", "stroma"="-N 1","all"="", "scramble_tumor"="-A 1", "scramble_stroma"="-N 1","tumor_margin"="-A 5","stroma_margin"="-A 4 -N 1","margin"="-A 4","tumor_core"="-A 1 -N 4","stroma_core"="-N 5","tumor_manual"="-A 8")
+# read all the data as the means within the tumor compartment
+nn <- c("tumor"="-A 9", "stroma"="-N 1","all"="", "scramble_tumor"="-A 1", "scramble_stroma"="-N 1","tumor_margin"="-A 5","stroma_margin"="-A 4 -N 1","margin"="-A 12","tumor_core"="-A 1 -N 4","stroma_core"="-N 5","tumor_manual"="-A 8", 
+        "scramble_all"="", "scramble_tumor_lock"="-A 1", "scramble_tumor_manual_lock"="-A 8",
+        "scramble_all_lock"="")
+
+# how to map from flag combos in list of cys files onto biology  
+column_mapping = c(cd31count = "CD31_count", cd45count = "CD45_count", cd68count = "CD68_count", cd4count = "CD4_count", foxp3count = "FOXP3_count", cd8count = "CD8a_count", cd45rocount = "CD45RO_count", cd20count = "CD20_count", pdl1count = "PD-L1_count", cd3count = "CD3e_count", cd163count = "CD163_count", pd1count = "PD-1_count", panckcount = "Pan-CK_count", smacount = "SMA_count", pdl1panckcount = "133120_count", pdl1cd163count = "10240_count", cd3pd1count = "36864_count", cd4pd1count = "32832_count",panckcd3count = "135168_count", panckcd8count="131328_count", foxp3cd3count="4224_count", foxp3panckcount="131200_count", foxp3cd4count="192_count", foxp3cd8count="384_count")
+
+# outer margin loop 
+if (FALSE)
   
-  column_mapping = c(cd31count = "CD31_count", cd45count = "CD45_count", cd68count = "CD68_count", cd4count = "CD4_count", foxp3count = "FOXP3_count", cd8count = "CD8a_count", cd45rocount = "CD45RO_count", cd20count = "CD20_count", pdl1count = "PD-L1_count", cd3count = "CD3e_count", cd163count = "CD163_count", pd1count = "PD-1_count", panckcount = "Pan-CK_count", smacount = "SMA_count", pdl1panckcount = "133120_count", pdl1cd163count = "10240_count", cd3pd1count = "36864_count", cd4pd1count = "32832_count",panckcd3count = "135168_count",
-                     panckcd8count="131328_count")
+
   
-  lapply(seq_along(nn)[11], function(n) {
-    cat("working on ", names(nn)[n], "\n")
-    dtt <- mclapply(files, function(f) {
-      
-      cat(basename(f), " - ", names(nn)[n], "\n")
-      tmpfile <- paste0("/tmp/", generate_random_string(8))
-      
-      if (system(paste("cysift count",f, nn[n]), intern=TRUE)=="0") {
-        cat("no cells meeting filter criteria for ", basename(f),"\n")
-        return(data.table())
-      }
-      
-      if (grepl("scramble", names(nn)[n])) {
-        ccmd=paste("cysift scramble",f, "- | cysift filter -T -", nn[n], tmpfile)
-      } else { 
-        ccmd=paste("cysift filter -T",f, nn[n],tmpfile)
-      }
-      system(ccmd)
-      
-      dt <- fread(cmd=paste("cysift mean", tmpfile, " - | cysift view - -R"))
-      dt[,c("sid","cid","cflag","pflag","x","y","Hoechst","AF1","CD31","CD45","CD68","Argo550","CD4","FOXP3","CD8a","CD45RO",
-            "CD20","PD-L1","CD3e","CD163","E-cadherin","PD-1","Ki67","Pan-CK","SMA","Area","Region") := NULL]
-      dt[ , allcount       := fread(cmd=paste("cysift count", tmpfile))$V1]
-      
-      # individual cell counts
-      drr = fread(cmd=paste("cysift cellcount", tmpfile," - -a 133120 -a 10240 -a 36864 -a 32832 -a 0 -a 135168 -a 131328 | cysift view - -R"))
-      drr[,c("sid","cid","cflag","pflag","x","y","Hoechst","AF1","CD31","CD45","CD68","Argo550","CD4","FOXP3","CD8a","CD45RO",
-             "CD20","PD-L1","CD3e","CD163","E-cadherin","PD-1","Ki67","Pan-CK","SMA") := NULL]
-      setnames(drr, old=column_mapping, new=names(column_mapping))
-      dt <- cbind(drr, dt)
-      
-      dt[, Slide_ID := sub("^(LSP[0-9]+).*", "\\1", basename(f))]
-      dt[, margin := names(nn)[n]]
-      file.remove(tmpfile)
-      return(dt)
-    }, mc.cores=8)
-    dtr <- rbindlist(dtt)
-    dtr <- dtr[!duplicated(paste(margin, Slide_ID))]
-    saveRDS(dtr, paste0("~/Sorger/cache/orion_",names(nn)[n], ".rds"), compress=FALSE)
-  })
+lapply(seq_along(nn), function(n) {
+  cat("working on ", names(nn)[n], "\n")
   
-} else {
-  # load the saved data
-  dtr <- rbindlist(lapply(paste0("~/Sorger/cache/orion_",names(nn),".rds"), readRDS), fill=TRUE)
-  rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
-  rrt <- data.table::copy(rr[margin=="tumor"])
-}
+  # inner cys file loop
+  dtt <- mclapply(files, function(f) {
+    
+    cat(basename(f), " - ", names(nn)[n], "\n")
+    tmpfile <- paste0("/tmp/", generate_random_string(8))
+    
+    # if no cells in this margin, just return null
+    if (system(paste("cysift count",f, nn[n]), intern=TRUE)=="0") {
+      cat("no cells meeting filter criteria for ", basename(f),"\n")
+      return(data.table())
+    }
+    
+    # if its a scramble margin, do the scramble on the fly (with lock)
+    if (grepl("scramble", names(nn)[n]) && grepl("lock",names(nn)[n])) {
+      ccmd=paste("cysift scramble -P ",f, "- | cysift filter -T -", nn[n], tmpfile)
+    # scramble, without lock
+    } else if (grepl("scramble", names(nn)[n])) {
+      ccmd=paste("cysift scramble", f,"- | cysift filter -T -", nn[n], tmpfile)
+    # otherwise do the margin filter
+    } else { 
+      ccmd=paste("cysift filter -T",f, nn[n],tmpfile)
+    }
+    system(ccmd)
+    
+    # read the means for that margin
+    dt <- fread(cmd=paste("cysift mean", tmpfile, " - | cysift view - -R"))
+    dt[,c("sid","cid","cflag","pflag","x","y","Hoechst","AF1","CD31","CD45","CD68","Argo550","CD4","FOXP3","CD8a","CD45RO","CD20","PD-L1","CD3e","CD163","E-cadherin","PD-1","Ki67","Pan-CK","SMA","Area","Region") := NULL]
+    dt[ , allcount       := fread(cmd=paste("cysift count", tmpfile))$V1]
+    
+    # individual cell counts
+    drr = fread(cmd=paste("cysift cellcount", tmpfile," - -a 133120 -a 10240 -a 36864 -a 32832 -a 0 -a 135168 -a 131328 -a 4224 -a 131200 -a 192 -a 384 | cysift view - -R"))
+    drr[,c("sid","cid","cflag","pflag","x","y","Hoechst","AF1","CD31","CD45","CD68","Argo550","CD4","FOXP3","CD8a","CD45RO","CD20","PD-L1","CD3e","CD163","E-cadherin","PD-1","Ki67","Pan-CK","SMA") := NULL]
+    setnames(drr, old=column_mapping, new=names(column_mapping))
+    dt <- cbind(drr, dt)
+    
+    # set the slide and margin labels
+    dt[, Slide_ID := sub("^(LSP[0-9]+).*", "\\1", basename(f))]
+    dt[, margin := names(nn)[n]]
+    
+    # cleanup
+    file.remove(tmpfile)
+    return(dt)
+  }, mc.cores=8)
+  
+  # paste the margins together
+  dtr <- rbindlist(dtt)
+  dtr <- dtr[!duplicated(paste(margin, Slide_ID))]
+  saveRDS(dtr, paste0("~/Sorger/cache/orion_",names(nn)[n], ".rds"), compress=FALSE)
+})
+
+# load the saved data
+dtr <- rbindlist(lapply(paste0("~/Sorger/cache/orion_",names(nn),".rds"), readRDS), fill=TRUE)
+rr <- merge(data.table::copy(redcap), dtr, by = "Slide_ID", all.x = TRUE)
+#rr <- rr[Slide_ID != "LSP14483"]
 ```
 
-```{r km-by-t-cell-count}
+```{r whole-slide-cell-distribution, include=FALSE}
+rrt <- data.table::copy(rr[margin=="all"])
+setnames(rrt, "E-cadherin_count", "ecadcount")
+
+long_data <- rrt %>%
+  select(Slide_ID, cd31count, cd45count, cd68count, cd4count, foxp3count, cd8count, cd45rocount, cd20count, pdl1count, cd3count, cd163count, ecadcount, pd1count, panckcount,smacount) %>%
+  gather(key = "Cell_Type", value = "Count", -Slide_ID) %>%
+  mutate(Cell_Type = gsub("count", "", Cell_Type))
+
+# Calculate total cells for each Slide_ID
+total_cells <- long_data %>%
+  group_by(Slide_ID) %>%
+  summarize(Total_Count = sum(Count))
+
+# Merge total cells with long data
+long_data <- merge(long_data, total_cells, by = "Slide_ID")
+
+long_data <- merge(rrt[,.(Slide_ID, pMMR)], long_data, by="Slide_ID", all.x=TRUE)
+
+ordered_slide_ids <- long_data %>%
+  arrange(desc(pMMR), Total_Count) %>%
+  .$Slide_ID %>%
+  unique()
+
+long_data$Slide_ID <- factor(long_data$Slide_ID, levels = ordered_slide_ids)
+
+# Define the order of cell types within each color group
+cell_order <- c("panck", "ecad",   # Group A: Greens
+                "sma", "cd31", # Group B: Blues
+                "cd163", "cd68", "cd45","cd45ro", # Group C: Reds
+                "cd20", "cd3","cd4","cd8", # Group D: Oranges
+                "foxp3","pd1","pdl1")  # Group E: Reds
+
+# Ensure long_data Cell_Type is in the specified order
+long_data$Cell_Type <- factor(long_data$Cell_Type, levels = cell_order)
+long_data <- as.data.table(long_data)
+
+# Define color palettes for each group
+colors <- c(rev(brewer.pal(3, "Reds")[1:2]), 
+            brewer.pal(3, "Blues")[1:2], 
+            brewer.pal(4, "Oranges")[1:4],
+            brewer.pal(4, "Greens")[1:4],
+            brewer.pal(3, "Purples")[1:3])
+
+# Mapping of cell types to colors
+color_map <- setNames(colors, cell_order)
+
+# Create the plot
+g <- ggplot(long_data, aes(x = Slide_ID, y = Count/1000, fill = Cell_Type)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = color_map) +
+  coord_flip() +
+  labs(title = "Cell Counts by Slide ID and Cell Type", x = "Slide ID", y = "Count") +
+  theme_jw() + 
+  theme(axis.line = element_line(), axis.ticks = element_line()) + 
+  scale_y_continuous(expand=c(0,0))
+save_pdf(g, "cell_counts_color_bar.pdf", width=7, height=6)
+
+
+```
+
+```{r CD8-distribution-tip-definition, include=FALSE}
+# what margin are we operating on for this section?
+rrt <- data.table::copy(rr[margin=="tumor_manual"])
+
+# "ratio" is not good term, but it's the field we'll be looking at for this plot
+rrt[, ratio := CD8_50r]
+setkeyv(rrt, "ratio")
+clevels <- rrt$Slide_ID
+rrt[, Slide_ID := factor(Slide_ID, levels=clevels)]
+rrt[, samplecount := seq(.N)]
+g <- ggplot(rrt, aes(x=Slide_ID, y=ratio, fill=pMMR)) + 
+  geom_bar(stat="identity", color="black") + ylab("Cells / mm2") + xlab("Sample ID") +
+  coord_flip() +  scale_fill_manual(values=pMMR_colors) + theme_jw() + 
+  theme(axis.line = element_line(), axis.ticks = element_line()) + 
+  scale_x_continuous(expand=c(0,0), breaks=c(0,10,20,30,40,50,60,70)) + scale_y_continuous(expand=c(0,0))
+save_pdf(g, "cd8_waterfall.pdf", width=5, height=4)
+
+# from the above, same the HARD CODED TIPMMR samples
+hard_coded_tip_liberal <- c("LSP14418","LSP14468","LSP10771","LSP14458","LSP14388","LSP10388","LSP14438","LSP14453","LSP14498","LSP14393","LSP14398","LSP14493","LSP10452","LSP14383","LSP14363") 
+
+# same as above, but only take top 10
+hard_coded_tip_strict <- c("LSP14418","LSP14468","LSP10771","LSP14458","LSP14388","LSP10388","LSP14438","LSP14453","LSP14498","LSP14393") 
+
+# define the TIP
+rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_liberal, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
+
+# update rrt now that we modified it
+rrt[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_liberal, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
+
+# plot the waterfall again, but now with tipMMR labelled as well
+g <- ggplot(rrt, aes(x=samplecount, y=ratio, fill=tipMMR)) + 
+  geom_bar(stat="identity", color="black", linewidth=0.3) + ylab("Cells / mm2") + xlab("Sample ID") +
+  coord_flip() +  scale_fill_manual(values=pMMR_colors) + theme_jw() + 
+  theme(axis.line = element_line(), axis.ticks = element_line()) + 
+  scale_x_continuous(expand=c(0,0), breaks=c(0,10,20,30,40,50,60,70)) + scale_y_continuous(expand=c(0,0))
+save_pdf(g, "cd8_waterfall_withtip.pdf", width=4, height=3)
+
+## KM plot of tip (liberal = default)
+g <- km_plot(rr[pMMR=="pMMR" & !duplicated(Slide_ID)], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE)
+save_pdf(g, "tipMMR_km.pdf", width=4,height=3)
+
+## KM plot of tip (strict = exploratory only)
+rrp <- data.table::copy(rrt)
+rrp[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_strict, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
+g <- km_plot(rrp[pMMR=="pMMR" & !duplicated(Slide_ID)], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE)
+
+# which samples are in which of the three groups
+# dtu <- sapply(unique(c(hard_coded_tip_cd3_50r,hard_coded_tip_cd8_cd3_50r,hard_coded_tip_cd8_50r)), function(s) {
+#   data.table(cd3=s %in% hard_coded_tip_cd3_50r, 
+#              cd8=s %in% hard_coded_tip_cd8_50r,
+#              combo=s %in% hard_coded_tip_cd8_cd3_50r)
+# })
+```
+
+```{r tip-beeswarm}
+rrt = rr[margin=="tumor_manual"]
+tcol <- c("CD4","CD3","CD8","PD1","PD_L1","CD3pPD1","CD45","FOXP3","CD31","CD45RO","SMA","CD163pPDL1","CD68pPDL1","CD20")
+rrp <- rrt[, .SD, .SDcols = c(paste0(tcol,"_50r"), "tipMMR")]
+rrm <- data.table::melt(rrp, id.vars = c("tipMMR"))
+g <- create_beeswarm_plot(rrm, x="tipMMR", y="value") +
+  facet_wrap(rrm$variable, scales="free") + 
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+  theme(
+  strip.background = element_blank(),
+  strip.text = element_text(face = "bold", size = 10) 
+) + ylab("Cell Density (cells/mm2)") + xlab("")
+save_pdf(g, "patchwork_beeswarm.pdf", width=10, height=10)
+```
+
+```{r tmb-beeswarm}
+rrt = rr[margin=="tumor_manual"]
+g <- create_beeswarm_plot(rrt, x="tipMMR", y="tmb") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+  theme(
+  strip.background = element_blank(),
+  strip.text = element_text(face = "bold", size = 10) 
+) + ylab("TMB") + xlab("")
+save_pdf(g, "tmb_beeswarm.pdf", width=2, height=2)
+```
+
+```{r cd3-beeswarm}
+rrt = rr[margin=="tumor_manual"]
+g <- create_beeswarm_plot(rrt, x="tipMMR", y="CD3_50r") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+  theme(
+  text = element_text(color = "black", size=9),
+  axis.title = element_text(color = "black",size=9), # Axis titles
+  axis.text = element_text(color = "black",size=9)) + 
+  ylab("CD3") + xlab("")
+save_pdf(g, "cd3_beeswarm.pdf", width=2, height=2)
+```
+
+```{r sma-beeswarm}
+rrt = rr[margin=="tumor_manual"]
+g <- create_beeswarm_plot(rrt, x="tipMMR", y="CD20_50r") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+  theme(
+  text = element_text(color = "black", size=9),
+  axis.title = element_text(color = "black",size=9), # Axis titles
+  axis.text = element_text(color = "black",size=9)) + 
+  ylab("SMA") + xlab("") 
+save_pdf(g, "sma_beeswarm.pdf", width=3, height=2)
+```
+
+```{r foxp3-beeswarm}
+rrt = rr[margin=="tumor_manual"]
+rm <- melt(rrt, id.vars=c("Slide_ID","tipMMR"), 
+           measure.vars=c("PD_L1_50r","PD1_50r","FOXP3_50r"))
+
+g <- create_beeswarm_plot(rm, x="tipMMR", y="value", withbox=TRUE) +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+  theme(
+    text = element_text(color = "black", size=9),
+    axis.title = element_text(color = "black",size=9), # Axis titles
+    axis.text = element_text(color = "black",size=9)
+    ) + 
+    ylab("Cells / mm2") + xlab("") +
+  facet_wrap(~variable, scales="free", nrow=1) 
+save_pdf(g, "treg_beeswarm.pdf", width=6, height=2)
+```
+
+```{r km-by-t-cell-count, inclue=FALSE}
+# what margin are we operating on for this section?
+rrt <- data.table::copy(rr[margin=="tumor_manual"])
+
+# get the KM-plot data
 d1 <- km_plot(rrt, parm="CD8_50r", parm.name="cd3", flip=FALSE, flip.labels=TRUE, return.data=TRUE)
 d2 <- km_plot(rrt, parm="CD3_50r", parm.name="cd3", flip=FALSE, flip.labels=TRUE, return.data=TRUE)
 d1[, strata := paste0(strata, "CD8")]
 d2[, strata := paste0(strata, "CD3")]
-
 dd <- rbind(d1, d2)
 
 # plot the K-M curves
 fill.vals <- c("1CD8"="#3182bd","0CD8"="#9ecae1", "1CD3"="#de2d26","0CD3"="#fc9272")
 g <- ggplot(dd[time < 2400], aes(x = time/365, y = surv, color = strata)) +
     #geom_ribbon(aes(ymin = lower,ymax = upper, fill=strata),alpha = 0.15, linetype=0) +
-    geom_step(aes(color=strata), size=1) +
+    geom_step(aes(color=strata), linewidth=1) +
     geom_point(data = dd[censor == 1][time < 2400], aes(x=time/365,y=surv), shape="+", size=3, color="black") + 
     labs(x = "\nYears", y = ifelse(TRUE,"Progression-Free Survival","Overall Survival\n")) + theme_bw() + 
     #ggtitle(hr.lab) + 
@@ -171,90 +522,101 @@ g <- ggplot(dd[time < 2400], aes(x = time/365, y = surv, color = strata)) +
 save_pdf(g, "cd3_cd8_km.pdf", width=3, height=3)
 ```
 
-```{r CD8_200r-distribution}
-rrt <- data.table::copy(rr[margin=="tumor_manual"])
-
-var <- "CD8_50r"
-rrt[, ratio := (CD8_50l + CD3_50l)/2]
-rrt[, ratio := get(var)]
-setkeyv(rrt, "ratio")
-clevels <- rrt$Slide_ID
-rrt[, Slide_ID := factor(Slide_ID, levels=clevels)]
-g <- ggplot(rrt, aes(x=Slide_ID, y=ratio, fill=pMMR)) + 
-  geom_bar(stat="identity")+
-  coord_flip() +
-  scale_fill_manual(values=pMMR_colors) +
-  theme_jw()
-
-hard_coded_tip_combo_50l_manual <- c("LSP14483","LSP14418","LSP14468","LSP14458","LSP14388","LSP14453","LSP14393","LSP14493") 
-
-hard_coded_tip_cd3_50r <-     c("LSP14468","LSP14448","LSP14403","LSP14483","LSP14458","LSP14418","LSP14388","LSP14423","LSP10388","LSP10771")
-rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_cd3_50r, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
-g <- km_plot(rr[pMMR=="pMMR" & !duplicated(Slide_ID)], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE)
-hard_coded_tip_cd8_cd3_50r <- c("LSP14468","LSP14448","LSP14403","LSP14483","LSP14458","LSP14418","LSP14388","LSP14423","LSP10388","LSP10771")
-rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_cd8_cd3_50r, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
-g <- km_plot(rr[pMMR=="pMMR" & !duplicated(Slide_ID)], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE)
-hard_coded_tip_cd8_50r <-     c("LSP14483","LSP14468","LSP14418","LSP14458","LSP10771","LSP10388","LSP14403","LSP10452","LSP10727","LSP14493")
-rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_cd8_50r, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
-g <- km_plot(rr[pMMR=="pMMR" & !duplicated(Slide_ID)], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE)
-rr[, tipMMR := factor(ifelse(Slide_ID %in% c(hard_coded_tip_cd8_50r,hard_coded_tip_cd3_50r,hard_coded_tip_cd8_cd3_50r), ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
-g <- km_plot(rr[pMMR=="pMMR" & !duplicated(Slide_ID)], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE)
-
-# which samples are in which of the three groups
-dtu <- sapply(unique(c(hard_coded_tip_cd3_50r,hard_coded_tip_cd8_cd3_50r,hard_coded_tip_cd8_50r)), function(s) {
-  data.table(cd3=s %in% hard_coded_tip_cd3_50r, 
-             cd8=s %in% hard_coded_tip_cd8_50r,
-             combo=s %in% hard_coded_tip_cd8_cd3_50r)
-})
-
-hard_coded_tip_old <- c("LSP14418", "LSP14398", "LSP14423", "LSP14438", "LSP14393", "LSP14403", "LSP14458", "LSP10771", "LSP14388", "LSP14468", "LSP14483", "LSP10388", "LSP14448")
-
-rr[, tipMMR := factor(ifelse(Slide_ID %in% hard_coded_tip_combo_50l_manual, ifelse(pMMR=="dMMR","dMMR","tipMMR"), as.character(pMMR)))]
-rrt <- rr[margin=="tumor"]
-```
-
-```{r tip-km}
-
-g <- km_plot(rr[pMMR=="pMMR" & !duplicated(Slide_ID)], parm="tipMMR", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE)
-g
-```
 
 ```{r quality-control}
+# what margin are we operating on for this section?
+rrt <- data.table::copy(rr[margin=="tumor_manual"])
 
 # PanCK-CD3 double positive
-rrt[, ratio := panckcd3count / allcount]
+rrt[, ratio := panckcd3count / cd3count]
 g <- ggplot(rrt, aes(x = tipMMR, y = ratio, fill = tipMMR)) +
   geom_boxplot(alpha = 1, width=0.8, outlier.shape=NA) + 
   geom_jitter(position = position_jitter(width = 0.2), size = 3, alpha = 1, shape=20) +  
   labs(y = "Age") +
   scale_fill_manual(values = pMMR_colors) +
   theme_jw() + theme(legend.position = "none")
+View(compare_groups(rrt, "ratio"))
 
+# 0 flag cells
+rrt[, ratio := `0_count` / allcount]
+g <- ggplot(rrt, aes(x = tipMMR, y = ratio, fill = tipMMR)) +
+  geom_boxplot(alpha = 1, width=0.8, outlier.shape=NA) + 
+  geom_jitter(position = position_jitter(width = 0.2), size = 3, alpha = 1, shape=20) +  
+  labs(y = "Uncounted cell count") +
+  scale_fill_manual(values = pMMR_colors) +
+  theme_jw() + theme(legend.position = "none")
+View(compare_groups(rrt, "ratio"))
 ```
 
-```{r cd163-margins}
+```{r cd163-margins, include=FALSE}
+# subset to clean data
+rrp <- data.table::copy(rr)
 
-rr[, pdl1cd163_ratio := pdl1cd163count / allcount]
-rr[, pdl1panckcount_ratio := pdl1panckcount / allcount]
-rr[, m0_tumor_ratio := pdl1cd163count / pdl1panckcount]
+# calculate the CD163+ vs PanCK+ PD-L1 ratio
+rrp[,pdl1cd163_ratio := pdl1cd163count / cd163count]
+rrp[, pdl1panckcount_ratio := pdl1panckcount / panckcount]
+rrp[, m0_tumor_ratio := pdl1cd163count / pdl1panckcount]
+rrp[, m0_tumor_ratio_normalized := pdl1cd163count / pdl1panckcount * (panckcount / cd163count)]
 
-g = # Assuming your data.table is named rr
-    ggplot(rr, aes(x = margin, y = m0_tumor_ratio, fill = tipMMR)) +
-    geom_boxplot(alpha = 0.7, outlier.shape=NA) +                 # Draw the boxplot with some transparency
-    #geom_jitter(width = 0.2, size = 1.5, color="black") +  # Add jittered points
-    facet_wrap(~margin, scales="free", nrow=1) +      # Create facets for each margin type
-  scale_fill_manual(values = pMMR_colors) +    theme_minimal() + 
-  #scale_y_log10(labels = scales::label_number()) +
-    labs(x = "Margin Type", 
+to_remove_because_panck_no_work_tumor <- c("LSP10474","LSP10397","LSP10419","LSP10431","LSP10474",
+                                           "LSP10507","LSP10551","LSP10683","LSP14418","LSP15288")
+#rrp <- rrp[!Slide_ID %in% to_remove_because_panck_no_work_tumor]
+
+# calculate margin / stroma difference
+rr_ratio <- data.table(pdl1cd163_margin_ratio = rrp[margin=="margin", pdl1cd163count / allcount] / rrp[margin=="stroma_core", pdl1cd163count / allcount], Slide_ID = rrp[margin=="margin", Slide_ID], tipMMR=rrp[margin=="margin", tipMMR])
+
+View(compare_groups(rr_ratio, "pdl1cd163_margin_ratio"))
+
+# view the numerical differences
+View(compare_groups(rrp[margin=="margin"], "m0_tumor_ratio"))
+View(compare_groups(rrp[margin=="tumor"], "m0_tumor_ratio"))
+
+# get the margin/core ratio
+r0 <- rrp[margin=="margin",m0_tumor_ratio]/rrp[margin=="stroma_core",m0_tumor_ratio]
+rrratio <- data.table::copy(rrp[margin=="margin"])
+rrratio[, m0_tumor_ratio := r0]
+rrratio[, margin := "margin_core_ratio"]
+rrp <- rbind(rrp, rrratio)
+
+# graph the differences
+g <- create_beeswarm_plot(rrp, x_var="tipMMR", y_var = "m0_tumor_ratio", withbox=TRUE) + 
+     facet_wrap(~margin, scales="free", nrow=3) +
+     scale_fill_manual(values = pMMR_colors) + theme_minimal() + 
+     #scale_y_log10(labels = scales::label_number()) +
+     labs(x = "Margin Type", 
          y = "m0 / tumor PD-L1 ratio", 
          fill = "MMR Status", 
-         color = "MMR Status") +                # Labeling axes and legend
-  theme_jw()
+         color = "MMR Status") + theme_jw() + 
+  theme(#legend.position = c(0.65, 0.3), 
+        #legend.justification = c(-0.2, -0.3), # Coordinates relative to the plot area
+        #legend.box.margin = margin(6, 6, 6, 6), # Adjust spacing around the legend box if necessary
+        #legend.margin = margin(-10, -10, -10, -10),
+        text = element_text(family = "Helvetica"),
+        axis.text.x = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.title.y = element_text(size = 9, margin = margin(r = 5)),
+        axis.title.x = element_text(size = 9, margin = margin(t = 2)),
+        plot.title = element_text(size = 9),
+        legend.title = element_blank(),
+        #legend.spacing.y = unit(1, "cm"),
+        legend.text = element_text(size = 9),
+        legend.background = element_blank(),
+        legend.key = element_blank(),
+        axis.line = element_line(colour = "black"),  # Add axis lines
+        panel.background = element_rect(fill = "transparent", colour = NA),  # remove panel background
+        plot.background = element_rect(fill = "transparent", colour = NA),
+        axis.ticks.y = element_line(color="black")
+        ) + 
+  scale_x_discrete(labels=c("dMMR","td-pMMR","ti-pMMR"))
+save_pdf(g, "m0_tumor_ratio.pdf", width=13, height=6)
 
-rrt <- data.table::copy(rr[margin=="stroma_margin"])
+# plot the 
+g <- km_plot(rrp[tipMMR %in% c("tipMMR", "pMMR") & margin=="tumor"], parm="m0_tumor_ratio", parm.name="ratio", flip=FALSE, flip.labels=TRUE)
+
+rrt <- data.table::copy(rrp[margin=="stroma_margin"])
 setkey(rrt, m0_tumor_ratio)
 clevels <- rrt[,Slide_ID]
-rr[, Slide_ID := factor(Slide_ID, levels=clevels)]
+rrt[, Slide_ID := factor(Slide_ID, levels=clevels)]
 g <- ggplot(rrt, aes(x=Slide_ID, y=m0_tumor_ratio, fill=tipMMR)) + 
   geom_bar(stat="identity")+
   coord_flip() +
@@ -402,7 +764,7 @@ g <- ggplot(
 
 
 ```{r random-hr-tip, include=FALSE}
-
+rrt = rr[margin=="tumor"]
 ## get distribution of HR for "random" tipMMR, selected from pMMR
 set.seed(42)
 rrpmmr <- rrt[pMMR == "pMMR"]
@@ -411,17 +773,36 @@ hrdist <- sapply(seq(5000), function(cc) {
     cat(cc,"\n")
   rrpmmr[, rand_label := "hi"]
   rrpmmr[sample(.N, 13), rand_label := "low"]
-  hr <- as.numeric(km_plot(rrpmmr, parm="rand_label", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, pfs=TRUE, return.model=TRUE)$hr[1])
+  hr <- as.numeric(km_plot(rrpmmr, parm="rand_label", parm.name="tipMMR",parm.labels=c(tipMMR="tipMMR",pMMR="pMMR"), flip=TRUE, flip.labels=TRUE, return.model=TRUE)$hr[1])
   return(hr)
 })
 saveRDS(hrdist, "~/Sorger/cache/hrdist.rds")
 hrdist <- readRDS("~/Sorger/cache/hrdist.rds")
 
 # plot random distribution of hazard ratios vs tipMMR
-g <- ggplot(data.table(hr=hrdist[hrdist < 10]), aes(x=hr)) + geom_histogram(stat="bin", binwidth=0.05) + 
-  theme_jw() + xlab("Hazard Ratio") + ylab("Frequency") + geom_vline(aes(xintercept=1), color="red") +
- geom_vline(aes(xintercept=0.09), color="blue")
-save_pdf(g, "cd3_tipmmr_random.pdf", width=3, height=2)
+g <- ggplot(data.table(hr=hrdist[hrdist < 10]), aes(x=hr)) + 
+  geom_histogram(stat="bin", binwidth=0.05, fill="black", color="black") + 
+  theme_jw() + 
+  geom_vline(aes(xintercept=1), linewidth=1, color="red") +
+ geom_vline(aes(xintercept=0.14), linewidth=1, color=pMMR_colors["tipMMR"]) + 
+     theme(
+        text = element_text(family = "Helvetica"),
+        axis.line = element_line(colour = "black"),
+        axis.text.x = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.title.x = element_text(size = 9, margin = margin(t = 3)),
+        plot.title = element_text(size = 9),
+        panel.background = element_rect(fill = "transparent", colour = NA),  # remove panel background
+        plot.background = element_rect(fill = "transparent", colour = NA),
+         axis.ticks.y = element_line(color="black"),
+         axis.ticks.x = element_line(color="black")
+        ) +
+  scale_x_continuous(expand=c(0,0), breaks=c(0.5, 1, 2, 3, 4, 5)) + 
+  scale_y_continuous(expand=c(0,0)) +
+  coord_cartesian(xlim=c(0,5)) +
+    xlab("Hazard Ratio") + 
+  ylab("Frequency") 
+save_pdf(g, "tipmmr_random_permutation.pdf", width=5, height=3)
 
 ## iteratively search for best HR
 # hrs.cd3 <- rbindlist(lapply(sort(rr$CD3_200r)[seq(5,nrow(rr)-5)], function(cc) {
@@ -505,7 +886,7 @@ g <- ggplot(redcap, aes(x = Location, fill = pMMR, group=pMMR)) +
 save_pdf(g, "location_bar.pdf", width=6, height=3)
 
 # location with tipMMR
-rr_complete <- as.data.table(tidyr::complete(rr, Location, tipMMR, fill = list(n = 0)))
+rr_complete <- as.data.table(tidyr::complete(rrt, Location, tipMMR, fill = list(n = 0)))
 rr_complete[, count := sum(!is.na(Slide_ID)), by=c("tipMMR","Location")]
 g <- ggplot(rr_complete, aes(x = Location, fill = tipMMR, group=tipMMR)) +
   geom_bar(aes(y=count), color="black", position="dodge", stat="identity") +
@@ -513,7 +894,6 @@ g <- ggplot(rr_complete, aes(x = Location, fill = tipMMR, group=tipMMR)) +
        y = "Count") +
   scale_fill_manual(values = pMMR_colors) +
   theme_jw() + theme(legend.position = "none")
-save_pdf(g, "location_bar_tipmmr.pdf", width=6, height=3)
 
 # stage
 g <- ggplot(redcap, aes(x = Stage_At_Diagnosis, fill = pMMR, group=pMMR)) +
@@ -535,86 +915,6 @@ save_pdf(g, "age_box.pdf", width=3, height=3)
 
 ```
 
-```{r mutations}
-
-# reshape the mutation data
-long_data <- redcap %>%
-  gather(key = "Mutation", value = "Status", APC, p53, KRAS, BRAF, PIK3CA, SOX9, FBXW7, TCF7L2, CTNNB1, PTEN, NRAS) %>%
-  filter(Status == 1)  # Keep only mutated entries
-
-# Compute the total count for each mutation
-mutation_counts <- long_data %>%
-  group_by(Mutation) %>%
-  summarize(Total = n())
-long_data$Mutation <- factor(long_data$Mutation, levels = rev(mutation_counts$Mutation[order(-mutation_counts$Total)]))
-
-# Bar chart of mutation counts
-g <- ggplot(long_data, aes(x = Mutation, fill = as.factor(pMMR))) +
-  geom_bar(color="black") +  # Stacked bar chart
-  coord_flip() +  # Make the bar chart horizontal
-  labs(title = "Mutation Counts by pMMR Status",
-       x = "Mutation",
-       y = "Count") +
-  theme_jw() + 
-  scale_fill_manual(values = pMMR_colors, name = "MMR status")
-
-# KM curves by mutation
-g <- lapply(c("APC","p53","KRAS","BRAF","PIK3CA"), function(x) {
- km_plot(redcap, x, x, c("0"="WT", "1"="Mutated"), pfs=TRUE)
-})
-
-# Known HRs by effect
-known <- data.table()
-#known <- rbind(known, data.table(variable="PIK3CA", hr=1.20, lower=0.98, upper=1.46, pmid="27436848", type="PFS", note=""))
-known <- rbind(known, data.table(variable="PIK3CA", hr=0.96, lower=0.83, upper=1.12, pmid="27436848", type="OS", note=""))
-known <- rbind(known, data.table(variable="APC", hr=0.62, lower=0.44, upper=0.83, pmid="33230914", type="OS", note="pMMR only"))
-#known <- rbind(known, data.table(variable="BRAF", hr=2.25, lower=1.82, upper=2.83, pmid="34843402", type="OS", note=""))
-#known <- rbind(known, data.table(variable="LVI", hr=2.37, lower=0.95, upper=5.89, pmid="24886281", type="OS", note="Stage III"))
-#known <- rbind(known, data.table(variable="PNI", hr=0.99, lower=0.14, upper=7.14, pmid="24886281", type="OS", note="Stage III"))
-known <- rbind(known, data.table(variable="Grade", hr=1.45, lower=0.72, upper=2.90, pmid="24886281", type="OS", note="Poor differentiation. Stage III"))
-known <- rbind(known, data.table(variable="Gender", hr=1.16, lower=0.75, upper=1.80, pmid="24886281", type="OS", note="Male. Stage III"))
-known <- rbind(known, data.table(variable=c("PNI","LVI","mucinous","p53","KRAS","BRAF","Gender"),hr=c(2.05,2.13,1.63,0.92,1.26,1.57,1.1),lower=c(1.38,1.42,0.93,0.61,0.84,0.64,0.73),upper=c(3.06,3.21,2.88,1.4,1.90,3.87,1.65),pmid="30894685",type="dfs",note="DFS"))
-known[, source := "lit"]
-
-# HR by mutation
-hr <- rbindlist(lapply(nn <- c("APC","p53","KRAS","BRAF","PIK3CA", "LVI","PNI","Grade", "mucinous", "Gender"), function(x) {
- rr <- data.table::copy(redcap)
- flip = FALSE
- if (x == "Grade") {
-   rr <- redcap[Grade != "Unknown"]
-   flip=FALSE
-   flip.labels=TRUE
- }
- dt <- km_plot(rr, x, x, c("0"="WT", "1"="Mutated"), pfs=TRUE, return.model=TRUE, flip=flip)
- return(data.table(hr = dt$hr, lower = dt$lower, upper = dt$upper, variable=x))
-}))
-hr$variable <- factor(hr$variable, levels = hr$variable[order(-hr$hr)])
-hr[, source := "us"]
-
-#plot just our hazard ratios
-g <- ggplot(hr, aes(y = variable, x = hr)) +
-  geom_point(aes(x = hr), size = 3) +
-  geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.2) +
-  labs(x = "Hazard Ratio",
-       y = "Gene") +
-    geom_vline(aes(xintercept = 1), color = "red", linetype = "dashed") +  # Add vertical red line at HR = 1
-  theme_jw()
-
-# Combine our cohort with the literature
-combined_data <- rbindlist(list(hr, known), fill = TRUE)
-combined_data$variable <- factor(combined_data$variable, levels = hr$variable[order(-hr$hr)])
-g <- ggplot(combined_data, aes(y = variable, x = hr, color = source)) +
-  geom_point(aes(x = hr), size = 1.5, position = position_dodge(width = 0.3)) +
-  geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.2, position = position_dodge(width = 0.3)) +
-  scale_color_manual(v galues = c("us" = "black", "lit" = "red")) +
-  labs(title = "Hazard Ratios with Confidence Intervals",
-       x = "Hazard Ratio",
-       y = "Gene") +
-  theme_jw() +
-      geom_vline(aes(xintercept = 1), color = "black", linetype = "dashed") +  # Add vertical red line at HR = 1
-  theme(legend.title = element_blank())
-save_pdf(g, "forest_lit_compare.pdf", width=4,height=3)
-```
 
 ```{r tmb}
 g <- ggplot(rr[!is.na(tmb)], aes(x = tipMMR, y = tmb, fill = tipMMR)) +
@@ -689,14 +989,14 @@ ix <- rep(TRUE, nrow(redcap))
 ix <- redcap[, pMMR=="pMMR"]
 redcap[, PFSC := ifelse(redcap$PFSCensor==0,1,0)]
 survival_object <- Surv(redcap$PFSDays[ix],redcap$PFSC[ix])
-cox_model <- coxph(survival_object ~ redcap$Gender[ix] + redcap$mucinous[ix] + redcap$Grade[ix] + redcap$LVI[ix] + redcap$PNI[ix] + redcap$stage_num[ix] + redcap$APC[ix] + redcap$KRAS[ix] + redcap$p53[ix] +
+cox_model <- coxph(survival_object ~ redcap$Gender[ix] + redcap$mucinous[ix] + redcap$Grade[ix] + redcap$LVI[ix] + redcap$PNI[ix] + redcap$stage_num[ix] + redcap$APC[ix] + redcap$KRAS[ix] + redcap$TP53[ix] +
                      redcap$BRAF[ix] + redcap$PIK3CA[ix] + redcap$tmb[ix] + redcap$TIL_num[ix])
 
 #Cox-Snell R2
 coxsnellR2(cox_model)
 
 # Initialize results
-covariates <- c("Gender", "Age", "stage_num","mucinous", "Grade", "LVI", "PNI", "TIL_num","tmb","APC", "KRAS", "p53", "BRAF", "PIK3CA", "tipMMR")
+covariates <- c("Gender", "Age", "stage_num","mucinous", "Grade", "LVI", "PNI", "TIL_num","tmb","APC", "KRAS", "TP53", "BRAF", "PIK3CA")
 results <- data.table(Covariates = character(), R2 = numeric(), R2Lower = numeric(), R2Upper = numeric())
 
 # Loop through covariates
@@ -712,11 +1012,20 @@ for (i in seq_along(covariates)) {
     upper <- quantile(boot_results$t, probs = 0.975)
 
     # Store results
-    results <- rbind(results, data.frame(Covariates = covariate_names, R2 = r2, R2Lower = lower, R2Upper = upper))
+    results <- rbind(results, data.frame(cov = covariate_names, R2 = r2, R2Lower = lower, R2Upper = upper))
 }
 
 # Plot results
 library(ggplot2)
+results[, Covariates := c("APC"="APC", "TP53"="TP53",
+                       "Age"="Age","PIK3CA"="PIK3CA",
+                       "BRAF"="BRAF",
+                       "TIL_num"="TIL",
+                       "mucinous"="Mucinous", "KRAS"="KRAS",
+                       "Gender"="Gender","tmb"="TMB",
+                       "Grade"="Grade","PNI"="PNI","LVI"="LVI",
+                       "stage_num"="TNM Stage","CD8_50r"="CD8+ density")[cov]]
+setkey(results, R2)
 results$Covariates <- factor(results$Covariates, levels = unique(results$Covariates))
 g <- ggplot(results, aes(x = Covariates, y = R2)) +
     geom_point() +
@@ -757,6 +1066,211 @@ coxsnellR2(cox_model)
 
 ```
 
+```{r cox-ph-no-imaging-with-molecular}
+rrt <- rr[margin=="tumor"]
+ix <- rep(TRUE, nrow(redcap))
+ix <- redcap[, pMMR=="pMMR"]
+redcap[, PFSC := ifelse(redcap$PFSCensor==0,1,0)]
+survival_object <- Surv(rrt$PFSDays[ix],rrt$PFSC[ix])
+cox_model <- coxph(survival_object ~ redcap$Gender[ix] + redcap$mucinous[ix] + redcap$Grade[ix] + redcap$LVI[ix] + redcap$PNI[ix] + redcap$stage_num[ix] + redcap$APC[ix] + redcap$KRAS[ix] + redcap$TP53[ix] +
+                     redcap$BRAF[ix] + redcap$PIK3CA[ix] + redcap$tmb[ix] + redcap$TIL_num[ix] + rrt$CD3_50r[ix])
+
+#Cox-Snell R2
+coxsnellR2(cox_model)
+
+# Initialize results
+covariates <- c("Gender", "Age", "stage_num","mucinous", "Grade", "LVI", "PNI", "TIL_num","tmb","APC", "KRAS", "TP53", "BRAF", "PIK3CA", "CD3_50r")
+results <- data.table(Covariates = character(), R2 = numeric(), R2Lower = numeric(), R2Upper = numeric())
+
+# Loop through covariates
+for (i in seq_along(covariates)) {
+    current_covariates <- covariates[i]
+    covariate_names <- paste(covariates[i])
+    cox_model <- coxph(survival_object ~ ., data = rrt[ix, ..current_covariates])
+    r2 <- coxsnellR2(cox_model)
+    
+    # Bootstrap for error estimates
+    boot_results <- boot(data = rrt[ix], statistic = bootstrapR2, R = 1000, covariates = current_covariates)
+    lower <- quantile(boot_results$t, probs = 0.025)
+    upper <- quantile(boot_results$t, probs = 0.975)
+
+    # Store results
+    results <- rbind(results, data.frame(Covariates = covariate_names, R2 = r2, R2Lower = lower, R2Upper = upper))
+}
+
+# Plot results
+library(ggplot2)
+replacements <- c("Mucinous" = "mucinous", "Sex (M)" = "Gender",
+                  "TIL"="TIL_num","TNM stage"="stage_num",
+                  "Intra-tumoral CD3"="CD3_50r","TMB"="tmb")
+# Loop over the replacements and update the 'variable' column
+for (old in names(replacements)) {
+  results[Covariates == replacements[old], Covariates := old]
+}
+setkey(results, R2)
+results$Covariates <- factor(results$Covariates, levels = unique(results$Covariates))
+g <- ggplot(results, aes(x = Covariates, y = R2)) +
+    geom_point() +
+    geom_errorbar(aes(ymin = R2Lower, ymax = R2Upper), width = 0.1) +
+    xlab("Covariates") +
+    ylab("Cox-Snell R-squared") +
+    ggtitle("Cox-Snell R-squared vs. Covariates") +
+    theme_jw() +    
+   theme(#legend.position = c(0.65, 0.3), 
+        #legend.justification = c(-0.2, -0.3), # Coordinates relative to the plot area
+        #legend.box.margin = margin(6, 6, 6, 6), # Adjust spacing around the legend box if necessary
+        #legend.margin = margin(-10, -10, -10, -10),
+        text = element_text(family = "Helvetica"),
+        axis.text.x = element_text(angle = 90, hjust = 1, color="black"),
+        axis.text.y = element_text(color = "black"),
+        axis.title.y = element_text(size = 9, margin = margin(r = 5)),
+        axis.title.x = element_text(size = 9, margin = margin(t = 2)),
+        plot.title = element_text(size = 9),
+        legend.title = element_blank(),
+        #legend.spacing.y = unit(1, "cm"),
+        legend.text = element_text(size = 9),
+        legend.background = element_blank(),
+        legend.key = element_blank(),
+        axis.line = element_line(colour = "black"),  # Add axis lines
+        panel.background = element_rect(fill = "transparent", colour = NA),  # remove panel background
+        plot.background = element_rect(fill = "transparent", colour = NA),
+        axis.ticks.y = element_line(color="black")
+        ) 
+save_pdf(g, "cox_snell_r2_univariate.pdf", width=4, height=3)
+
+
+
+# Extract the coefficients from the Cox model
+coefficients <- cox_model$coefficients
+hr <- exp(coefficients)
+hr <- data.table(
+  variable = names(coefficients),
+  HR = hr,
+  lower = exp(as.data.table(confint(cox_model, level = 0.95))$`2.5 %`),
+  upper = exp(as.data.table(confint(cox_model, level = 0.95))$`97.5 %`)
+)
+hr$variable <- factor(hr$variable, levels = hr$variable[order(-hr$HR)])
+
+# Create the forest plot
+g <- ggplot(
+  data = hr,
+  aes(x = variable, y = HR, ymin = lower, ymax = upper)) +
+  geom_pointrange(size = 0.8) +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  coord_flip(ylim=c(0,10)) +
+  xlab("Covariate") +
+  ylab("Hazard Ratio") +
+  theme_jw()
+
+#Cox-Snell R2
+coxsnellR2(cox_model)
+
+
+```
+
+```{r cox-ph-full}
+rrt=rr[margin=="tumor_manual"]
+ix <- rep(TRUE, nrow(rrt))
+ix <- rrt[, pMMR=="pMMR"]
+rrt[, PFSC := ifelse(rrt$PFSCensor==0,1,0)]
+survival_object <- Surv(rrt$PFSDays[ix],rrt$PFSC[ix])
+cox_model <- coxph(survival_object ~ rrt$Gender[ix] + rrt$mucinous[ix] + rrt$Grade[ix] + rrt$LVI[ix] + rrt$PNI[ix] + rrt$stage_num[ix] + rrt$APC[ix] + rrt$KRAS[ix] + rrt$TP53[ix] +
+                     rrt$BRAF[ix] + rrt$PIK3CA[ix] + rrt$tmb[ix] + rrt$TIL_num[ix] + rrt$CD8_50l[ix])
+
+#Cox-Snell R2
+coxsnellR2(cox_model)
+
+# Initialize results
+covariates <- c("Gender", "Age", "stage_num","mucinous", "Grade", "LVI", "PNI", "TIL_num","tmb","APC", "KRAS", "TP53", "BRAF", "PIK3CA", "CD8_50l")
+results <- data.table(Covariates = character(), R2 = numeric(), R2Lower = numeric(), R2Upper = numeric())
+cov_names <- c("APC"="APC", "TP53"="TP53",
+                       "Age"="Age","PIK3CA"="PIK3CA",
+                       "BRAF"="BRAF",
+                       "TIL_num"="TIL",
+                       "mucinous"="Mucinous", "KRAS"="KRAS",
+                       "Gender"="Gender","tmb"="TMB",
+                       "Grade"="Grade","PNI"="PNI","LVI"="LVI",
+                       "stage_num"="TNM Stage","CD8_50l"="CD8+ density")
+stopifnot(all(covariates %in% names(cov_names)))
+
+# Loop through covariates
+for (i in seq_along(covariates)) {
+    current_covariates <- covariates[1:i]
+    covariate_names <- paste(covariates[i])
+    cox_model <- coxph(survival_object ~ ., data = rrt[ix, ..current_covariates])
+    r2 <- coxsnellR2(cox_model)
+    
+    # Bootstrap for error estimates
+    boot_results <- boot(data = rr[margin=="tumor_core"][ix], statistic = bootstrapR2, R = 1000, covariates = current_covariates)
+    lower <- quantile(boot_results$t, probs = 0.025)
+    r2 = quantile(boot_results$t, probs=0.50)
+    upper <- quantile(boot_results$t, probs = 0.975)
+
+    # Store results
+    results <- rbind(results, data.frame(Covariates = covariate_names, R2 = r2, R2Lower = lower, R2Upper = upper))
+}
+
+# Loop through covariates UNIVARIATE
+results <- data.table(Covariates = character(), R2 = numeric(), R2Lower = numeric(), R2Upper = numeric())
+for (i in seq_along(covariates)) {
+    current_covariates <- covariates[i]
+    covariate_names <- cov_names[covariates[i]]
+    cox_model <- coxph(survival_object ~ ., data = rrt[ix, ..current_covariates])
+    r2 <- coxsnellR2(cox_model)
+    
+    # Bootstrap for error estimates
+    boot_results <- boot(data = rrt[ix], statistic = bootstrapR2, R = 1000, covariates = current_covariates)
+    lower <- quantile(boot_results$t, probs = 0.025)
+    r2 = quantile(boot_results$t, probs=0.50)
+    upper <- quantile(boot_results$t, probs = 0.975)
+
+    # Store results
+    results <- rbind(results, data.frame(Covariates = covariate_names, R2 = r2, R2Lower = lower, R2Upper = upper))
+}
+
+# Plot results
+library(ggplot2)
+setkey(results, R2)
+results$Covariates <- factor(results$Covariates, levels = unique(results$Covariates)[order(results$R2)])
+g <- ggplot(results, aes(x = Covariates, y = R2)) +
+    geom_point() +
+    geom_errorbar(aes(ymin = R2Lower, ymax = R2Upper), width = 0.1) +
+    xlab("Covariates") +
+    ylab("Cox-Snell R-squared") +
+    theme_jw() +     
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+save_pdf(g, "cox_snell_r2_full.pdf", width=4, height=3)
+
+
+# Extract the coefficients from the Cox model
+coefficients <- cox_model$coefficients
+hr <- exp(coefficients)
+hr <- data.table(
+  variable = names(coefficients),
+  HR = hr,
+  lower = exp(as.data.table(confint(cox_model, level = 0.95))$`2.5 %`),
+  upper = exp(as.data.table(confint(cox_model, level = 0.95))$`97.5 %`)
+)
+hr$variable <- factor(hr$variable, levels = hr$variable[order(-hr$HR)])
+
+# Create the forest plot
+g <- ggplot(
+  data = hr,
+  aes(x = variable, y = HR, ymin = lower, ymax = upper)) +
+  geom_pointrange(size = 0.8) +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  coord_flip(ylim=c(0,10)) +
+  xlab("Covariate") +
+  ylab("Hazard Ratio") +
+  theme_jw()
+
+#Cox-Snell R2
+coxsnellR2(cox_model)
+
+
+```
+
+
 ```{r cd3-by-tissue}
 # Reshape data to long format
 rr_long <- melt(rr, id.vars = "pMMR", measure.vars = c("CD3_200r", "CD4_200r","CD8_200r"), variable.name = "Metric", value.name = "Value")
@@ -780,12 +1294,12 @@ g <- ggplot(rr_long, aes(x = pMMR, y = cells_per_mm2, fill = pMMR)) +
   theme_jw()
 
 # Plot B and PD1 subsets
-rr_long <- melt(rr, id.vars = "pMMR", measure.vars = c("CD20_200r", "PD1_200r","PD_L1_200r"), variable.name = "Metric", value.name = "Value")
-wilcox.test(rr[pMMR=="pMMR", CD20_200r], rr[pMMR=="dMMR", CD20_200r]) # p = 0.06399
-wilcox.test(rr[pMMR=="pMMR", PD1_200r], rr[pMMR=="dMMR", PD1_200r]) # p = 0.09163
+rr_long <- melt(rrt, id.vars = "tipMMR", measure.vars = c("CD20_200r", "PD1_200r","PD_L1_200r"), variable.name = "Metric", value.name = "Value")
+wilcox.test(rr[pMMR=="tipMMR", CD20_200r], rr[pMMR=="dMMR", CD20_200r]) # p = 0.06399
+wilcox.test(rr[tipMMR=="tipMMR", PD1_200r], rr[tipMMR=="dMMR", PD1_200r]) # p = 0.09163
 wilcox.test(rr[pMMR=="pMMR",PD_L1_200r], rr[pMMR=="dMMR", PD_L1_200r]) # p = 0.02668
 rr_long[, cells_per_mm2 := Value * 1e6 / (1000^2 * 0.325^2)]
-g <- ggplot(rr_long, aes(x = pMMR, y = cells_per_mm2, fill = pMMR)) +
+g <- ggplot(rr_long, aes(x = tipMMR, y = cells_per_mm2, fill = tipMMR)) +
   geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +
   geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +
   labs(y = "Cells / mm2") +
@@ -825,7 +1339,7 @@ wilcox.test(rr[TIL=="absent", CD45_200r], rr[TIL=="marked", CD45_200r])
 
 ```{r gene-mutation-enrichment-tipmmr}
 ## bar chart on pMMR, tipMMR, dMMR on Mutations
-rrm <- melt(rr, id.vars = "tipMMR", measure.vars = c("BRAF", "APC", "CTNNB1", "KRAS", "p53","PIK3CA"), variable.name="Gene")
+rrm <- melt(rr, id.vars = "tipMMR", measure.vars = c("BRAF", "APC", "CTNNB1", "KRAS", "TP53","PIK3CA"), variable.name="Gene")
 result <- rrm[, .(n = .N, mut = sum(value == 1, na.rm=TRUE)), by = .(tipMMR, Gene)]
 result[, SE := sqrt((mut/n) * (1 - mut/n) / n)]
 result[, lower_limit := mut/n - 1.96*SE]
@@ -978,20 +1492,22 @@ g <- ggplot(rr_long, aes(x = tipMMR, y = cells_per_mm2, fill = tipMMR)) +
   theme_jw()
 
 # plot ratio of PDL1+ macrophage to tumor
-rr[, ab := CD163pPDL1_200r / PanCKpPDL1_200r]
-g <- ggplot(rr, aes(x = tipMMR, y = ab, fill = tipMMR)) +
+rrt[, ab := CD163pPDL1_200r / PanCKpPDL1_200r]
+g <- ggplot(rrt, aes(x = tipMMR, y = ab, fill = tipMMR)) +
   geom_boxplot(alpha = 0.5, width=0.8, outlier.shape=NA) +
   geom_jitter(position = position_jitter(width = 0.2), size = 1, alpha = 0.7, shape=20) +
   labs(y = "PD-L1+ m0 / PD-L1+ Tumor") +
   scale_y_log10()+
   scale_fill_manual(values = pMMR_colors) +
   theme_jw()
+wilcox.test(rrt[tipMMR=="tipMMR", ab], rrt[tipMMR=="dMMR", ab])
 save_pdf(g, "m0_tumor_pdl1_ratio.pdf", width=3, height=3)
 
-rr_long <- melt(rr, id.vars = "tipMMR", measure.vars = c("PD1_200l", "PD_L1_200l", "CD45RO_200l", "PanCKpPDL1_200lg","CD163pPDL1_200lg", "ab"), variable.name = "Metric", value.name = "Value")
+rr_long <- melt(rrt, id.vars = "tipMMR", measure.vars = c("PD1_200r", "PD_L1_200r", "CD45RO_200r", "PanCKpPDL1_200r","CD163pPDL1_200r", "ab"), variable.name = "Metric", value.name = "Value")
 rr_long[, cells_per_mm2 := Value * 1e6 / (1000^2 * 0.325^2)]
 pd1 = ttest_pairs(rr, "tipMMR","PD1_200r")
 pdl1 = ttest_pairs(rr, "tipMMR","PD_L1_200r")
+
 
 # Plot PD1/PDL1 
 g <- ggplot(rr_long, aes(x = tipMMR, y = cells_per_mm2, fill = tipMMR)) +

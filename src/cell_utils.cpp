@@ -261,7 +261,7 @@ std::pair<std::string, std::string> colon_parse(const std::string& str) {
 void add_legend_cairo(cairo_t* crp, int font_size,
 		      int legend_width, int legend_height,
 		      int legend_x, int legend_y,
-		      const ColorMap& cm, const std::vector<std::string> labels) {
+		      const ColorLabelMap& cm) {
 #ifdef HAVE_CAIRO
   // Setting up font face
   cairo_select_font_face(crp, "Arial",
@@ -271,10 +271,10 @@ void add_legend_cairo(cairo_t* crp, int font_size,
   // Dimensions for the legend
   int legend_padding = 20; // Space between color boxes
   
-  for (int i = 0; i < labels.size(); ++i) {
+  for (int i = 0; i < cm.size(); ++i) {
     
     // Set color for this entry
-    Color c = cm[i];
+    Color c = cm[i].first;
     cairo_set_source_rgb(crp, c.redf(), c.greenf(), c.bluef());
     
     // Draw the color box
@@ -284,7 +284,7 @@ void add_legend_cairo(cairo_t* crp, int font_size,
     // Draw the label
     cairo_set_source_rgb(crp, 0, 0, 0); // Set color to black for the text
     cairo_move_to(crp, legend_x, legend_y + i*(legend_height+legend_padding) + legend_height);
-    cairo_show_text(crp, labels[i].c_str());
+    cairo_show_text(crp, cm[i].second.c_str());
   }
 #else
   std::cerr << "Warning: Can't plot, need to build with Cairo library" << std::endl;

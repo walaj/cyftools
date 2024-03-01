@@ -96,5 +96,5 @@ else
 		      cysift delaunay -l 20 - ${output_file}"
     echo "$cmd" | tr '\n' ' '
     echo ""
-    #eval "$cmd"
+    eval "$cmd"
 fi

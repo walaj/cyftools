@@ -168,7 +168,6 @@ std::vector<Tag> CellHeader::GetMetaTags() const {
   return data_tags.at(i);
   }*/
 
-
 void CellHeader::Print() const {
 
   for (const auto& tag : tags) {

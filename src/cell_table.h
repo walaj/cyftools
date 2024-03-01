@@ -129,7 +129,7 @@ public:
   
   void AnnotateCall(int num_neighbors, float frac, cy_uint dist, cy_uint flag_to_set);
   
-  void TumorMargin(float dist);
+  void TumorMargin(float dist, cy_uint tumor_flag, cy_uint margin_flag);
 
   void IslandFill(size_t n, int flag_from, bool invert_from,
 		  int flag_to, bool invert_to);
@@ -214,6 +214,11 @@ public:
 		       int topic_highlight,
 		       float cont_cutoff); 
 
+  //////
+  // Kristin neighborhood analysis
+  /////
+  const std::vector<std::vector<double>> create_inverse_distance_weights();
+  
 #endif
 
  private:

@@ -1103,6 +1103,18 @@ int ViewProcessor::ProcessHeader(CellHeader& header) {
       }
     }
     std::cout << std::endl;
+  } else if (m_crevasse) { // print as crevasse format (csv header)
+    std::cout << "CellID,X,Y,";
+    const auto& tags = m_header.GetDataTags();
+    for (auto it = tags.begin(); it != tags.end(); ++it) {
+      if (it->type == Tag::MA_TAG) {
+	std::cout << it->id;
+	if (std::next(it) != tags.end() && std::next(it)->type == Tag::MA_TAG) {
+	  std::cout << ","; 
+	}
+      }
+    }
+    std::cout << std::endl;
   } else if (m_adjacent) {
     ; // no print
   }
@@ -1115,7 +1127,12 @@ int ViewProcessor::ProcessLine(Cell& cell) {
 
   // classic view, no cut
   if (!m_to_view.size())  {
-    m_adjacent ? cell.PrintWithHeader(m_round, m_header) : cell.Print(m_round);    
+    if (m_crevasse) {
+      cell.PrintForCrevasse(m_header);
+      return NO_WRITE_CELL;
+    }
+      
+    m_adjacent ? cell.PrintWithHeader(m_round, m_header) : cell.Print(m_round);
     return NO_WRITE_CELL; // don't output, since already printing it
   }
   

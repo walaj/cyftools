@@ -11,6 +11,6 @@ if [[ ! -f "$input_file" ]]; then
     echo "Error: File '$input_file' does not exist."
     exit 1
 else
-    echo "cysift cereal ${input_file} ${output_file} -s $number"
-    cysift cereal ${input_file} ${output_file} -s $number
+    echo "cysift convert ${input_file} ${output_file} -s $number"
+    cysift convert ${input_file} ${output_file} -s $number
 fi

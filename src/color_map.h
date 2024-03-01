@@ -15,6 +15,8 @@ struct Color {
   float alphaf()  const { return alpha; }    
 };
 
+using ColorLabelPair = std::pair<Color, std::string>;
+typedef std::vector<ColorLabelPair> ColorLabelMap;
 typedef std::vector<Color> ColorMap;
 
 extern ColorMap color_map4;

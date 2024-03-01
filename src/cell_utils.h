@@ -66,7 +66,7 @@ double jaccardSimilarity(const std::vector<bool>& v1, const std::vector<bool>& v
 void add_legend_cairo(cairo_t* crp, int font_size,
 		      int legend_width, int legend_height,
 		      int legend_x, int legend_y,
-		      const ColorMap& cm, const std::vector<std::string> labels);
+		      const ColorLabelMap& cm); 
 
 void column_to_row_major(std::vector<float>& data, int nobs, int ndim);
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ## set to 1 if want to only print run lines (create "parallel" compatible output)
-PCO=1
+#PCO=1
 
 source ~/git/cysift/scripts/config.sh
 
@@ -21,8 +21,9 @@ fi
 # prepare the matlab file
 #matlab -nodisplay -r "run('/home/jaw34/git/cysift/matlab/jerry.m'); exit;"
 
-#HOMEBASE=${PROJ_DATA}/orion/orion_1_74
-HOMEBASE=${PROJ_DATA}/prostate
+HOMEBASE=${PROJ_DATA}/orion/orion_1_74
+#HOMEBASE=${PROJ_DATA}/prostate
+echo $HOMEBASE/rawcsv/
 parallel_echo "...getting file list from $HOMEBASE"
 for infile in $HOMEBASE/rawcsv/*.csv; do
 
@@ -34,10 +35,15 @@ for infile in $HOMEBASE/rawcsv/*.csv; do
 	if [[ $base == *.rar ]]; then
             continue
 	fi
-	
+
 	# Extract the basename
 	parallel_echo "...process_file.sh: working on sample $base"
 
+	## uncomment to run just the one file
+	if [[ $base != "LSP14483" ]]; then
+	    continue
+	fi
+	
 	#check_file_exists $infile
 	#~/git/cysift/scripts/csv_rearrange.sh $infile "${base}.rar.csv"
 

@@ -546,6 +546,7 @@ class ViewProcessor : public CellProcessor {
 		 bool header_only,
 		 bool rheader,
 		 bool adjacent,
+		 bool crevasse,
 		 int round,
 		 const std::unordered_set<std::string>& include
 		 ) {
@@ -553,6 +554,7 @@ class ViewProcessor : public CellProcessor {
     m_print_header = print_header;
     m_header_only = header_only;
     m_round = round;
+    m_crevasse = crevasse;
     m_to_view = include;
     m_csv_header = rheader;
     m_adjacent = adjacent;
@@ -567,6 +569,8 @@ class ViewProcessor : public CellProcessor {
   bool m_csv_header = false;
 
   bool m_adjacent = false;
+
+  bool m_crevasse = false;
   
   bool m_header_only;
   

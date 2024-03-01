@@ -790,7 +790,9 @@ void CellTable::AnnotateCall(int num_neighbors, float frac, cy_uint dist, cy_uin
   
 }
 
-void CellTable::TumorMargin(float dist) {
+void CellTable::TumorMargin(float dist,
+			    cy_uint tumor_flag,
+			    cy_uint margin_flag) {
 
 #ifdef HAVE_KNNCOLLE
 
@@ -811,7 +813,7 @@ void CellTable::TumorMargin(float dist) {
   // do a quick loop to make sure tumor is labeled
   size_t tumor_count = 0;
   for (size_t i = 0; i < num_cells; i++) {
-    if (m_cflag_ptr->at(i) & TUMOR_FLAG)
+    if (IS_FLAG_SET(m_cflag_ptr->at(i), tumor_flag))
       tumor_count++;
   }
   if (tumor_count == 0) {
@@ -845,18 +847,18 @@ void CellTable::TumorMargin(float dist) {
     const std::vector<size_t>& ind = neighbors.at(0);
     const std::vector<double>& dist = distances.at(0);
 
-    const bool cell_is_tumor = IS_FLAG_SET(m_cflag_ptr->at(i), TUMOR_FLAG);
+    const bool cell_is_tumor = IS_FLAG_SET(m_cflag_ptr->at(i), tumor_flag);
 
     // clear current margin flag
-    CLEAR_FLAG((*m_cflag_ptr)[i], MARGIN_FLAG); 
+    CLEAR_FLAG((*m_cflag_ptr)[i], margin_flag); 
     
     // loop the nodes connected to each cell
     for (size_t n = 0; n < ind.size(); n++) {
       const uint32_t ncflag = m_cflag_ptr->at(ind.at(n)); // neighbor c flag
-      if ( ( cell_is_tumor && ! IS_FLAG_SET(ncflag, TUMOR_FLAG)) || // cell is tumor, neighbor is stroma
-	   (!cell_is_tumor &&   IS_FLAG_SET(ncflag, TUMOR_FLAG))) { // cell is stroma, neighbor is tumor
-	SET_FLAG((*m_cflag_ptr)[i], MARGIN_FLAG); // mark as margin
-	assert(IS_FLAG_SET(m_cflag_ptr->at(i), MARGIN_FLAG));
+      if ( ( cell_is_tumor && ! IS_FLAG_SET(ncflag, tumor_flag)) || // cell is tumor, neighbor is stroma
+	   (!cell_is_tumor &&   IS_FLAG_SET(ncflag, tumor_flag))) { // cell is stroma, neighbor is tumor
+	SET_FLAG((*m_cflag_ptr)[i], margin_flag); // mark as margin
+	assert(IS_FLAG_SET(m_cflag_ptr->at(i), margin_flag));
 	margin_count++;
 	break;
       }

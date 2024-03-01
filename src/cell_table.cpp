@@ -1421,85 +1421,83 @@ int CellTable::PlotPNG(const std::string& file,
   cairo_paint(crp);
 
  
-  ColorMap cm;
+  ColorLabelMap cm;
   std::vector<std::string> labels;
 
   if (module == "tumor") {
-    cm = {colorbrewer_3red_light, // automated tumor
-	  colorbrewer_3red_medium,// manual
-	  colorbrewer_3red_dark,  // both
-	  colorbrewer_3blue_light, // automated stroma
-	  color_deep_pink
-      }; 
-      labels = {
-	"Tumor (Automated)",
-	"Tumor (Manual)",
-	"Tumor (A+M)",
-	"Stroma",
-	"Tcell cluster"
-      };
+
+    cm = {
+        {colorbrewer_3red_light, "Tumor (Automated)"},
+        {colorbrewer_3red_medium, "Tumor (Manual)"},
+        {colorbrewer_3red_dark, "Tumor (A+M)"},
+        {colorbrewer_3blue_light, "Stroma"},
+        {color_cyan, "Margin"},
+        {color_deep_pink, "Tcell cluster"},
+        {colorbrewer_3green_light, "CD57"},
+        {colorbrewer_3green_medium, "CD57"},
+        {colorbrewer_3green_dark, "CD57"}
+    };
+
+  } else if (module == "margin") {
+
+    cm = {
+      {colorbrewer_3red_light, "Margin (Automated)"},
+      {colorbrewer_3red_medium, "Margin (Manual)"},
+      {colorbrewer_3red_dark,"Margin (A+M)"}
+    };
+    
   } else if (module == "artifact") {
 
-    cm = {color_red};
-    labels={
-      "PanCK CD3"
+    cm = {
+      {color_red, "PanCK CD3"}
     };
     
   } else if (module == "pdl1") {
-    cm = {color_light_red, color_red, color_light_green, color_dark_green};
 
-    labels = {
-      "PanCK PD-L1 neg",
-      "PanCK PD-L1 pos",
-      "CD163 PD-L1 neg",
-      "CD163 PD-L1 pos"
+    cm = {
+      {color_light_red, "PanCK PD-L1 neg"},
+      {color_red,       "PanCK PD-L1 pos"},
+      {color_light_green,"CD163 PD-L1 neg"},
+      {color_dark_green, "CD163 PD-L1 pos"}
     };
+
   } else if (module == "prostateimmune") {
 
-    cm = {color_light_red, color_yellow, color_deep_pink, color_light_green}; 
-
-    labels = {
-      "CD3+",
-      "CD8+",
-      "CD20+",
-      "FOXP3+"
+    cm = {
+      {color_light_red,"CD3+"},
+      {color_yellow, "CD8+"},
+      {color_deep_pink, "CD20+"},
+      {color_light_green,"FOXP3+"}
     };
     
   } else if (module == "orion") {
-      cm = {color_red, color_light_red,
-		 color_purple, color_dark_green, color_light_green,
-		 color_cyan, color_gray};
-      labels = {
-	"T-cell PD-1 pos",
-	"T-cell PD-1 neg",    
-	"B-cell",
-	"PanCK - PD-L1 pos",
-	"PanCK - PD-L1 neg",
-	"Other PD-L1 pos",
-	"Stromal"
+      cm = {
+	{color_red,      "T-cell PD-1 pos"},
+	{color_light_red,"T-cell PD-1 neg"},
+	{color_purple,"B-cell"},
+	{color_dark_green, "PanCK - PD-L1 pos"},
+	{color_light_green,"PanCK - PD-L1 neg"},
+	{color_cyan, "Other PD-L1 pos"},
+	{color_deep_pink, "FOXP3 pos"},
+	{color_gray,"Stroma"}
       };
-      
   } else if (module == "prostate") {
 
-      cm = {color_light_red, color_red,
-		     color_purple, color_dark_green, color_gray};
-      labels = {
-	"T-cell PD-1 pos",
-	"T-cell PD-1 neg",    
-	"B-cell",
-	"AMCAR-pos",
-	"Stromal"
+      cm = {
+	{color_light_red, "T-cell PD-1 pos"},
+	{color_red,"T-cell PD-1 neg"},
+	{color_purple, "B-cell"},
+	{color_dark_green, "AMACR+"},
+	{color_gray,"Stromal"}
       };
       
   } else if (module == "tcell") {
-      cm = {color_light_red, color_red,
-		     color_purple, color_dark_green, color_dark_blue};
-      labels = {
-	"CD3pCD4p",
- "CD3pCD8p",
-	"CD3p-only",
-	"CD4p-only",
-	"CD8p-only"
+      cm = {
+	{color_light_red, "CD3+CD4+"},
+	{color_red,"CD3+CD8+"},
+	{color_purple,"CD3+ only"},
+	{color_dark_green,"CD4+ only"},
+	{color_dark_blue,"CD8+ only"}
       };
   }
 
@@ -1524,17 +1522,29 @@ int CellTable::PlotPNG(const std::string& file,
     // Color by tumor / stromal call
     if (module == "tumor") {
 
-
-      if      (IS_FLAG_SET(cf, TUMOR_FLAG)  && !IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = cm[0];
+      if (IS_FLAG_SET(cf, TUMOR_FLAG)  && !IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
+	c = cm[0].first;
       else if (!IS_FLAG_SET(cf, TUMOR_FLAG) && IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = cm[1];
+	c = cm[1].first;
       else if (IS_FLAG_SET(cf, TUMOR_FLAG) && IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = cm[2];
+	c = cm[2].first;
       else if (!IS_FLAG_SET(cf, TUMOR_FLAG)  && !IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = cm[3];
+	c = cm[3].first;
 
+      //if (IS_FLAG_SET(cf, MARGIN_FLAG))
+      //	c = cm[4].first;
       
+      // CD57
+      /*
+      if      (IS_FLAG_SET(cf, TUMOR_FLAG)  && !IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG) && IS_FLAG_SET(pf, PROSTATE_CD57))
+	c = cm[6].first;
+      else if (!IS_FLAG_SET(cf, TUMOR_FLAG) && IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG) && IS_FLAG_SET(pf, PROSTATE_CD57))
+	c = cm[7].first;
+      else if (IS_FLAG_SET(cf, TUMOR_FLAG) && IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG) && IS_FLAG_SET(pf, PROSTATE_CD57))
+	c = cm[8].first;
+      else if (IS_FLAG_SET(pf, PROSTATE_CD57))
+	c = color_purple;
+      */
       
       /*      if ( IS_FLAG_SET(cf, TUMOR_FLAG))
 	c = IS_FLAG_SET(cf, MARGIN_FLAG) ? color_purple : color_red;
@@ -1544,8 +1554,8 @@ int CellTable::PlotPNG(const std::string& file,
 	assert(false);
       */
       
-      if (IS_FLAG_SET(cf, TCELL_FLAG))
-	c = cm[4];
+      //      if (IS_FLAG_SET(cf, TCELL_FLAG))
+      //	c = cm[5];
       
       // override temporary
       /*      if (IS_FLAG_SET(pf, ORION_CD163))
@@ -1558,25 +1568,20 @@ int CellTable::PlotPNG(const std::string& file,
       //if (region_it->second->at(j) == 1) {
       // 	c = IS_FLAG_SET(cf, TUMOR_FLAG) ? color_deep_pink : color_dark_blue;
       //}
+    } else if (module == "margin") {
 
+      if (IS_FLAG_SET(cf, MARGIN_FLAG) && !IS_FLAG_SET(cf, MARGIN_FLAG_MANUAL))
+	c = cm[0].first;
+      else if (!IS_FLAG_SET(cf,MARGIN_FLAG) && IS_FLAG_SET(cf, MARGIN_FLAG_MANUAL))
+	c = cm[1].first;
+      else if (IS_FLAG_SET(cf, MARGIN_FLAG) && IS_FLAG_SET(cf, MARGIN_FLAG_MANUAL))
+	c = cm[2].first;
+	  
     } else if (module == "artifact") {
       
       if ( IS_FLAG_SET(pf, ORION_CD3) && IS_FLAG_SET(pf, ORION_PANCK))
 	c = color_red;
-      
-      // override temporary
-      /*      if (IS_FLAG_SET(pf, ORION_CD163))
-	c = color_dark_blue;
-      if (IS_FLAG_SET(pf, ORION_PDL1) && IS_FLAG_SET(pf, ORION_CD163))
-      	c = color_deep_pink;
-      */
 
-      //debug jerry
-      //if (region_it->second->at(j) == 1) {
-      // 	c = IS_FLAG_SET(cf, TUMOR_FLAG) ? color_deep_pink : color_dark_blue;
-      //}
-
-      
     } else if (module == "prostate") { 
     
       if (IS_FLAG_SET(pf, PROSTATE_CD3) && IS_FLAG_SET(pf, PROSTATE_PD1))
@@ -1606,8 +1611,6 @@ int CellTable::PlotPNG(const std::string& file,
       else
 	c = color_gray;
 
-      
-
     } else if (module == "pdl1") {
       
       if (IS_FLAG_SET(pf, ORION_PANCK)) {
@@ -1631,9 +1634,14 @@ int CellTable::PlotPNG(const std::string& file,
       else if (pflag.testAndOr(147456,0)) // PD-L1 NEG tumor cell
 	c = color_light_green;
       else if (pflag.testAndOr(2048,0)) // PD-L1 any cell
-	c = color_cyan;      
+	c = color_cyan;
       else
 	c = color_gray;
+
+      // overwrite
+      if (pflag.testAndOr(128,0))
+	c = color_deep_pink;
+
       
     } else if (module == "tcell") {
       
@@ -1739,10 +1747,10 @@ int CellTable::PlotPNG(const std::string& file,
   int legend_x = width*scale_factor - legend_width - legend_padding;
   int legend_y = legend_padding;
 
-  const bool legend_on = false;
+  const bool legend_on = true;
   if (legend_on) {
     add_legend_cairo(crp, font_size, legend_width, legend_height, legend_x, legend_y,
-		     cm, labels);
+		     cm);
   }
 
   const bool title_on = true && !title.empty();
@@ -2061,3 +2069,33 @@ void CellTable::GMM_EM() {
    assert(m_x_ptr->size() == m_id_ptr->size());         
    
  }
+
+const std::vector<std::vector<double>> CellTable::create_inverse_distance_weights() {
+
+  validate();
+  int n = m_x_ptr->size();
+  
+  std::vector<std::vector<double>> W(n, std::vector<double>(n, 0)); // Initialize the weights matrix
+  
+  for (int i = 0; i < n; ++i) {
+    for (int j = 0; j < n; ++j) {
+      if (i != j) { // Avoid self-comparison
+	// Calculate distance
+	double dist = std::sqrt(
+				std::pow(m_x_ptr->at(i) - m_x_ptr->at(j), 2) + 
+				std::pow(m_y_ptr->at(i) - m_y_ptr->at(j), 2)
+				);
+	if (dist > 0) { // Avoid division by zero
+	  W[i][j] = 1 / dist;
+	}
+      }
+    }
+  }
+  
+  // Set the diagonal to zero to avoid self-influence
+  for (int i = 0; i < n; ++i) {
+    W[i][i] = 0;
+  }
+  
+  return W;
+}
