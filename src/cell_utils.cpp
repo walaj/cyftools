@@ -258,6 +258,35 @@ std::pair<std::string, std::string> colon_parse(const std::string& str) {
 }
 
 
+void draw_scale_bar(cairo_t* cr, double x, double y, double bar_width, double bar_height, const std::string& text) {
+  
+    // Set color to white for the bar
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0); // White color
+    cairo_set_line_width(cr, bar_height); // Set bar height as line width
+    
+    // Draw the bar
+    cairo_move_to(cr, x, y);
+    cairo_line_to(cr, x + bar_width, y);
+    cairo_stroke(cr); // Apply the drawing
+
+    // Prepare to draw text
+    cairo_set_source_rgb(cr, 255, 255, 255); // Text color (black for contrast)
+    cairo_select_font_face(cr, "Arial", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, bar_height*2); // Set font size relative to bar height
+
+    // Calculate text width and height for centering
+    cairo_text_extents_t extents;
+    cairo_text_extents(cr, text.c_str(), &extents);
+    double text_x = x + (bar_width - extents.width) / 2 - extents.x_bearing;
+    double text_y = y - (bar_height + extents.height) / 2 - extents.y_bearing - bar_width * 0.1;
+
+    // Draw the text
+    cairo_move_to(cr, text_x, text_y);
+    cairo_show_text(cr, text.c_str());
+    cairo_stroke(cr); // Apply the drawing
+}
+
+
 void add_legend_cairo(cairo_t* crp, int font_size,
 		      int legend_width, int legend_height,
 		      int legend_x, int legend_y,
@@ -267,7 +296,7 @@ void add_legend_cairo(cairo_t* crp, int font_size,
   cairo_select_font_face(crp, "Arial",
 			 CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
   cairo_set_font_size(crp, font_size); // Adjust font size to your needs
-  
+
   // Dimensions for the legend
   int legend_padding = 20; // Space between color boxes
   
@@ -290,6 +319,56 @@ void add_legend_cairo(cairo_t* crp, int font_size,
   std::cerr << "Warning: Can't plot, need to build with Cairo library" << std::endl;
 #endif  
   
+}
+void add_legend_cairo_top(cairo_t* crp, int font_size,
+                      int legend_height,
+                      int width, const ColorLabelMap& cm) {
+#ifdef HAVE_CAIRO
+  
+  // Black background for legend area
+  cairo_set_source_rgb(crp, 0, 0, 0); // Set color to black
+  cairo_rectangle(crp, 0, 0, width, legend_height); // Top strip
+  cairo_fill(crp);
+
+  // Measure the total width of the labels and spaces
+  double total_width = 0;
+  const std::string space = "  "; // Two spaces
+  cairo_text_extents_t extents;
+  cairo_set_font_size(crp, font_size); // Adjust font size to your needs  
+  for (const auto& entry : cm) {
+    std::string label = entry.second + space; // Add spaces between labels
+    cairo_text_extents(crp, label.c_str(), &extents);
+    total_width += extents.x_advance; // Use x_advance for accurate spacing
+  }
+  
+  // Subtract the width of the final two spaces, as they're not needed after the last label
+  cairo_text_extents(crp, space.c_str(), &extents);
+  total_width -= extents.x_advance;
+  
+  // Calculate starting x position to center the block of text
+  int start_x = (width - total_width) / 2;
+  int text_x = start_x;
+  int text_y = legend_height / 2 + font_size / 2; // Adjust as needed for vertical centering
+  
+  // Draw the labels
+  for (const auto& entry : cm) {
+    Color c = entry.first;
+    std::string label = entry.second;
+    
+    // Set color for text
+    cairo_set_source_rgb(crp, c.redf(), c.greenf(), c.bluef());
+    
+    // Draw the label
+    cairo_move_to(crp, text_x, text_y);
+    cairo_show_text(crp, label.c_str());
+    
+    // Measure the label width with the two spaces and update text_x for the next label
+    cairo_text_extents(crp, (label + space).c_str(), &extents);
+    text_x += extents.x_advance;
+  }
+#else
+  std::cerr << "Warning: Can't plot, need to build with Cairo library" << std::endl;
+#endif  
 }
   
 double jaccardSimilarity(const std::vector<bool>& v1, const std::vector<bool>& v2) {
@@ -324,3 +403,81 @@ double jaccardSubsetSimilarity(const std::vector<bool>& v1, const std::vector<bo
     
     return static_cast<double>(intersectionCount) / minSizeCount;
 }
+
+////////
+/// adapted from: https://www.geeksforgeeks.org/convex-hull-using-graham-scan/
+// Utility function to find the point with the lowest Y coordinate (or the leftmost in case of tie)
+bool compareYThenX(const JPoint& p1, const JPoint& p2) {
+    return (p1.y < p2.y) || (p1.y == p2.y && p1.x < p2.x);
+}
+
+// To find orientation of ordered triplet (p, q, r).
+int orientation(const JPoint& p, const JPoint& q, const JPoint& r) {
+    int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+    if (val == 0) return 0; // Collinear
+    return (val > 0) ? 1 : 2; // Clockwise or Counterclockwise
+}
+
+// Comparator for sorting points with respect to the first point
+bool compare(const JPoint& p1, const JPoint& p2, const JPoint& p0) {
+    int o = orientation(p0, p1, p2);
+    if (o == 0)
+        return (p1.x - p0.x) * (p1.x - p0.x) + (p1.y - p0.y) * (p1.y - p0.y) < (p2.x - p0.x) * (p2.x - p0.x) + (p2.y - p0.y) * (p2.y - p0.y);
+    return (o == 2);
+}
+
+std::vector<JPoint> convexHull(std::vector<JPoint>& points) {
+    // Step 1: Find the bottommost point
+    std::swap(points[0], *std::min_element(points.begin(), points.end(), compareYThenX));
+    JPoint p0 = points[0];
+
+    // Step 2: Sort points based on polar angle with p0
+    std::sort(points.begin() + 1, points.end(), [p0](const JPoint& a, const JPoint& b) { return compare(a, b, p0); });
+
+    // Step 3: Remove points that are collinear with p0
+    int m = 1; // Initialize size of modified array
+    for (int i = 1; i < points.size(); ++i) {
+        while (i < points.size() - 1 && orientation(p0, points[i], points[i+1]) == 0) i++;
+        points[m++] = points[i];
+    }
+
+    // Convex hull is not possible if there are less than 3 unique points
+    if (m < 3) return std::vector<JPoint>();
+
+    // Step 4: Create an empty stack and push first three points to it
+    std::stack<JPoint> S;
+    S.push(points[0]);
+    S.push(points[1]);
+    S.push(points[2]);
+
+    // Step 5: Process remaining points
+    for (int i = 3; i < m; i++) {
+        while (S.size() > 1 && orientation(nextToTop(S), S.top(), points[i]) != 2) S.pop();
+        S.push(points[i]);
+    }
+
+    std::vector<JPoint> hull;
+    
+    // Now stack has the output points, print contents of stack
+    while (!S.empty()) {
+        JPoint p = S.top();
+	hull.push_back(p);
+        //std::cout << "(" << p.x << ", " << p.y << ")" << std::endl;
+        S.pop();
+    }
+    return hull;
+}
+
+
+// A utility function to find next to top in a stack of JPoints
+JPoint nextToTop(std::stack<JPoint> &S) {
+    JPoint p = S.top();
+    S.pop();
+    JPoint res = S.top();
+    S.push(p);
+    return res;
+}
+///////////////
+//////////////
+
+

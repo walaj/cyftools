@@ -136,15 +136,13 @@ void CellHeader::addTag(const Tag& tag) {
 
   // if it's a program tag, update the counter for temporal sorting
   if (tag.type == Tag::PG_TAG) {
-    tags.back().i = pg_tag_num; 
-    pg_tag_num++;
+    tags.back().i = GetProgramTags().size() - 1;
   } else if (tag.type == Tag::MA_TAG) {
-    tags.back().i = ma_tag_num; 
-    ma_tag_num++;    
+    tags.back().i = GetMarkerTags().size() - 1;
   } else if (tag.type == Tag::CA_TAG) {
-    tags.back().i = ca_tag_num; 
-    ca_tag_num++;    
+    tags.back().i = GetMetaTags().size() -1;
   }
+
 }
 
 std::vector<Tag> CellHeader::GetMarkerTags() const {
@@ -169,11 +167,16 @@ std::vector<Tag> CellHeader::GetMetaTags() const {
   return meta_tags;
 }
 
+std::vector<Tag> CellHeader::GetProgramTags() const {
 
-/*const Tag& CellHeader::GetDataTag(int i) const {
-  assert(i < data_tags.size());
-  return data_tags.at(i);
-  }*/
+  // return only tags that hold marker data
+  std::vector<Tag> program_tags;
+  for (const auto& t : tags)
+    if (t.type == Tag::PG_TAG)
+      program_tags.push_back(t);
+  
+  return program_tags;
+}
 
 void CellHeader::Print() const {
 

@@ -7,6 +7,7 @@
 #include <numeric>
 #include <iostream>
 #include "color_map.h"
+#include <stack>
 
 // forward declare
 struct _cairo;
@@ -17,6 +18,27 @@ typedef _cairo cairo_t;
 #ifdef HAVE_HDF5
 #include <H5Cpp.h>
 #endif
+
+struct JPoint {
+  
+  float x;
+  float y;
+
+  JPoint(float mx, float my) : x(mx), y(my) {}
+  
+  std::string print() const { return std::to_string(x) + "," + std::to_string(y); }
+
+  bool operator==(const JPoint& other) const {
+    return x == other.x && y == other.y;
+  }
+
+  friend std::ostream& operator<<(std::ostream& os, const JPoint& point) {
+    os << point.x << "," << point.y;
+    return os;
+}
+
+};
+
 
 /** Format an integer to include commas
  * @param data Number to format
@@ -59,14 +81,42 @@ float pearsonCorrelation(const std::vector<T>& v1, const std::vector<T>& v2) {
   return static_cast<float>(num / (std::sqrt(den_v1) * std::sqrt(den_v2))); 
 }
 
+///////
+/////// CONVEX HULL
+///////
+
+bool compareYThenX(const JPoint& p1, const JPoint& p2);
+
+int orientation(const JPoint& p, const JPoint& q, const JPoint& r);
+
+bool compare(const JPoint& p1, const JPoint& p2, const JPoint& p0);
+
+std::vector<JPoint> convexHull(std::vector<JPoint>& points);
+
+JPoint nextToTop(std::stack<JPoint> &S);
+
+///////
+
+// Comparator function for sorting
+bool ComparePoints(const JPoint& a, const JPoint& b, const JPoint& centroid);
+
 double jaccardSubsetSimilarity(const std::vector<bool>& v1, const std::vector<bool>& v2);
 
 double jaccardSimilarity(const std::vector<bool>& v1, const std::vector<bool>& v2);
 
+//////
+/// plotting
+void add_legend_cairo_top(cairo_t* crp, int font_size,
+			  int legend_height,
+			  int width, const ColorLabelMap& cm);
+
+
 void add_legend_cairo(cairo_t* crp, int font_size,
 		      int legend_width, int legend_height,
 		      int legend_x, int legend_y,
-		      const ColorLabelMap& cm); 
+		      const ColorLabelMap& cm);
+
+void draw_scale_bar(cairo_t* cr, double x, double y, double bar_width, double bar_height, const std::string& text);
 
 void column_to_row_major(std::vector<float>& data, int nobs, int ndim);
 

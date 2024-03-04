@@ -11,10 +11,14 @@ struct SelectionUnit {
   cy_uint pnot = 0;
   cy_uint cand = 0;
   cy_uint cnot = 0;
+  cy_uint cor = 0;
+  cy_uint por = 0;
 
   bool TestFlags(cy_uint pflag, cy_uint cflag) const;
 
   friend std::ostream& operator<<(std::ostream& os, const SelectionUnit& unit);
+
+  bool isEmpty() const;
 };
 
 class CellSelector {
@@ -28,6 +32,8 @@ public:
   bool TestFlags(cy_uint pflag, cy_uint cflag) const;
   
   friend std::ostream& operator<<(std::ostream& os, const CellSelector& cs);
+
+  size_t size() const;
   
 private:
 

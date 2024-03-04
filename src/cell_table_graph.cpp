@@ -673,16 +673,15 @@ void CellTable::IslandFill(size_t n, int flag_from, bool invert_from,
 knncolle::VpTree<knncolle::distances::Euclidean, int, float>
 CellTable::build_vp_tree(const std::vector<bool>& ix) const {
 
-  // number of cells
-  int nobs = CellCount();
+  // get the number of cells to build table on
+  validate();
   const int ndim = 2;
+  int nobs = CellCount(); // max number of cells we'll use in graph
   assert(nobs == ix.size() || ix.size() == 0);
   
   // column major the coordinate data
   std::vector<float> concatenated_data;
   concatenated_data.reserve(nobs * ndim);
-
-  validate();
 
   // add x and y
   size_t n = 0;  
@@ -693,22 +692,20 @@ CellTable::build_vp_tree(const std::vector<bool>& ix) const {
       n++;
     }
   }
-  
+
+  // update the number of obs (cells) based on how many we actually added
   assert(n == concatenated_data.size() / 2);
   nobs = n; 
   
   if (m_verbose) 
     std::cerr << "...building KNN VP tree with " << AddCommas(concatenated_data.size()/2) << " points" << std::endl;
   
-  // convert to row major?
-  //column_to_row_major(concatenated_data, nobs, ndim);
-  
   JNeighbors output(nobs);
    
   // initialize the tree. Can choose from different algorithms, per knncolle library
   knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());
   //knncolle::AnnoyEuclidean<int, float> searcher(ndim, nobs, concatenated_data.data());
-   //knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());  
+  //knncolle::Kmknn<knncolle::distances::Euclidean, int, float> searcher(ndim, nobs, concatenated_data.data());  
 
   if (m_verbose)
     std::cerr << "..KNN (spatial) vp tree built" << std::endl;
@@ -717,12 +714,52 @@ CellTable::build_vp_tree(const std::vector<bool>& ix) const {
    
 }
 
-void CellTable::AnnotateCall(int num_neighbors, float frac, cy_uint dist, cy_uint flag_to_set) {
+void CellTable::AnnotateCall(int num_neighbors, float frac,
+			     cy_uint dist, cy_uint flag_to_set,
+			     bool build_tree_with_marked_only) {
 
 #ifdef HAVE_KNNCOLLE
-
+  
   int nobs = CellCount();
-  knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher = build_vp_tree();
+  // vector to say if build mark flag is on or off for that cell
+  // that is, only cells that are marked as BUILD_GRAPH_FLAG *ON* are added
+  std::vector<bool> ix;
+  ix.reserve(nobs);
+  
+  // not really exposed, so should never run for right now
+  if (build_tree_with_marked_only) {
+
+    // not really exposed, so should never run for right now
+    assert(false);
+    
+    // add true for cells with build flag marked
+    size_t n = 0;
+    for (size_t i = 0; i < m_cflag_ptr->size(); ++i) {
+      ix.push_back(IS_FLAG_SET(m_cflag_ptr->at(i), BUILD_GRAPH_FLAG));
+      if (ix.back())
+	n++;
+    }
+
+    // warn and exit if no cells
+    if (n == 0) {
+      std::cerr << "Warning: AnnotateCall - no build flags set (from cyftools filter <> <> -B)" << std::endl;
+      std::cerr << "         May need to either" << std::endl;
+      std::cerr << "            1) run cyftools filter with -B set or change filter criteria" << std::endl;
+      std::cerr << "            2) run cyftools annotate *without* the -B flag" << std::endl;
+       
+    }
+
+    build_vp_tree(ix);
+  }
+
+  // build flag not set, so build all of them
+  else {
+    
+    ix = std::vector<bool>(nobs, true);
+    
+  }
+
+  knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher = build_vp_tree(ix);
   
 #pragma omp parallel for num_threads(m_threads)
   for (size_t i = 0; i < nobs; ++i) {
@@ -888,8 +925,8 @@ void CellTable::BuildKDTree() {
   arma::mat data(2, m_x_ptr->size());
   for (size_t i = 0; i < m_x_ptr->size(); ++i)
     {
-      data(0, i) = m_x_ptr->getData().at(i);
-      data(1, i) = m_y_ptr->getData().at(i);
+      data(0, i) = m_x_ptr->at(i);
+      data(1, i) = m_y_ptr->at(i);
     }
   
   //assert(ml_kdtree == nullptr);

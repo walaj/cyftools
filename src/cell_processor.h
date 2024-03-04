@@ -433,14 +433,15 @@ public:
 
 };
 
-// Mark processor
-class MarkProcessor : public CellProcessor {
+// Filter processor
+class FilterProcessor : public CellProcessor {
   
  public:
   
-  void SetFlagParams(CellSelector select, bool trim) {
+  void SetFlagParams(CellSelector select, bool mark1, bool mark2) {
     m_select = select;
-    m_trim = trim;
+    m_mark1 = mark1;
+    m_mark2 = mark2;
   }
 
   void SetFieldParams(const SelectOpMap criteria, bool or_toggle) {
@@ -456,12 +457,50 @@ class MarkProcessor : public CellProcessor {
 
   CellSelector m_select;
 
-  bool m_trim = false;
+  bool m_mark1 = false;
+  bool m_mark2 = false;  
   
   // field selectors
   SelectOpMap m_criteria;
-  SelectOpNumMap m_criteria_int;  
+  SelectOpNumMap m_criteria_int;  // created by ProcessHeader
   bool m_or_toggle = false;
+};
+
+// Hidden processor just to confirm flags are cleared
+class MarkCheckProcessor : public CellProcessor {
+   public:
+  
+  int ProcessHeader(CellHeader& header) override;
+
+  int ProcessLine(Cell& cell) override;
+  
+};
+
+// Process flag logic ops
+class FlagsetProcessor : public CellProcessor {
+  
+  public:
+
+  void SetParams(cy_uint pflag_set, cy_uint cflag_set,
+		 cy_uint pflag_clear, cy_uint cflag_clear) {
+    m_pflag_to_set = pflag_set;
+    m_cflag_to_set = cflag_set;
+    m_pflag_to_clear = pflag_clear;
+    m_cflag_to_clear = cflag_clear;    
+  }
+
+  
+  int ProcessHeader(CellHeader& header) override;
+
+  int ProcessLine(Cell& cell) override;
+
+private:
+
+  cy_uint m_pflag_to_set = 0;
+  cy_uint m_cflag_to_set = 0;  
+  cy_uint m_pflag_to_clear = 0;
+  cy_uint m_cflag_to_clear = 0;
+  
 };
 
 // Divide processor

@@ -11,11 +11,6 @@
 #include <cstdlib>
 #include <delaunator.hpp>
 
-#ifdef HAVE_MLPACK
-#include <mlpack/core.hpp>
-#include <mlpack/methods/dbscan/dbscan.hpp>
-#endif
-
 #ifdef HAVE_BOOST
 #include <boost/functional/hash.hpp>
 #endif
@@ -44,27 +39,6 @@ typedef CGAL::Delaunay_triangulation_2<K> DelaunayData;
 typedef K::Point_2 Point;
 #endif
 
-#ifdef HAVE_MLPACK
-#include <mlpack/methods/gmm/gmm.hpp>
-#include <mlpack/core.hpp>
-#include <mlpack/methods/kmeans/kmeans.hpp>
-#include <armadillo>
-#endif
-
-struct JPoint {
-  
-  float x;
-  float y;
-
-  JPoint(float mx, float my) : x(mx), y(my) {}
-  
-  std::string print() const { return std::to_string(x) + "," + std::to_string(y); }
-
-  bool operator==(const JPoint& other) const {
-    return x == other.x && y == other.y;
-  }
-  
-};
 
 namespace std {
     template<> struct hash<JPoint> {
@@ -382,100 +356,6 @@ void CellTable::add_cell_to_table(const Cell& cell, bool nodata, bool nograph) {
   
 }
 
-void CellTable::clusterDBSCAN(float epsilon,
-			      size_t min_size,
-			      size_t min_cluster_size
-			      ) {
-
-  validate();
-  
-#ifdef HAVE_MLPACK
-
-  std::vector<double> xvec(m_x_ptr->getData().begin(),m_x_ptr->getData().end());
-  std::vector<double> yvec(m_y_ptr->getData().begin(),m_y_ptr->getData().end());
-  
-  // Convert std::vector to Armadillo row vectors.
-  arma::rowvec x_row(CellCount());
-  arma::rowvec y_row(CellCount());
-
-  size_t count = 0;
-  std::vector<size_t> idx(CellCount());
-  for (size_t i = 0; i < m_cflag_ptr->size(); i++) {
-    
-    // only select on marked cells
-    if (m_cflag_ptr->getData().at(i) & 0b10) {
-      x_row(count) = m_x_ptr->getData().at(i);
-      y_row(count) = m_y_ptr->getData().at(i);
-      idx[count] = i;
-      count++;
-    }
-  }
-  
-  x_row.resize(count);
-  y_row.resize(count);
-  idx.resize(count);
-  
-  // Combine the two row vectors into a matrix.
-  arma::mat dataset(2, x_row.size());
-  dataset.row(0) = x_row;
-  dataset.row(1) = y_row;
-
-  if (m_verbose)
-    std::cerr << "...running dbscan (mlpack) on " << AddCommas(x_row.size()) <<
-      " cells. Epsilon: " << epsilon << " Min points: " <<
-      min_size << " min cluster size: " << min_cluster_size << std::endl;
-  
-  // Perform DBSCAN clustering.
-  arma::Row<size_t> assignments(idx.size(), arma::fill::zeros); // to store cluster assignments
-  
-  // The parameters are: epsilon (radius of neighborhood), minimum points in neighborhood
-  const bool batchmode = false;
-  mlpack::DBSCAN<> dbscan(epsilon, min_size, batchmode);
-  dbscan.Cluster(dataset, assignments);
-  
-  // histogram the data
-  std::unordered_map<size_t, size_t> cluster_hist;
-  for (const auto& a : assignments) {
-    cluster_hist[a]++;
-  }
-  
-  // store the clusters data
-  FloatColPtr fc = std::make_shared<FloatCol>();
-  fc->resize(CellCount()); // resize zeros as well
-  for (const auto& cc : fc->getData())
-    assert(cc == 0);
-  
-  // make the assignments
-  std::unordered_set<size_t> assignment_set;
-  assert(idx.size() == assignments.size());
-  for (size_t i = 0; i < idx.size(); i++) {
-
-    // don't add if not a big cluster
-    if (cluster_hist[assignments[i]] < min_cluster_size) {
-      fc->SetValueAt(idx[i], 0);
-    // otherwise add the cluster to m_table
-    } else {
-      if (assignments[i] == SIZE_MAX) {
-	fc->SetValueAt(idx[i], -1);
-      } else {
-	fc->SetValueAt(idx[i], assignments[i] + 1);	
-	assignment_set.insert(assignments[i]); // just to keep track of number of assignments
-      }
-    }
-    
-  }
-  
-  if (m_verbose)
-    std::cerr << "...produced " << AddCommas(assignment_set.size()) << " clusters" << std::endl;
-
-  Tag ttag1(Tag::CA_TAG, "dbscan_cluster","");
-  assert(fc->size() == CellCount());
-  AddColumn(ttag1, fc);
-  
-#else  
-  std::cerr << "...mlpack header library not available. Need to include this during compilation" << std::endl;
-#endif  
-}
 
 void CellTable::Subsample(int n, int s) {
   
@@ -529,6 +409,7 @@ size_t CellTable::CellCount() const {
       std::cerr << "Warning: Column sizes do not match. Column: " <<
 	c.first << " prev size " << prev_size <<
 	" current_size " << current_size << std::endl;
+      assert(false);
     }
     
     prev_size = current_size;
@@ -1390,138 +1271,70 @@ int CellTable::PlotPNG(const std::string& file,
   
 #ifdef HAVE_CAIRO
 
-  // jerry column
-  const auto region_it = m_table.find("Region");
-  if (region_it == m_table.end()) {
-    std::cerr << "Warning: 'Region' not found in the table." << std::endl;
-  }
+  validate();
   
   std::random_device rd; 
   std::mt19937 gen(rd()); 
   std::uniform_int_distribution<> dis(0,1);
 
-  const float micron_per_pixel = 0.325f;
-  //const float micron_per_pixel = 1.0f;
-    
-  const float radius_size = 1.5f;
-  const float alpha_val = 0.8f;
+  float micron_per_pixel = 0.650f;
+  const float radius_size = 5.0f * scale_factor;
+  const float ALPHA_VAL = 0.7f; // alpha for cell circles
   constexpr float TWO_PI = 2.0 * M_PI;
   
-  // get the x y coordinates of the cells
-  validate();
-  
-  // Open the PNG for drawing
-  const int width  = m_x_ptr->Max();
-  const int height = m_y_ptr->Max();    
-  
+  // Original dimensions
+  const int original_width = m_x_ptr->Max();
+  const int original_height = m_y_ptr->Max();    
+
+  // Additional height to accommodate the legend at the top
+  const int legend_total_height = 400; // Adjust as needed
+
+  // New dimensions with extra space for the legend
+  const int width = original_width;
+  const int height = original_height + legend_total_height; // Increase height for legend
+
   // open PNG for drawing
-  cairo_surface_t *surfacep = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width*scale_factor, height*scale_factor);
-  cairo_t *crp = cairo_create (surfacep);
-  cairo_set_source_rgb(crp, 1, 1, 1); // background color
-  cairo_paint(crp);
+  cairo_surface_t *surfacep = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width*scale_factor, height*scale_factor);
+  cairo_t *crp = cairo_create(surfacep);
+  
+  // Fill background with black for the legend area
+  cairo_set_source_rgb(crp, 0, 0, 0);
+  cairo_rectangle(crp, 0, 0, width*scale_factor, legend_total_height*scale_factor);
+  cairo_fill(crp);
+  
+  // Set background color for the rest
+  cairo_set_source_rgb(crp, 1, 1, 1); // Assuming white is the desired background color
+  cairo_rectangle(crp, 0, legend_total_height*scale_factor, width*scale_factor, height*scale_factor);
+  cairo_fill(crp);
 
- 
-  ColorLabelMap cm;
-  std::vector<std::string> labels;
+  // defined below in color_map.cpp
+  ColorLabelMap cm = ColorLabelMapForModule(module);
 
-  if (module == "tumor") {
-
-    cm = {
-        {colorbrewer_3red_light, "Tumor (Automated)"},
-        {colorbrewer_3red_medium, "Tumor (Manual)"},
-        {colorbrewer_3red_dark, "Tumor (A+M)"},
-        {colorbrewer_3blue_light, "Stroma"},
-        {color_cyan, "Margin"},
-        {color_deep_pink, "Tcell cluster"},
-        {colorbrewer_3green_light, "CD57"},
-        {colorbrewer_3green_medium, "CD57"},
-        {colorbrewer_3green_dark, "CD57"}
-    };
-
-  } else if (module == "margin") {
-
-    cm = {
-      {colorbrewer_3red_light, "Margin (Automated)"},
-      {colorbrewer_3red_medium, "Margin (Manual)"},
-      {colorbrewer_3red_dark,"Margin (A+M)"}
-    };
-    
-  } else if (module == "artifact") {
-
-    cm = {
-      {color_red, "PanCK CD3"}
-    };
-    
-  } else if (module == "pdl1") {
-
-    cm = {
-      {color_light_red, "PanCK PD-L1 neg"},
-      {color_red,       "PanCK PD-L1 pos"},
-      {color_light_green,"CD163 PD-L1 neg"},
-      {color_dark_green, "CD163 PD-L1 pos"}
-    };
-
-  } else if (module == "prostateimmune") {
-
-    cm = {
-      {color_light_red,"CD3+"},
-      {color_yellow, "CD8+"},
-      {color_deep_pink, "CD20+"},
-      {color_light_green,"FOXP3+"}
-    };
-    
-  } else if (module == "orion") {
-      cm = {
-	{color_red,      "T-cell PD-1 pos"},
-	{color_light_red,"T-cell PD-1 neg"},
-	{color_purple,"B-cell"},
-	{color_dark_green, "PanCK - PD-L1 pos"},
-	{color_light_green,"PanCK - PD-L1 neg"},
-	{color_cyan, "Other PD-L1 pos"},
-	{color_deep_pink, "FOXP3 pos"},
-	{color_gray,"Stroma"}
-      };
-  } else if (module == "prostate") {
-
-      cm = {
-	{color_light_red, "T-cell PD-1 pos"},
-	{color_red,"T-cell PD-1 neg"},
-	{color_purple, "B-cell"},
-	{color_dark_green, "AMACR+"},
-	{color_gray,"Stromal"}
-      };
-      
-  } else if (module == "tcell") {
-      cm = {
-	{color_light_red, "CD3+CD4+"},
-	{color_red,"CD3+CD8+"},
-	{color_purple,"CD3+ only"},
-	{color_dark_green,"CD4+ only"},
-	{color_dark_blue,"CD8+ only"}
-      };
-  }
-
+  // for cluster drawing
+  std::unordered_map<std::string, FloatColPtr>::const_iterator dit = m_table.find("dbscan_cluster");
+  
   // loop and draw
   size_t count = 0;
   for (size_t j = 0; j < CellCount(); j++) { // loop the cells
     
     // Draw the arc segment
     const float x = m_x_ptr->at(j);
-    const float y = m_y_ptr->at(j);
-
+    const float y = m_y_ptr->at(j) + legend_total_height;
+    
     const cy_uint pf = m_pflag_ptr->at(j);
     const cy_uint cf = m_cflag_ptr->at(j);
     
     float start_angle = 0.0;
-    
+
+    // get the P and C-flags
     CellFlag pflag(pf);
     CellFlag cflag(cf);
-    
+
+    // default color
     Color c = color_gray;
 
     // Color by tumor / stromal call
     if (module == "tumor") {
-
       if (IS_FLAG_SET(cf, TUMOR_FLAG)  && !IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
 	c = cm[0].first;
       else if (!IS_FLAG_SET(cf, TUMOR_FLAG) && IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
@@ -1530,60 +1343,39 @@ int CellTable::PlotPNG(const std::string& file,
 	c = cm[2].first;
       else if (!IS_FLAG_SET(cf, TUMOR_FLAG)  && !IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
 	c = cm[3].first;
+    }
+    else if (module == "tls") {
+      if (!IS_FLAG_SET(cf, TLS_FLAG))
+	c= color_gray;
+      else if (IS_FLAG_SET(pf, PROSTATE_CD20))
+	c= color_purple;
+      else if (IS_FLAG_SET(pf, PROSTATE_CD8))
+	c= color_red;
+      else if (IS_FLAG_SET(pf, PROSTATE_CD4))
+	c= color_cyan;
+      else if (IS_FLAG_SET(pf, PROSTATE_CD3))
+	c= color_deep_pink;
+      else
+	c= color_dark_blue;
 
-      //if (IS_FLAG_SET(cf, MARGIN_FLAG))
-      //	c = cm[4].first;
-      
-      // CD57
-      /*
-      if      (IS_FLAG_SET(cf, TUMOR_FLAG)  && !IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG) && IS_FLAG_SET(pf, PROSTATE_CD57))
-	c = cm[6].first;
-      else if (!IS_FLAG_SET(cf, TUMOR_FLAG) && IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG) && IS_FLAG_SET(pf, PROSTATE_CD57))
-	c = cm[7].first;
-      else if (IS_FLAG_SET(cf, TUMOR_FLAG) && IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG) && IS_FLAG_SET(pf, PROSTATE_CD57))
-	c = cm[8].first;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD57))
-	c = color_purple;
-      */
-      
-      /*      if ( IS_FLAG_SET(cf, TUMOR_FLAG))
-	c = IS_FLAG_SET(cf, MARGIN_FLAG) ? color_purple : color_red;
-      else if (!IS_FLAG_SET(cf, TUMOR_FLAG))
-	c = IS_FLAG_SET(cf, MARGIN_FLAG) ? color_cyan : color_dark_green; 
-      else 
-	assert(false);
-      */
-      
-      //      if (IS_FLAG_SET(cf, TCELL_FLAG))
-      //	c = cm[5];
-      
-      // override temporary
-      /*      if (IS_FLAG_SET(pf, ORION_CD163))
-	c = color_dark_blue;
-      if (IS_FLAG_SET(pf, ORION_PDL1) && IS_FLAG_SET(pf, ORION_CD163))
-      	c = color_deep_pink;
-      */
-
-      //debug jerry
-      //if (region_it->second->at(j) == 1) {
-      // 	c = IS_FLAG_SET(cf, TUMOR_FLAG) ? color_deep_pink : color_dark_blue;
-      //}
-    } else if (module == "margin") {
-
-      if (IS_FLAG_SET(cf, MARGIN_FLAG) && !IS_FLAG_SET(cf, MARGIN_FLAG_MANUAL))
+      // debug
+      //if (dit != m_table.end() && dit->second->at(j) > 0) 
+      //	c = color_deep_pink;
+    }
+    else if (module == "margin") {
+      if (IS_FLAG_SET(cf, MARGIN_FLAG) && !IS_FLAG_SET(cf, MARGIN_MANUAL_FLAG))
 	c = cm[0].first;
-      else if (!IS_FLAG_SET(cf,MARGIN_FLAG) && IS_FLAG_SET(cf, MARGIN_FLAG_MANUAL))
+      else if (!IS_FLAG_SET(cf,MARGIN_FLAG) && IS_FLAG_SET(cf, MARGIN_MANUAL_FLAG))
 	c = cm[1].first;
-      else if (IS_FLAG_SET(cf, MARGIN_FLAG) && IS_FLAG_SET(cf, MARGIN_FLAG_MANUAL))
+      else if (IS_FLAG_SET(cf, MARGIN_FLAG) && IS_FLAG_SET(cf, MARGIN_MANUAL_FLAG))
 	c = cm[2].first;
-	  
-    } else if (module == "artifact") {
-      
-      if ( IS_FLAG_SET(pf, ORION_CD3) && IS_FLAG_SET(pf, ORION_PANCK))
+    }
+    else if (module == "artifact") {
+      if (IS_FLAG_SET(pf, ORION_CD3) && IS_FLAG_SET(pf, ORION_PANCK))
 	c = color_red;
-
-    } else if (module == "prostate") { 
-    
+    }
+    else if (module == "prostate") {
+      micron_per_pixel=0.650f;
       if (IS_FLAG_SET(pf, PROSTATE_CD3) && IS_FLAG_SET(pf, PROSTATE_PD1))
 	c = color_red;
       else if (IS_FLAG_SET(pf, PROSTATE_CD3) && !IS_FLAG_SET(pf, PROSTATE_PD1))
@@ -1594,12 +1386,14 @@ int CellTable::PlotPNG(const std::string& file,
 	c = color_dark_green;
       else
 	c = color_gray;
-
+      
       //overrite
       if (IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
 	c = color_deep_pink;
-    } else if (module == "prostateimmune") {
-
+      
+    }
+    else if (module == "prostateimmune") {
+      micron_per_pixel=0.650f;      
       if (IS_FLAG_SET(pf, PROSTATE_CD3))
 	c = color_light_red;
       else if (IS_FLAG_SET(pf, PROSTATE_CD8))
@@ -1610,9 +1404,13 @@ int CellTable::PlotPNG(const std::string& file,
 	c = color_dark_green;
       else
 	c = color_gray;
-
-    } else if (module == "pdl1") {
       
+      // override colors
+      if (IS_FLAG_SET(cf, TLS_FLAG))
+	c = color_purple;
+      
+    }
+    else if (module == "pdl1") {
       if (IS_FLAG_SET(pf, ORION_PANCK)) {
 	c = IS_FLAG_SET(pf, ORION_PDL1) ? color_red : color_light_red;
       } else if (IS_FLAG_SET(pf, ORION_CD163)) {
@@ -1620,51 +1418,45 @@ int CellTable::PlotPNG(const std::string& file,
       } else {
 	c = color_gray_90;
       }
-      
-    } else if (module == "orion") {
-
-      if (pflag.testAndOr(2048,0) && pflag.testAndOr(32768,0)) // T-cell - PD-1+ 
+    }
+    else if (module == "orion") {
+      if (IS_FLAG_SET(pf, ORION_PD1+ORION_CD3))  // T-cell - PD-1+ 
 	c = color_red;
-      else if (pflag.testAndOr(4416,0) && !pflag.testAndOr(32768,0)) // T-cell - PD-1-
+      else if (IS_FLAG_SET(pf, ORION_PD1) && !IS_FLAG_SET(pf, ORION_PD1)) // T-cell - PD-1-
 	c = color_light_red;
-      else if (pflag.testAndOr(1024,0)) // B-cell
+      else if (IS_FLAG_SET(pf, ORION_CD20))
 	c = color_purple;
-      else if (pflag.testAndOr(0,18432) || pflag.testAndOr(0,ORION_PANCK)) // PD-L1 POS tumor cell
+      else if (IS_FLAG_SET(pf, ORION_PANCK + ORION_PDL1))  // PD-L1 POS tumor cell
 	c = color_dark_green;
-      else if (pflag.testAndOr(147456,0)) // PD-L1 NEG tumor cell
+      else if (IS_FLAG_SET(pf, ORION_PANCK) && !IS_FLAG_SET(pf, ORION_PDL1)) // PD-L1 NEG tumor cell
 	c = color_light_green;
-      else if (pflag.testAndOr(2048,0)) // PD-L1 any cell
+      else if (IS_FLAG_SET(pf, ORION_PDL1)) // PD-L1 any cell
 	c = color_cyan;
       else
 	c = color_gray;
-
+      
       // overwrite
-      if (pflag.testAndOr(128,0))
+      if (IS_FLAG_SET(pf, ORION_FOXP3)) // foxp3
 	c = color_deep_pink;
-
       
-    } else if (module == "tcell") {
-      
-      if (pflag.testAndOr(4096,0) && pflag.testAndOr(64,0)) //CD3pCD4p
+    } else if (module == "orionimmune") {
+      if      (IS_FLAG_SET(pf, ORION_CD3 + ORION_CD4)) 
 	c = color_light_red;
-      else if (pflag.testAndOr(4096,0) && pflag.testAndOr(256,0)) //CD3pCD8p
+      else if (IS_FLAG_SET(pf, ORION_CD3 + ORION_CD8))
 	c = color_light_red;
-      else if (pflag.testAndOr(4096,0) && !IS_FLAG_SET(pf, 64) && !IS_FLAG_SET(pf, 256))
+      else if (IS_FLAG_SET(pf, ORION_CD3) && !IS_FLAG_SET(pf, ORION_CD4) && !IS_FLAG_SET(pf, ORION_CD8))
 	c = color_purple;
-      else if (IS_FLAG_SET(pf,64) && !IS_FLAG_SET(pf,4096)) // CD4+CD3-
+      else if (IS_FLAG_SET(pf,ORION_CD4) && !IS_FLAG_SET(pf,ORION_CD3)) // CD4+CD3-
 	c = color_dark_green;
-      else if (IS_FLAG_SET(pf,256) && !IS_FLAG_SET(pf,4096)) //CD8+CD3-
+      else if (IS_FLAG_SET(pf,ORION_CD8) && !IS_FLAG_SET(pf,ORION_CD3)) //CD8+CD3-
 	c = color_dark_blue;
-      else// all other
-	c = color_gray_90;
     } else {
       std::cerr << "ERROR: UNKNOWN MODULE. Must be one of: orion, prostate, tcell, tumor" << std::endl;
       assert(false);
     }
     
-    cairo_set_source_rgba(crp, c.redf(), c.greenf(), c.bluef(), c.alphaf());
+    cairo_set_source_rgba(crp, c.redf(), c.greenf(), c.bluef(), ALPHA_VAL);
     cairo_arc(crp, x*scale_factor, y*scale_factor, radius_size, 0, TWO_PI);
-    //cairo_line_to(crp, x*scale_factor, y*scale_factor);
     cairo_fill(crp); 
 
     // red radius
@@ -1697,7 +1489,7 @@ int CellTable::PlotPNG(const std::string& file,
       
       // Move to the first vertex
       auto firstVertex = *polygon.begin();
-      cairo_move_to(crp, firstVertex.first*scale_factor*micron_per_pixel, firstVertex.second*scale_factor*micron_per_pixel);
+      cairo_move_to(crp, firstVertex.first*scale_factor*micron_per_pixel, (firstVertex.second+legend_total_height)*scale_factor*micron_per_pixel);
       
       // Draw lines to each subsequent vertex
       for (const auto& v : polygon) {
@@ -1707,7 +1499,7 @@ int CellTable::PlotPNG(const std::string& file,
 	//cairo_arc(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel, 10, 0, TWO_PI);
 	//cairo_fill(crp);
 	
-	cairo_line_to(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel);
+	cairo_line_to(crp, v.first*scale_factor*micron_per_pixel, (v.second+legend_total_height)*scale_factor*micron_per_pixel);
       }
       
       // Close the polygon
@@ -1736,37 +1528,86 @@ int CellTable::PlotPNG(const std::string& file,
     }
   }
 
-  
+  ///////
+  // CONVEX HULL
+  // compute and display the convex hull
+  std::unordered_map<std::string, FloatColPtr>::const_iterator it = m_table.find("dbscan_cluster");
+  std::unordered_map<float, std::vector<JPoint>> hull_map;
+  int n = CellCount();
+  if (it != m_table.end()) {
+    FloatColPtr cptr = it->second; // This is your reference/pointer to the FloatColPtr
+    // Use a set to find unique elements, since sets automatically
+    // remove duplicates and store elements in sorted order
+    std::set<float> unique_clusters(cptr->begin(), cptr->end());
 
+    for (const auto& cl : unique_clusters) {
+      // cluster 0 is holder for not a cluster
+      if (cl == 0)
+	continue;
+      std::vector<JPoint> polygon;
+      polygon.reserve(n);
+      for (size_t i = 0; i < n; i++) {
+	if (cptr->at(i) == cl && IS_FLAG_SET(m_cflag_ptr->at(i), TLS_FLAG))
+	  polygon.push_back(JPoint(m_x_ptr->at(i), m_y_ptr->at(i)));
+      }
+
+      // get the convex hull
+      //hull_map[cl] = ComputeConvexHull(ix);
+      hull_map[cl] = convexHull(polygon);
+      //std::cerr << " Hull map for " << cl << " has " << hull_map[cl].size() << " points " << std::endl;
+    }
+  } 
+
+  // draw the hulls
+  ///////
+  cairo_set_source_rgb(crp, 1.0, 0.0, 0.0);
+  cairo_set_line_width(crp, 20.0*scale_factor); // Set the line width to 5.0
+  // loop through invidual hulls
+  for (auto& hullm : hull_map) {
+    auto& hull = hullm.second;
+
+    // loop though individual hull points
+    for (size_t i = 0; i < hull.size(); ++i) {
+      const auto& start = hull.at(i);
+      const auto& end = hull.at((i + 1) % hull.size()); // Wrap around to first point
+      
+      cairo_move_to(crp, start.x*scale_factor, (start.y+legend_total_height)*scale_factor);
+      cairo_line_to(crp, end.x*scale_factor, (end.y+legend_total_height)*scale_factor);
+    }
+    cairo_stroke(crp); // Actually draw the lines
+  }
+  
   ///////
   // LEGEND
-  int legend_width = 3500*scale_factor;
-  int legend_height = 400*scale_factor; // Height of each color box
-  int font_size = 70;
-  int legend_padding = 20;
-  int legend_x = width*scale_factor - legend_width - legend_padding;
-  int legend_y = legend_padding;
+  int font_size = 160*scale_factor;
+  
+  add_legend_cairo_top(crp, font_size,
+		       legend_total_height*scale_factor,
+		       width*scale_factor,
+		       cm); 
 
-  const bool legend_on = true;
-  if (legend_on) {
-    add_legend_cairo(crp, font_size, legend_width, legend_height, legend_x, legend_y,
-		     cm);
-  }
-
-  const bool title_on = true && !title.empty();
-  if (title_on) {
-    std::cerr << title << std::endl;
+  // this is where the y is for bottom of text
+  float y_base = legend_total_height*scale_factor/2 + font_size/2;
+  
+  // add the title to the legend
+  if (!title.empty()) {
     cairo_select_font_face(crp, "Arial",
 			   CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    font_size = 50;
     cairo_set_font_size(crp, font_size); // Adjust font size to your needs
 
-    // Draw the label
-    cairo_set_source_rgb(crp, 0, 0, 0); // Set color to black for the text
-    cairo_move_to(crp, 100, 100); 
+    // Draw the title
+    cairo_set_source_rgb(crp, 255, 255, 255); // Set color to white for the text
+    cairo_move_to(crp, 100*scale_factor, y_base);
     cairo_show_text(crp, title.c_str());
   }
+
+  ///////
+  // scale bar
+  ///////
+  std::cerr << "...cyftools png - drawing scale-bar assuming " << micron_per_pixel << " microns / pixel" << std::endl;
+  draw_scale_bar(crp, width*scale_factor*0.85, y_base, 1000*micron_per_pixel*scale_factor, 50*scale_factor, "1 mm");
   
+  // clean up the PNG
   cairo_destroy (crp);
   cairo_surface_write_to_png (surfacep, file.c_str());
   cairo_surface_destroy (surfacep);
@@ -2024,36 +1865,18 @@ void CellTable::StreamTableCSV(LineProcessor& proc, const std::string& file) {
 	std::cerr << "...read line " << AddCommas(count) << std::endl;
       }
       count++;
-
-      
     }
   }
 }
 
-
 void CellTable::setCmd(const std::string& cmd) {
-
+  
   m_cmd = cmd;
   m_header.addTag(Tag(Tag::PG_TAG, "", cmd));
-    
-}
-
-
-void CellTable::GMM_EM() {
-
-#ifdef HAVE_MLPACK
-  arma::mat dataset;
-  mlpack::data::Load("data.csv", dataset, true);
-
-  // Initialize with the default arguments.
-  mlpack::GMM gmm(dataset.n_rows, 3); // 3 is the number of Gaussians in the model. Adjust as necessary.
   
-  // Train the model.
-  gmm.Train(dataset);
-#else
-  std::cerr << "Warning: Unable to run GMM without linking / including MLPACK and armadillo in build" << std::endl;
-#endif 
 }
+
+
  
  void CellTable::validate() const {
    
@@ -2066,13 +1889,30 @@ void CellTable::GMM_EM() {
    assert(m_x_ptr->size() == m_y_ptr->size());
    assert(m_x_ptr->size() == m_pflag_ptr->size());
    assert(m_x_ptr->size() == m_cflag_ptr->size());
-   assert(m_x_ptr->size() == m_id_ptr->size());         
+   assert(m_x_ptr->size() == m_id_ptr->size());
+
+  // validate all data cells are same length
+  size_t prev_size = m_x_ptr->size();
+  size_t n = 0;
+  // loop the table and find the maximum length
+  for (const auto &c : m_table) {
+    size_t current_size = c.second->size();
+    
+    if (current_size != prev_size) {
+      std::cerr << "Warning: Column sizes do not match. Column: " <<
+	c.first << " prev size " << prev_size <<
+	" current_size " << current_size << std::endl;
+      assert(false);
+    }
+    
+    prev_size = current_size;
+    n = std::max(n, current_size);
+  }
+}
+ 
+#ifdef HAVE_LDAPLUSPLUS
+ const std::vector<std::vector<double>> CellTable::create_inverse_distance_weights() {
    
- }
-
- #ifdef HAVE_LDAPLUSPLUS
-const std::vector<std::vector<double>> CellTable::create_inverse_distance_weights() {
-
   validate();
   int n = m_x_ptr->size();
   
@@ -2100,4 +1940,6 @@ const std::vector<std::vector<double>> CellTable::create_inverse_distance_weight
   
   return W;
 }
+
 #endif
+

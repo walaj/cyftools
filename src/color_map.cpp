@@ -1,5 +1,8 @@
 #include "color_map.h"
 #include <stdexcept>
+#include <string>
+#include <iostream>
+#include <cassert>
 
 Color color_yellow = {255,255,0}; 
 Color color_deep_pink = {255,20,147};
@@ -58,6 +61,96 @@ Color colorbrewer_3blue_light   = {222,235,247};
     {255,255,153}, // yellow
     {177,89,40}    // brown
   };
+
+// get color map by module name
+ColorLabelMap ColorLabelMapForModule(const std::string& module) {
+
+  ColorLabelMap cm;
+  if (module == "tumor") {
+    cm = {
+      {colorbrewer_3red_light,    "Tumor (Automated)"},
+      {colorbrewer_3red_medium,   "Tumor (Manual)"},
+      {colorbrewer_3red_dark,     "Tumor (A+M)"},
+      {colorbrewer_3blue_light,   "Stroma"},
+      {color_cyan,                "Margin"},
+      {color_deep_pink,           "Tcell cluster"},
+      {colorbrewer_3green_light,  "CD57"},
+      {colorbrewer_3green_medium, "CD57"},
+      {colorbrewer_3green_dark,   "CD57"}
+    };
+  }
+  else if (module == "tls") {
+    cm = {
+      {color_deep_pink,         "CD3-only"},
+      {color_purple,            "CD20"},
+      {color_cyan,              "CD4"},
+      {color_red,               "CD8"},
+      {color_dark_blue,         "other TLS"}
+    };
+  }
+  else if (module == "margin") {
+    cm = {
+      {colorbrewer_3red_light,  "Margin (Automated)"},
+      {colorbrewer_3red_medium, "Margin (Manual)"},
+      {colorbrewer_3red_dark,   "Margin (A+M)"}
+    };
+  }
+  else if (module == "artifact") {
+    cm = {
+      {color_red, "PanCK CD3"}
+    };
+  }
+  else if (module == "pdl1") {
+    cm = {
+      {color_light_red,  "PanCK PD-L1 neg"},
+      {color_red,        "PanCK PD-L1 pos"},
+      {color_light_green,"CD163 PD-L1 neg"},
+      {color_dark_green, "CD163 PD-L1 pos"}
+    };
+  } else if (module == "prostateimmune") {
+    cm = {
+      {color_light_red,    "CD3+"},
+      {color_yellow,       "CD8+"},
+      {color_deep_pink,    "CD20+"},
+      {color_light_green,  "FOXP3+"},
+      {color_purple,       "TLS"}
+    };
+  } else if (module == "orion") {
+      cm = {
+	{color_red,        "T-cell PD-1 pos"},
+	{color_light_red,  "T-cell PD-1 neg"},
+	{color_purple,     "B-cell"},
+	{color_dark_green, "PanCK - PD-L1 pos"},
+	{color_light_green,"PanCK - PD-L1 neg"},
+	{color_cyan,       "Other PD-L1 pos"},
+	{color_deep_pink,  "FOXP3 pos"},
+	{color_gray,       "Stroma"}
+      };
+  }
+  else if (module == "prostate") {
+      cm = {
+	{color_light_red, "T-cell PD-1 pos"},
+	{color_red,       "T-cell PD-1 neg"},
+	{color_purple,    "B-cell"},
+	{color_dark_green,"AMACR+"},
+	{color_gray,      "Stromal"}
+      };
+  }
+  else if (module == "orionimmune") {
+      cm = {
+	{color_light_red, "CD3+CD4+"},
+	{color_red,       "CD3+CD8+"},
+	{color_purple,    "CD3+ only"},
+	{color_dark_green,"CD4+ only"},
+	{color_dark_blue, "CD8+ only"}
+      };
+  }
+  else {
+    std::cerr << "cyftools png -- color_map.cpp -- error, unknown module " << module << std::endl;
+    assert(false);
+  }
+  return cm;
+}
 
 // get the appropriate color map
 const ColorMap& getColorMap(int size) {

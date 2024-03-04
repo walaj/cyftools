@@ -3,7 +3,7 @@
 ## set to 1 if want to only print run lines (create "parallel" compatible output)
 #PCO=1
 
-source ~/git/cysift/scripts/config.sh
+source ${HOME}/git/cyftools/scripts/config.sh
 
 
 ## download the data
@@ -15,7 +15,6 @@ source ~/git/cysift/scripts/config.sh
 
 #HOMEBASE=${PROJ_DATA}/orion/orion_1_74
 HOMEBASE=${PROJ_DATA}/prostate
-echo $HOMEBASE/rawcsv/
 parallel_echo "...getting file list from $HOMEBASE"
 for infile in $HOMEBASE/rawcsv/*.csv; do
 
@@ -37,7 +36,7 @@ for infile in $HOMEBASE/rawcsv/*.csv; do
 	##fi
 	
 	check_file_exists $infile
-	~/git/cysift/scripts/csv_rearrange.sh $infile "${base}.rar.csv"
+	~/git/cyftools/scripts/csv_rearrange.sh $infile "${HOMEBASE}/rawcsv/${base}.rar.csv"
 
 	## Get the gates from the *p columns from csv's dumped from matlab files
 	if ! command -v Rscript &> /dev/null
@@ -50,17 +49,17 @@ for infile in $HOMEBASE/rawcsv/*.csv; do
 	
 	## Put the cysift headers onto the csv files
 	check_file_exists "$HOMEBASE/phenotype/${base}.phenotype.csv"
-	~/git/cysift/scripts/header.sh "$HOMEBASE/rawcsv/${base}.rar.csv" "$HOMEBASE/header/${base}.header.csv"
+	~/git/cyftools/scripts/header.sh "$HOMEBASE/rawcsv/${base}.rar.csv" "$HOMEBASE/header/${base}.header.csv"
 
 	## Convert the cysift csv files to cys files
 	check_file_exists "$HOMEBASE/header/${base}.header.csv"
-	~/git/cysift/scripts/cerealed.sh "$HOMEBASE/header/${base}.header.csv" "$HOMEBASE/clean/${base}.cys" 2>/dev/null
+	~/git/cyftools/scripts/cerealed.sh "$HOMEBASE/header/${base}.header.csv" "$HOMEBASE/clean/${base}.cys" 2>/dev/null
 
 	check_file_exists "$HOMEBASE/clean/${base}.cys"
-	~/git/cysift/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrdim.cys" "$HOMEBASE/phenotype/${base}.phenotype.csv" "${HOMEBASE}/rois/${base}.roi.csv"
+	~/git/cyftools/scripts/chain.sh "$HOMEBASE/clean/${base}.cys" "$HOMEBASE/chain/${base}.ptrdim.cys" "$HOMEBASE/phenotype/${base}.phenotype.csv" "${HOMEBASE}/rois/${base}.roi.csv"
 
-	check_file_exists "${HOMEBASE}/chain/${base}.ptrd.cys"
-	sbatch ~/git/cysift/scripts/margin_noisland.sh "${HOMEBASE}/chain/${base}.ptrd.cys" "${HOMEBASE}/margin_noisland/${base}.ptrdim.cys"
+	#check_file_exists "${HOMEBASE}/chain/${base}.ptrd.cys"
+	#sbatch ~/git/cyftools/scripts/margin_noisland.sh "${HOMEBASE}/chain/${base}.ptrd.cys" "${HOMEBASE}/margin_noisland/${base}.ptrdim.cys"
 	
     fi
 done

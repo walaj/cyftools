@@ -68,6 +68,8 @@ class CellHeader {
   
   std::vector<Tag> GetMarkerTags() const;
 
+  std::vector<Tag> GetProgramTags() const;  
+
   std::vector<Tag> GetMetaTags() const;
 
   std::vector<Tag> GetAllTags() const { return tags; }

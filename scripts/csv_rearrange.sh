@@ -24,19 +24,19 @@ base=$(basename "$input_file" .csv)
 ## install with "pip install csvkit"
 ## then arrange the columns below how you want in the output
 if [[ ! -f "$input_file" ]]; then
-    echo "Error: File '$input_file' does not exist."
+    echo "...csv_rearrange.sh: Error: File '$input_file' does not exist."
     exit 1
 elif [[ $orion41_73 == *"$base"* ]]; then
-    echo "Orion 41-73"
+    echo "...csv_rearrange.sh: Orion 41-73 detected"
     csvcut -c "Xt,Yt,Hoechst,AF1,CD31,CD45,CD68,Blank,CD4,FOXP3,CD8a,CD45RO,CD20,PD_L1,CD3e,CD163,E_cadherin,PD_1,Ki67,Pan_CK,SMA,Area,Region" ${input_file} > ${rar_file}
 elif [[ $orion1_40 == *"$base"* ]]; then
-    echo "Orion 1-40"
+    echo "...csv_rearrange.sh: Orion 1-40 detected"
     csvcut -c "Xt,Yt,Hoechst,AF1,CD31,CD45,CD68,Argo550,CD4,FOXP3,CD8a,CD45RO,CD20,PD_L1,CD3e,CD163,E_cadherin,PD_1,Ki67,Pan_CK,SMA,Area,Region" ${input_file} > ${rar_file}
 elif [[ "$input_file" == *"immune"* ]]; then
-    echo "CyCIF immune"
+    echo "...csv_rearrange.sh: CyCIF immune detected"
     csvcut -c "Xt,Yt,Hoechst1,A488,A555,A647,CD3,CD11c,GranzymeB,Ki67,panCK,CD45,CD11b,CD68,CD14,CD163,FOXP3,CD8a,CD15,CD44,PD_L1,CD4,p_TBK1,PD_1,CD57,,Ki67,AMCAR,HMWCK,CD19,SMA,CD20,CD11b,CD68,CD163,CD4,CD3d,CD8a,TCF1,FOXP3,PD1,CD57,CD11c,GranzymeB,CD15,HLADR,CD103,CD31,pTBK1,HLAA,CD24,CD44,CD206" ${input_file} > ${rar_file}
 elif [[ $prostate == *"$base"* ]]; then
-    echo "Prostate"
+    echo "...csv_rearrange.sh: Prostate detected"
     csvcut -c "Xt,Yt,Hoechst1,Ki67,AMCAR,HMWCK,CD19,SMA,CD20,CD11b,CD68,CD163,CD4,CD3d,CD8a,TCF1,FOXP3,PD1,CD57,CD11c,GranzymeB,CD15,HLADR,CD103,CD31,pTBK1,HLAA,CD24,CD44,CD206" $input_file > $rar_file
 else
     echo "Warning: Unknown file"

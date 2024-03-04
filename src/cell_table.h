@@ -77,7 +77,7 @@ public:
 	      const std::string& roifile,
 	      const std::string& title	      
 	      ) const;
-  
+
   //////
   // Basic table operations
   //////
@@ -127,7 +127,8 @@ public:
 		      std::vector<std::string> label, std::vector<int> normalize_local,
 		      std::vector<int> normalize_global);
   
-  void AnnotateCall(int num_neighbors, float frac, cy_uint dist, cy_uint flag_to_set);
+  void AnnotateCall(int num_neighbors, float frac, cy_uint dist, cy_uint flag_to_set,
+		    bool build_tree_with_marked_only);
   
   void TumorMargin(float dist, cy_uint tumor_flag, cy_uint margin_flag);
 
@@ -223,7 +224,7 @@ public:
 
  private:
 
-  unordered_map<string, FloatColPtr> m_table;
+  std::unordered_map<string, FloatColPtr> m_table;
 
   FloatColPtr m_x_ptr;
   FloatColPtr m_y_ptr;

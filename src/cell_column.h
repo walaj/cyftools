@@ -274,20 +274,40 @@ class NumericColumn : public Column {
     return m_vec;
   }
 
-  // 1) Overloading at() for const access
+  // Overloading at() for const access
   const T& at(std::size_t index) const {
     return m_vec.at(index);
   }
   
-  // 2) Overloading operator[] for non-const access
+  // Overloading operator[] for non-const access
   T& operator[](std::size_t index) {
     return m_vec[index];
   }
   
-  // You might also want to provide a const overload for operator[]
+  // Const overload for operator[]
   const T& operator[](std::size_t index) const {
     return m_vec[index];
   }
+  
+  // Return iterator to the beginning
+  typename std::vector<T>::iterator begin() {
+    return m_vec.begin();
+  }
+  
+  // Return iterator to the end
+  typename std::vector<T>::iterator end() {
+    return m_vec.end();
+  }
+  
+  // For const-correctness, also provide const versions of begin() and end()
+  typename std::vector<T>::const_iterator begin() const {
+    return m_vec.begin();
+  }
+  
+  typename std::vector<T>::const_iterator end() const {
+    return m_vec.end();
+  }
+  
   
   std::vector<T> copyData() const {
     return m_vec;

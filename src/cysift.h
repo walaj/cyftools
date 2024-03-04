@@ -5,29 +5,38 @@
 #include <sstream>
 #include <iostream>
 
-#define TUMOR_FLAG 0b1
-#define MARK_FLAG 0b10
-#define MARGIN_FLAG 0b100
-#define TUMOR_MANUAL_FLAG 0b1000
-#define TCELL_FLAG 0b10000
-#define MARGIN_FLAG_MANUAL 0b100000
+#define TUMOR_FLAG 1
+#define MARK_FLAG 2
+#define MARGIN_FLAG 4
+#define TUMOR_MANUAL_FLAG 8
+#define TCELL_FLAG 16
+#define TLS_FLAG 32
+#define MARGIN_MANUAL_FLAG 64
+#define BUILD_GRAPH_FLAG 128
 
 #define PROSTATE_AMCAR 4
 #define PROSTATE_HMWCK 8
 #define PROSTATE_CD20 64
+#define PROSTATE_CD4 1024
 #define PROSTATE_CD3 2048
 #define PROSTATE_PD1 32768
 #define PROSTATE_CD8 4096
 #define PROSTATE_FOXP3 16384
 #define PROSTATE_CD57 65536
 
-#define ORION_CD3 4096
-#define ORION_PANCK 131072
+#define ORION_CD4 64
+#define ORION_FOXP3 128
+#define ORION_CD8 256
+#define ORION_CD20 1024
 #define ORION_PDL1 2048
+#define ORION_CD3 4096
 #define ORION_CD163 8192
-
+#define ORION_PD1 32768
+#define ORION_PANCK 131072
 
 // Macro to test if a flag is set
+// Data flag (cflag or pflag) is one, the flag to query is two
+// eg IS_FLAG_SET(cflag, TUMOR_FLAG)
 #define IS_FLAG_SET(flags, flag) (((flags) & (flag)) == (flag))
 
 #define IS_FLAG_I_SET(flags, i) ((flags & (1ull << (i))) != 0)

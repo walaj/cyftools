@@ -2421,7 +2421,7 @@ static int spatialfunc(int argc, char** argv) {
  
  static int filterfunc(int argc, char** argv) {
    
-   const char* shortopts = "vr:a:n:A:N:of:g:l:G:L:e:jr:T";
+   const char* shortopts = "vr:a:n:A:N:of:g:l:G:L:e:jr:TS:s:";
 
    bool trim_cells = false;
    
@@ -2436,6 +2436,7 @@ static int spatialfunc(int argc, char** argv) {
    SelectOpVec num_vec;
    SelectOpMap criteria;
    std::vector<std::string> field_vec;
+
    
    // select function
    std::vector<SelectionUnit> selections;
@@ -2463,6 +2464,8 @@ static int spatialfunc(int argc, char** argv) {
 	 selections.push_back(SelectionUnit());		
        arg >> selections.back().cnot; break;
      case 'o': selections.push_back(SelectionUnit()); break;
+     case 's':  arg >> single_flag_por; break;
+     case 'S':  arg >> single_flag_cor; break;       
      case 'f' : arg >> sholder; field_vec.push_back(sholder); break;
      case 'g' : arg >> holder; num_vec.push_back({optype::GREATER_THAN, holder}); break;
      case 'l' : arg >> holder; num_vec.push_back({optype::LESS_THAN, holder}); break;
@@ -2474,7 +2477,32 @@ static int spatialfunc(int argc, char** argv) {
      default: die = true; break;  
      }
    }
+
+   // if a single OR flag is passed, convert to individual flags
+   while (single_flag_por> 0) {
+     selections.push_back(SelectionUnit());
+     cy_uint power = log2(single_flag_por); // Find the largest power of 2 in the number
+     cy_uint powerOfTwo = 1 << power; // Calculate 2^power
+     
+     selections.back().pand = powerOfTwo;
+     std::cerr << " adding as PAND " << selection.back().pand << std::endl;
+     
+     single_flag_por -= powerOfTwo; // Subtract the power of two from the number
+   }
+
+   // if a single OR flag is passed, convert to individual flags
+   while (single_flag_cor> 0) {
+     selections.push_back(SelectionUnit());
+     cy_uint power = log2(single_flag_cor); // Find the largest power of 2 in the number
+     cy_uint powerOfTwo = 1 << power; // Calculate 2^power
+     
+     selections.back().cand = powerOfTwo;
+     std::cerr << " adding as CAND " << selection.back().pand << std::endl;
+     
+     single_flag_por -= powerOfTwo; // Subtract the power of two from the number
+   }
    
+   // add the filter criteria from command line 
    CellSelector cellselect;
    for (const auto& a : selections)
      cellselect.AddSelectionUnit(a);
@@ -2514,11 +2542,13 @@ static int spatialfunc(int argc, char** argv) {
       "  Select cells by phenotype flag\n"
       "    .cyf file: filepath or a '-' to stream to stdin\n"
       "  Flag selection\n"
-      "    -a                    Phenotype logical AND\n"
-      "    -A                    Cell logical AND\n"
-      "    -n                    Phenotype logical NOT\n"
-      "    -N                    Cell logical NOT\n"
-      "    -o                    Logical OR\n"
+      "    -a <int>              Phenotype logical AND\n"
+      "    -n <int>              Phenotype logical NOT\n"
+      "    -s <int>              Phenotype logical OR\n
+      "    -A <int>              Cell logical AND\n"      
+      "    -N <int>              Cell logical NOT\n"
+      "    -S <int>              Cell logical OR\n      
+      "    -o                    Combine logic units above as OR\n"
       "  Marker selection\n"
       "    -f                    Marker / meta field to select on\n"
       "    -g                    > - Greater than\n"
@@ -2533,7 +2563,9 @@ static int spatialfunc(int argc, char** argv) {
       "    -T                    Trim cells that aren't marked. Also clears the marks\n"
       "    -v, --verbose         Increase output to stderr\n"
       "  Example\n"
-      "    cyftools filter -a 4160 -o -a 4352 <in> <out> # select cells with bits 4096+256 OR 4096+64"
+      "    cyftools filter -a 4160 -o -a 4352 <in> <out> -T # select cells with bits 4096+256 OR 4096+64"
+      "    cyftools filter -s 4160 <in> <out> -T            # select cells with bits markers 4096 OR 256 on
+      "    cyftools filter -a 4096 -o 256 -T                # equivalent to above 
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;

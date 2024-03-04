@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Checkbox Generator</title>
+  <title>cyftools</title>
   <style>
     div {
       display: inline-block;
@@ -42,7 +42,7 @@
 	generateToggleButtons(maFields, 'inclusiveContainer', 'inclusive');
 	
 	// For the exclusiveContainer, we'll use the hardcoded array instead of maFields
-	const exclusiveFields = ['Tumor', 'Mark', 'Margin', 'Tumor (Manual ROI)', 'Tcell cluster'];
+	const exclusiveFields = ['Tumor', 'Mark', 'Margin', 'Tumor (Manual ROI)', 'Tcell cluster','TLS','Margin (Manual ROI)'];
 	generateToggleButtons(exclusiveFields, 'exclusiveContainer', 'exclusive');
     }
 
@@ -97,7 +97,7 @@
     }
 
     // Generate exclusive fields right away
-    const exclusiveFields = ['Tumor', 'Mark', 'Margin', 'Tumor (Manual ROI)', 'Tcell cluster'];
+    const exclusiveFields = ['Tumor', 'Mark', 'Margin', 'Tumor (Manual ROI)', 'Tcell cluster','TLS','Margin (Manual ROI)'];
     generateToggleButtons(exclusiveFields, 'exclusiveContainer', 'exclusive');
     
   </script>

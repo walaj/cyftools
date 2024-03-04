@@ -73,13 +73,13 @@ static const char *RUN_USAGE_MESSAGE =
 "  cat         - Concatenate multiple files\n"
 "  sort        - Sort the cells\n"
 "  subsample   - Subsample cells randomly\n"
-"  roi         - Trim cells to a region of interest within a given polygon\n"
-"  filter      - Mark cellsfor later processing (filtering etc)\n"
-"  trim        - Trim cells to only those that are marked (from cyftools filter)\n"
+"  magnify     - Rescale the x and y coordinates\n"  
 "  sampleselect- Select a particular sample from a multi-sample file\n"
+" --- Marker ops ---\n"  
 "  pheno       - Phenotype cells (set the phenotype flags)\n"
+"  filter      - Mark cellsfor later processing (filtering etc)\n"  
 "  cellcount   - Provide total slide cell count for each cell type\n"
-"  magnify     - Rescale the x and y coordinates\n"
+"  roi         - Trim cells to a region of interest within a given polygon\n"  
 "  rescale     - Rescale the marker intensities similar to scimap\n"
 " --- Numeric ---\n"
 "  mean        - Collapse to mean of each column\n"  
@@ -113,6 +113,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  synth       - Various approaches for creating synthetic data\n"  
 "\n";
 
+static int markcheckfunc(int argc, char** argv);
 static int magnifyfunc(int argc, char** argv);
 static int rescalefunc(int argc, char** argv);
 static int islandfunc(int argc, char** argv);
@@ -158,7 +159,7 @@ static int cutfunc(int argc, char** argv);
 static int umapfunc(int argc, char** argv);
 static int radiusfunc(int argc, char** argv);
 static int filterfunc(int argc, char** argv);
-//static int spatialfunc(int argc, char** argv); 
+static int flagsetfunc(int argc, char** argv); 
 static int phenofunc(int argc, char** argv);
 
 static void parseRunOptions(int argc, char** argv);
@@ -194,8 +195,12 @@ int main(int argc, char **argv) {
   // get the module
   if (opt::module == "debug") {
     val = debugfunc(argc, argv);
+  } else if (opt::module == "flagset") {
+    val = flagsetfunc(argc, argv);
   } else if (opt::module == "ldacreate") {
     val = ldacreatefunc(argc, argv);
+  } else if (opt::module == "markcheck") {
+    val = markcheckfunc(argc, argv);
   } else if (opt::module == "island") {
     val = islandfunc(argc, argv);
   } else if (opt::module == "ldarun") {
@@ -248,8 +253,6 @@ int main(int argc, char **argv) {
     return (catfunc(argc, argv));
   } else if (opt::module == "umap") {
     val = umapfunc(argc, argv);
-    //  } else if (opt::module == "spatial") {
-    //val = spatialfunc(argc, argv);    
   } else if (opt::module == "filter") {
     val = filterfunc(argc, argv);
   } else if (opt::module == "sampleselect") {
@@ -278,8 +281,8 @@ int main(int argc, char **argv) {
     scramblefunc(argc, argv);
   } else if (opt::module == "scatter") {
     scatterfunc(argc, argv);
-  } else if (opt::module == "trim") {
-    trimfunc(argc, argv);
+  // } else if (opt::module == "trim") {
+  //   trimfunc(argc, argv);
   } else if (opt::module == "hallucinate") {
     hallucinatefunc(argc, argv);
   } else {
@@ -301,7 +304,7 @@ static void build_table() {
   buildp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   table.StreamTable(buildp, opt::infile);
   
-  table.setCmd(cmd_input);
+  //table.setCmd(cmd_input);
 
   // check we were able to read the table
   if (table.CellCount() == 0) {
@@ -344,6 +347,27 @@ static int magnifyfunc(int argc, char** argv) {
   return 0;
 }
 
+// hidden function for debugging
+static int markcheckfunc(int argc, char** argv) {
+
+  if (in_out_process(argc, argv)) {
+
+    const char *USAGE_MESSAGE = "hidden function to check if MARK_FLAG is set\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  
+  MarkCheckProcessor res;
+  res.SetCommonParams(opt::outfile, cmd_input, opt::verbose); 
+  
+  if (table.StreamTable(res, opt::infile)) 
+    return 1; // non-zero status on StreamTable
+  return 0;
+
+  
+}
+
 static int rescalefunc(int argc, char** argv) {
   
   const char* shortopts = "v";
@@ -371,6 +395,50 @@ static int rescalefunc(int argc, char** argv) {
   //res.SetParams(factor);
   
   if (table.StreamTable(res, opt::infile)) 
+    return 1; // non-zero status on StreamTable
+  return 0;
+}
+
+static int flagsetfunc(int argc, char** argv) {
+  
+  const char* shortopts = "vp:P:c:C:";
+  cy_uint pflag_set = 0;
+  cy_uint cflag_set = 0;
+  cy_uint pflag_clear = 0;
+  cy_uint cflag_clear = 0;  
+  
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'p' : arg >> pflag_set; break;
+    case 'P' : arg >> pflag_clear; break;
+    case 'c' : arg >> cflag_set; break;
+    case 'C' : arg >> cflag_clear; break;      
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv) || !(pflag_set + cflag_set + pflag_clear + cflag_clear)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools flagset <in> <out>\n"
+      "  Set flags on or off based on filtering from cyftools filter\n"
+      "    .cyf file: filepath or a '-' to stream to stdin\n"
+      "  -p <int>        P-flag to set if mark is on\n"
+      "  -P <int>        P-flag to clear if mark is on\n"
+      "  -c <int>        C-flag to set if mark is on\n"
+      "  -C <int>        C-flag to clear if mark is on\n"      
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  FlagsetProcessor fs;
+  fs.SetCommonParams(opt::outfile, cmd_input, opt::verbose); 
+  fs.SetParams(pflag_set, cflag_set, pflag_clear, cflag_clear);
+  
+  if (table.StreamTable(fs, opt::infile)) 
     return 1; // non-zero status on StreamTable
   return 0;
 }
@@ -580,20 +648,21 @@ static int dbscanfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv) || min_size < 0) {
     
     const char *USAGE_MESSAGE = 
-      "Usage: cyftools dbscan [.cyf file]\n"
-      "  Cluster cells based on the DBSCAN algorithm\n"
+      "Usage: cyftools filter <in> - -M <filter flags> | cyftools dbscan <in> <out> \n"
+      "  Cluster MARKED cells based on the DBSCAN algorithm (need to run filter -M first)\n"
+      "  NB: Cluster assignment of 0 means not in a cluster. First cluster is integer 1\n"
       "\n"
       "Arguments:\n"
       "  [.cyf file]                 Input .cyf file path or '-' to stream from stdin.\n"
       "\n"
       "Optional Options:\n"
       "  -v, --verbose             Increase output to stderr.\n"
-      "    -e [100]                Epsilon parameter for DBSCAN\n"
-      "    -s [25]                 Min size parameter for DBSCAN\n"
-      "    -c [100]                Min cluster size (otherwise mark as zero)\n"
+      "  -e [100]                Epsilon parameter for DBSCAN\n"
+      "  -s [25]                 Min size parameter for DBSCAN\n"
+      "  -c [100]                Min cluster size (otherwise mark as zero)\n"
       "\n"
       "Example:\n"
-      "  cyftools dbscan input.cyf output.cyf\n";
+      "  cyftools filter -A 32 <in> - -M | dbscan - output.cyf\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -1672,12 +1741,16 @@ static int meanfunc(int argc, char** argv) {
 
 static int tumorfunc(int argc, char** argv) {
 
-  const char* shortopts = "vt:k:f:d:F:";
+  const char* shortopts = "vt:k:f:d:F:B";
 
   float dist = 100000;
   int n = 25;
   cy_uint flag_to_set = 0;
   float frac = 0.50;
+
+  // when set, will only build KNN graph with BUILD_MARK + cells
+  // not really used yet, so not exposed explicitly
+  bool build_tree_with_marked_only = false; 
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -1688,6 +1761,7 @@ static int tumorfunc(int argc, char** argv) {
     case 'f' : arg >> frac; break;
     case 'F' : arg >> flag_to_set; break;
     case 'd' : arg >> dist; break;
+      //case 'B' : build_tree_with_marked_only = true; break;
     default: die = true;
     }
   }
@@ -1708,7 +1782,9 @@ static int tumorfunc(int argc, char** argv) {
       "    -d [100000]           Max distance to consider\n"
       "    -F [1]                Cflag to set (1=tumor, 16=Tcell)\n"
       "    -v, --verbose         Increase output to stderr\n"
-      "  Example: cyftools filter -a 4 <in.cyf> - | cyftools tumor - <out.cyf>\n"
+      "  Example:\n"
+      "           # Check if a cell has >50% of 25 nearest neighbors with pflag 4 set\n"
+      "           cyftools filter -a 4 <in.cyf> - -M | cyftools annotate -f 0.5 -k 25  - <out.cyf>\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
@@ -1722,7 +1798,7 @@ static int tumorfunc(int argc, char** argv) {
   
   table.SetupOutputWriter(opt::outfile);
 
-  table.AnnotateCall(n, frac, dist, flag_to_set);
+  table.AnnotateCall(n, frac, dist, flag_to_set, build_tree_with_marked_only);
 
   table.OutputTable();
 
@@ -1831,7 +1907,8 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "histogram" || opt::module == "log10" ||
 	 opt::module == "crop"  || opt::module == "umap" ||
 	 opt::module == "count" || opt::module == "clean" ||
-	 opt::module == "annotate" || opt::module == "convolve" || 
+	 opt::module == "annotate" || opt::module == "convolve" ||
+	 opt::module == "flagset" || opt::module == "markcheck" || 
 	 opt::module == "cat" || opt::module == "convert" ||
 	 opt::module == "sort" || opt::module == "divide" || 
 	 opt::module == "pearson" || opt::module == "info" ||
@@ -1845,7 +1922,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "magnify" ||
 	 opt::module == "island" || opt::module == "rescale" || 
 	 opt::module == "jaccard" || opt::module == "cellcount" ||
-	 opt::module == "synth" || opt::module == "trim" || 
+	 opt::module == "synth" || 
 	 opt::module == "sampleselect" || opt::module == "dbscan" || 
 	 opt::module == "filter" || opt::module == "pheno")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
@@ -2384,47 +2461,48 @@ static int spatialfunc(int argc, char** argv) {
 }
 */
  
- static int trimfunc(int argc, char** argv) {
-   const char* shortopts = "v";
+ // static int trimfunc(int argc, char** argv) {
+ //   const char* shortopts = "v";
    
-   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
-     std::istringstream arg(optarg != NULL ? optarg : "");
-     switch (c) {
-     case 'v': opt::verbose = true; break;
-     }   
-   }
+ //   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+ //     std::istringstream arg(optarg != NULL ? optarg : "");
+ //     switch (c) {
+ //     case 'v': opt::verbose = true; break;
+ //     }   
+ //   }
 
-  if (die || in_out_process(argc, argv)) {
+ //  if (die || in_out_process(argc, argv)) {
   
-    const char *USAGE_MESSAGE =
-      "Usage: cyftools trim [.cyf file]\n"
-      "  Keep only marked cells\n"
-      "    .cyf file: filepath or a '-' to stream to stdin\n"
-      "  Options\n"
-      "    -v, --verbose         Increase output to stderr\n"
-      "  Example\n"
-      "    cyftools trim <in> <out>"
-      "\n";
-    std::cerr << USAGE_MESSAGE;
-    return 1;
-  }
+ //    const char *USAGE_MESSAGE =
+ //      "Usage: cyftools trim [.cyf file]\n"
+ //      "  Keep only marked cells\n"
+ //      "    .cyf file: filepath or a '-' to stream to stdin\n"
+ //      "  Options\n"
+ //      "    -v, --verbose         Increase output to stderr\n"
+ //      "  Example\n"
+ //      "    cyftools trim <in> <out>"
+ //      "\n";
+ //    std::cerr << USAGE_MESSAGE;
+ //    return 1;
+ //  }
 
-  TrimProcessor trim;
-  trim.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+ //  TrimProcessor trim;
+ //  trim.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
 
-  // process
-  if (table.StreamTable(trim, opt::infile))
-    return 1;
+ //  // process
+ //  if (table.StreamTable(trim, opt::infile))
+ //    return 1;
 
-  return 0;
+ //  return 0;
   
- }
+ // }
  
  static int filterfunc(int argc, char** argv) {
    
-   const char* shortopts = "vr:a:n:A:N:of:g:l:G:L:e:jr:T";
+   const char* shortopts = "vr:a:n:A:N:of:g:l:G:L:e:jr:s:S:MB";
 
-   bool trim_cells = false;
+   bool mark1_cells = false;
+   bool mark2_cells = false;   
    
    // field selection
    bool or_toggle = false;
@@ -2433,12 +2511,19 @@ static int spatialfunc(int argc, char** argv) {
    
    // radius for mask select
    float radius = 0.0f;
-   
+
+   // SelectOp = pair<enum of comparators, float value>
    SelectOpVec num_vec;
    SelectOpMap criteria;
    std::vector<std::string> field_vec;
+
+   // short hand for selecting multiple flags as OR
+   // (-s or -S), better than enumerating every flag with -a -o construct
+   cy_uint single_flag_por = 0;
+   cy_uint single_flag_cor = 0;   
    
-   // select function
+   // a SelectionUnit is a logical set of flag conditions
+   // and filter will OR all of the different selection units
    std::vector<SelectionUnit> selections;
    selections.push_back(SelectionUnit());
    
@@ -2446,9 +2531,10 @@ static int spatialfunc(int argc, char** argv) {
      std::istringstream arg(optarg != NULL ? optarg : "");
      switch (c) {
      case 'v': opt::verbose = true; break;
-     case 'T' : trim_cells = true; break;
+     case 'M' : mark1_cells = true; break;
+     case 'B' : mark2_cells = true; break;       
      case 'a':
-       if (selections.back().pand) 
+       if (selections.back().pand) // already have an and condition, so start new selection unit
 	 selections.push_back(SelectionUnit());
        arg >> selections.back().pand; break;
      case 'n':
@@ -2465,6 +2551,8 @@ static int spatialfunc(int argc, char** argv) {
        arg >> selections.back().cnot; break;
      case 'o': selections.push_back(SelectionUnit()); break;
      case 'f' : arg >> sholder; field_vec.push_back(sholder); break;
+     case 's':  arg >> selections.back().por; break;
+     case 'S':  arg >> selections.back().cor; break;
      case 'g' : arg >> holder; num_vec.push_back({optype::GREATER_THAN, holder}); break;
      case 'l' : arg >> holder; num_vec.push_back({optype::LESS_THAN, holder}); break;
      case 'G' : arg >> holder; num_vec.push_back({optype::GREATER_THAN_OR_EQUAL, holder}); break;
@@ -2475,13 +2563,22 @@ static int spatialfunc(int argc, char** argv) {
      default: die = true; break;  
      }
    }
-   
+
+   // mark2 not really exposted, so shouldn't get here
+   if (mark1_cells && mark2_cells) {
+     std::cerr << "Error: cyftools filter - select only -m or -M, can't mark both\n" << std::endl;
+     die = true;
+   }
+
+   // send the selector unit to the CellSelector object
    CellSelector cellselect;
-   for (const auto& a : selections)
-     cellselect.AddSelectionUnit(a);
-   
+   for (const auto& a : selections) {
+     if (!a.isEmpty())
+       cellselect.AddSelectionUnit(a);
+   }
+
    if (opt::verbose)
-     std::cerr << cellselect << std::endl;
+     std::cerr << cellselect;
    
    if (field_vec.size() > 1) {
      
@@ -2506,36 +2603,52 @@ static int spatialfunc(int argc, char** argv) {
        }
      }
      
-  }
-  
+   }
+
+   // print the numeric selectors
+   // criteria is string keyed map of vector(pair<op enum, float value>)
+   if (opt::verbose) {
+     for (const auto& m : criteria) {
+       std::cerr <<   "--- Marker/Meta field: " << m.first << std::endl;
+       for (const auto& v : m.second) {
+	 std::cerr << "           - " << static_cast<int>(v.first) << " - value " << v.second << std::endl;     
+       }
+     }
+   }
+   
   if (die || in_out_process(argc, argv)) {
   
     const char *USAGE_MESSAGE =
-      "Usage: cyftools select [.cyf file]\n"
-      "  Select cells by phenotype flag\n"
+      "Usage: cyftools filter [.cyf file]\n"
+      "  Filter cells and mark (-M) for downstream processing or trim output (default)\n"
+      "    DEFAULT behavior is to remove cells not in filter criteria and clear any marks\n"
       "    .cyf file: filepath or a '-' to stream to stdin\n"
       "  Flag selection\n"
-      "    -a                    Phenotype logical AND\n"
-      "    -A                    Cell logical AND\n"
-      "    -n                    Phenotype logical NOT\n"
-      "    -N                    Cell logical NOT\n"
-      "    -o                    Logical OR\n"
-      "  Marker selection\n"
-      "    -f                    Marker / meta field to select on\n"
-      "    -g                    > - Greater than\n"
-      "    -G                    >= - Greater than or equal to \n"      
-      "    -l                    < - Less than\n"
-      "    -L                    <= - Less than or equal to\n"      
-      "    -e                    Equal to (can use with -g or -m for >= or <=)\n"
-      "    -j                    Or the operations (default is and)\n"
+      "    -a <int>              Phenotype logical AND\n"
+      "    -n <int>              Phenotype logical NOT\n"
+      "    -s <int>              Phenotype logical OR\n"
+      "    -A <int>              Cell logical AND\n"  
+      "    -N <int>              Cell logical NOT\n"
+      "    -S <int>              Cell logical OR\n"
+      "    -o                    Flag to mark OR separator for units above\n"
+      "  Marker/meta selection\n"
+      "    -f <string>           Marker / meta field to select on\n"
+      "    -g <int>              > - Greater than\n"
+      "    -G <int>              >= - Greater than or equal to \n"      
+      "    -l <int>              < - Less than\n"
+      "    -L <int>              <= - Less than or equal to\n"      
+      "    -e <int>              Equal to (can use with -g or -m for >= or <=)\n"
+      "    -j                    Flag to OR the operations (default is and)\n"
       "  Mask selection\n"
       "    -r                    Radius (in x,y coords) of region around selected cells to also include\n"
       "  Options\n"
-      "    -T                    Trim cells that aren't marked. Also clears the marks\n"
+      "    -M                    Set the mark (keeps all cells, marks some for downstream analysis)\n"
+      //"    -B                    Set the build mark ON/OFF (used to limit downstream tree building to only build-marked cells)\n"
       "    -v, --verbose         Increase output to stderr\n"
       "  Example\n"
-      "    cyftools filter -a 4160 -o -a 4352 <in> <out> # select cells with bits 4096+256 OR 4096+64"
-      "\n";
+      "    cyftools filter -a 4160 -o -a 4352 <in> <out>  # select cells with bits 4096+256 OR 4096+64\n"
+      "    cyftools filter -s 4160 <in> <out>             # select cells with bits markers 4096 OR 256 on\n"
+      "    cyftools filter -a 4096 -o 256                 # equivalent to above\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -2543,9 +2656,9 @@ static int spatialfunc(int argc, char** argv) {
   // setup the selector processor for zero radius
   if (radius <= 0) {
 
-    MarkProcessor select;
+    FilterProcessor select;
     select.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-    select.SetFlagParams(cellselect, trim_cells); 
+    select.SetFlagParams(cellselect, mark1_cells, mark2_cells); 
     select.SetFieldParams(criteria, or_toggle);
     
     // process
@@ -2559,7 +2672,6 @@ static int spatialfunc(int argc, char** argv) {
 
   table.SetupOutputWriter(opt::outfile);
 
-  std::cerr << " CALLING SELECT" << std::endl;
   table.Select(cellselect, 
 	       criteria,
 	       or_toggle,
@@ -2571,6 +2683,7 @@ static int spatialfunc(int argc, char** argv) {
 }
   
 static int phenofunc(int argc, char** argv) {
+  
   const char* shortopts = "vt:s:r:";
   std::string file;
   float scale = 1;
@@ -2956,7 +3069,7 @@ static int delaunayfunc(int argc, char** argv) {
   }
 
   table.SetupOutputWriter(opt::outfile);
-  
+
   table.Delaunay(delaunay, voronoi, limit);
   
   table.OutputTable();

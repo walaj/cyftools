@@ -47,3 +47,5 @@ extern Color color_dark_blue;
 
 // Pick the appropriate colormap 
 const ColorMap& getColorMap(int size);
+
+ColorLabelMap ColorLabelMapForModule(const std::string& module);

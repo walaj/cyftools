@@ -8,7 +8,7 @@
 
 #include <limits>
 
-int MarkProcessor::ProcessHeader(CellHeader& header) {
+int FilterProcessor::ProcessHeader(CellHeader& header) {
   
   m_header = header;
 
@@ -25,8 +25,16 @@ int MarkProcessor::ProcessHeader(CellHeader& header) {
     i++;
   }
 
+  if (m_verbose) 
+  for (const auto& m : m_criteria_int) {
+    std::cerr <<   "PH --- Marker/Meta field: " << m.first << std::endl;
+    for (const auto& v : m.second) {
+      std::cerr << "           - " << static_cast<int>(v.first) << " - value " << v.second << std::endl;     
+    }
+  }
+  
   if (m_criteria.size() != m_criteria_int.size())
-    throw std::runtime_error("Unable to find all requested fields in the header");
+    throw std::runtime_error("cyftools filter -- Unable to find all requested fields in the header");
 
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
 
@@ -365,7 +373,7 @@ int TrimProcessor::ProcessLine(Cell& cell) {
   return NO_WRITE_CELL;
 }
 
-int MarkProcessor::ProcessLine(Cell& cell) {
+int FilterProcessor::ProcessLine(Cell& cell) {
   
   bool write_cell = false;
 
@@ -376,8 +384,13 @@ int MarkProcessor::ProcessLine(Cell& cell) {
 
   //std::cerr << cell.cflag << " - " << cell.pflag << std::endl << m_select << std::endl;
   
-  // if flags met, print the cell
+  // if C- or P-flags met, print the cell
   if ( m_select.TestFlags(cell.pflag, cell.cflag)) { 
+    write_cell = true;
+  }
+
+  // if only selecting on field, start with default of "true"
+  if (m_select.size() == 0) {
     write_cell = true;
   }
 
@@ -399,7 +412,9 @@ int MarkProcessor::ProcessLine(Cell& cell) {
 	(cc.first == optype::EQUAL_TO) << " numeric " << cc.second <<
 	" value " << value << " write_cell before " << write_cell << std::endl;
       */
-	
+
+
+      //std::cerr << "B write cell " << write_cell << " c.first " << c.first << " cc.second (val) " << cc.second << " m or toggle " << m_or_toggle << std::endl;	 
       switch (cc.first) { // switching on the optype
       case optype::GREATER_THAN: write_cell          = write_cell = m_or_toggle ? (write_cell || (value >  cc.second)) : (write_cell && (value >  cc.second));  break;
       case optype::LESS_THAN: write_cell             = write_cell = m_or_toggle ? (write_cell || (value <  cc.second)) : (write_cell && (value <  cc.second));  break;
@@ -407,29 +422,43 @@ int MarkProcessor::ProcessLine(Cell& cell) {
       case optype::LESS_THAN_OR_EQUAL: write_cell    = write_cell = m_or_toggle ? (write_cell || (value <= cc.second)) : (write_cell && (value <= cc.second));  break;
       case optype::EQUAL_TO: write_cell              = write_cell = m_or_toggle ? (write_cell || (value == cc.second)) : (write_cell && (value == cc.second));  break;
       default: assert(false);
-      } 
+      }
+
+      //std::cerr << "A write cell " << write_cell << " c.first " << c.first << " cc.second (val) " << cc.second << " m or toggle " << m_or_toggle << std::endl;
     }
     
   }
 
   write_cell = write_cell && flag_write_cell;
 
-  // writing all cells with marks, so can clear the mark
+  bool m_trim = !(m_mark1 || m_mark2);
+  
+  // trim is set but cell passes
   if (m_trim && write_cell) {
     CLEAR_FLAG(cell.cflag, MARK_FLAG);
     return CellProcessor::WRITE_CELL;
+    // trim is set, but cell doesn't pass       
   } else if (m_trim && !write_cell) {
     return CellProcessor::NO_WRITE_CELL;
-  } else if (!m_trim && write_cell) {
+    // cell passes, mark as 1
+  } else if (m_mark1 && write_cell) {
     SET_FLAG(cell.cflag, MARK_FLAG);
     return CellProcessor::WRITE_CELL;
+    // cell passes, mark as 2
+  } else if (m_mark2 && write_cell) {
+    SET_FLAG(cell.cflag, BUILD_GRAPH_FLAG);
+    return CellProcessor::WRITE_CELL;
+    // cell fails, but trimming is off (no marks set)
   } else if (!m_trim && !write_cell) {
     CLEAR_FLAG(cell.cflag, MARK_FLAG);
-    return CellProcessor::WRITE_CELL;    
+    CLEAR_FLAG(cell.cflag, BUILD_GRAPH_FLAG);    
+    return CellProcessor::WRITE_CELL;
+    // should never get here
   } else {
     assert(false);
   }
-  
+
+  // should never get here
   assert(false);
   return CellProcessor::WRITE_CELL; // don't write if not selected
 }
@@ -743,6 +772,83 @@ int DivideProcessor::ProcessHeader(CellHeader& header) {
 
   return HEADER_NO_ACTION;
   
+}
+
+int FlagsetProcessor::ProcessHeader(CellHeader& header) {
+  
+  m_header = header;
+
+  // add cmd and sort
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  m_header.SortTags();
+  
+  // just in time output
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+
+  return HEADER_NO_ACTION;
+  
+}
+
+int FlagsetProcessor::ProcessLine(Cell& cell) {
+
+  if (IS_FLAG_SET(cell.cflag, MARK_FLAG)) {
+
+    // set the pflag
+    if (m_pflag_to_set) {
+      SET_FLAG(cell.pflag, m_pflag_to_set);
+    }
+
+    // set the cflag
+    if (m_cflag_to_set) {
+      SET_FLAG(cell.cflag, m_cflag_to_set);      
+    }
+
+    // clear the pflag
+    if (m_pflag_to_clear) {
+      CLEAR_FLAG(cell.pflag, m_pflag_to_clear);
+    }
+
+    // clear the cflag
+    if (m_cflag_to_clear) {
+      CLEAR_FLAG(cell.cflag, m_cflag_to_clear);
+    }
+
+  }
+
+  // no matter what, clear the mark
+  CLEAR_FLAG(cell.cflag, MARK_FLAG);
+
+  return CellProcessor::WRITE_CELL;
+  
+}
+
+int MarkCheckProcessor::ProcessLine(Cell& cell) {
+
+  if (IS_FLAG_SET(cell.cflag, MARK_FLAG)) {
+    std::cerr << "MARK_FLAG is set on cell " << cell << std::endl;
+    assert(false);    
+  }
+
+  return CellProcessor::WRITE_CELL;
+}
+
+// just a pass through, do absolutely nothing but stream out header
+int MarkCheckProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+  
+  // just in time output
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+
+  return HEADER_NO_ACTION;
 }
 
 int DivideProcessor::ProcessLine(Cell& cell) {
@@ -1296,7 +1402,7 @@ int DebugProcessor::ProcessLine(Cell& cell) {
 int BuildProcessor::ProcessHeader(CellHeader& header) {
   m_header = header; // store but don't print
 
-  return 2;
+  return CellProcessor::SAVE_HEADER;
 }
 
 // just a pass through to place it in the table
