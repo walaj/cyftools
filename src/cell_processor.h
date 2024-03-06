@@ -758,9 +758,6 @@ private:
   std::unique_ptr<std::ofstream> m_os;
   std::unique_ptr<cereal::PortableBinaryOutputArchive> m_archive;
 
-  // to catch ragged csv files
-  int m_last_line_count = -1;
-  
 };
 
 /*class RadialProcessor : public CellProcessor { 

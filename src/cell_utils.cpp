@@ -497,3 +497,20 @@ bool is_mcmicro_meta(const std::string& str) {
     
     return keywords.find(str) != keywords.end();
 }
+
+std::string clean_marker_string(const std::string& input) {
+    // Copy the input string to work with
+    std::string result = input;
+    
+    // Remove hyphens
+    result.erase(std::remove(result.begin(), result.end(), '-'), result.end());
+    
+    // Find the position of the last underscore
+    size_t underscorePos = result.rfind('_');
+    if (underscorePos != std::string::npos) {
+        // Remove everything from the last underscore to the end
+        result.erase(underscorePos);
+    }
+    
+    return result;
+}

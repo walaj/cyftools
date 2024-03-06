@@ -133,7 +133,9 @@ float euclidean_distance_squared(float x1, float y1, float x2, float y2);
 std::pair<std::string, std::string> colon_parse(const std::string& str);
 
 bool is_mcmicro_meta(const std::string& str);
-  
+
+std::string clean_marker_string(const std::string& input);
+
 #ifdef HAVE_HDF5
 void write_hdf5_dataframe_attributes(H5::Group& group);
 #endif
