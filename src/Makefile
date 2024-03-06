@@ -212,6 +212,7 @@ LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB) $(KDLIB) ${TIFFLD} $(MLPACKLIB) \
 SRCS = cyftools.cpp \
        cell_table.cpp \
        cell_table_mlpack.cpp \
+       cell_table_delaunay.cpp \
        cell_table_graph.cpp \
        cell_table_lda.cpp \
        polygon.cpp \

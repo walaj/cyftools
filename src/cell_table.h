@@ -58,7 +58,7 @@ public:
   //////
   void BuildTable(const std::string& file);
 
-  void StreamTableCSV(LineProcessor& proc, const std::string& file);
+  void StreamTableCSV(CerealProcessor& proc, const std::string& file);
 
   int StreamTable(CellProcessor& proc, const std::string& file);
   
@@ -127,8 +127,7 @@ public:
 		      std::vector<std::string> label, std::vector<int> normalize_local,
 		      std::vector<int> normalize_global);
   
-  void AnnotateCall(int num_neighbors, float frac, cy_uint dist, cy_uint flag_to_set,
-		    bool build_tree_with_marked_only);
+  void AnnotateCall(int num_neighbors, float frac, cy_uint dist, cy_uint flag_to_set);
   
   void TumorMargin(float dist, cy_uint tumor_flag, cy_uint margin_flag);
 
@@ -144,6 +143,9 @@ public:
 		     size_t min_size,
 		     size_t min_cluster_size
 		     ); 
+
+  void CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
+	       int min_cluster_size, int dist_max);
   
   //////
   // Numeric ops
@@ -185,7 +187,15 @@ public:
 	      bool or_toggle,
 	      float radius);
 
-  void ClearFlag(const int flag);
+  // clear a bit from a c-flag (bit specified by flag argument, e.g. TLS_FLAG)
+  void ClearCFlag(int flag);
+
+  // how many cells have this c-flag on?
+  size_t CountCFlag(int flag) const;
+  
+  // copy in a bit from one flag (e.g. TLS_FLAG) to another (e.g. MARK_FLAG)
+  // this doesn't ever clear bits
+  void CopyCFlag(cy_uint flag_from, cy_uint flag_to);
   
   void FlagToFlag(const bool clear_flag_to,
 		  const int flag_from, bool flag_from_negative, 

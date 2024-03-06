@@ -172,46 +172,66 @@ void Cell::Print(int round) const {
   std::cout << std::endl;
 }
 
-Cell::Cell(const std::string& row, const CellHeader& header,
+Cell::Cell(const std::string& row,
+	   int x_index,// which column is X and Y
+	   int y_index,
+	   int start_index, // which columns start and end marker data
+	   int end_index,
+	   const CellHeader& header,
 	   uint32_t cellid,
 	   uint32_t sampleid) {
-
-  
   
   const std::vector<std::string> tokens = tokenize_comma_delimited(row);  
-
+  
   if (tokens.size() < 3) {
     throw std::runtime_error("CSV file should have at least three columns: id, x, y");
   }
 
+  // check that we are in bounds
+  if (x_index >= tokens.size() || y_index >= tokens.size() ||
+      start_index >= tokens.size()) {
+    std::cerr << "Error: cyftools convert - Not enough tokens for the header, line " << row << std::endl;
+    assert(false);
+  }
+  
   pflag = 0;
   cflag = 0;
   id = 0;
   x = 0;
   y = 0;
-
+  
   this->set_sample_id(sampleid);
   this->set_cell_id(cellid);
-
+  
   // 1st and 2nd entry is x,y position
-  x = std::strtof(tokens.at(0).c_str(), nullptr);
-  y = std::strtof(tokens.at(1).c_str(), nullptr);
+  x = std::strtof(tokens.at(x_index).c_str(), nullptr);
+  y = std::strtof(tokens.at(y_index).c_str(), nullptr);
 
   // stop with as many columns as are in the header
   size_t num_cols = header.GetDataTags().size();
-  
+
   // assume rest of the tags are column data
   size_t i = 0;
-  while (i < tokens.size() - 2) {
+  while (i < tokens.size()) {
 
     // let user know if they are short on header specs
-    if (i >= num_cols) {
-      std::cerr << "warning: more data columns " <<
-	tokens.size() << " in file than specified in header " <<
-	num_cols << std::endl;
-      break;
+    /*    if (tokens.size() != m_last_line_count) {
+      std::cerr << "Error: cyftools convert -- found "  << tokens.size() <<
+	" on this line but " << m_last_line_count << " on last line" << std::endl;
+      std::cerr << row << std::endl;
+
+      for (const auto& t : header.GetDataTags())
+	std::cerr << t.id << std::endl;
+      assert(false);
+      }*/
+
+    // skip non-marker data and x and y
+    if (i < start_index || i > end_index || i == x_index || i == y_index) {
+      i++;
+      continue;
     }
-    cols.push_back(std::strtof(tokens.at(i + 2).c_str(), nullptr));
+
+    cols.push_back(std::strtof(tokens.at(i).c_str(), nullptr));
     i++;
   }
 

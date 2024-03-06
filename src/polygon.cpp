@@ -1,7 +1,7 @@
 #include "polygon.h"
 
-std::vector<std::pair<float, float>> parse_vertices(const std::string& vertex_str) {
-    std::vector<std::pair<float, float>> vertices;
+std::vector<JPoint> parse_vertices(const std::string& vertex_str) {
+    std::vector<JPoint> vertices;
     std::istringstream vertex_stream(vertex_str);
     std::string coordinate_pair;
 
@@ -28,8 +28,8 @@ bool Polygon::PointIn(float x, float y) const {
   bool inside = false;
   
   for (size_t i = 0, j = n - 1; i < n; j = i++) {
-    if (((vertices[i].second > y) != (vertices[j].second > y)) &&
-	(x < (vertices[j].first - vertices[i].first) * (y - vertices[i].second) / (vertices[j].second - vertices[i].second) + vertices[i].first)) {
+    if (((vertices[i].y > y) != (vertices[j].y > y)) &&
+	(x < (vertices[j].x - vertices[i].x) * (y - vertices[i].y) / (vertices[j].y - vertices[i].y) + vertices[i].x)) {
       inside = !inside;
     }
   }
@@ -76,31 +76,11 @@ std::vector<Polygon> read_polygons_from_file(const std::string& file_path) {
       std::getline(ss, all_points, '"');
       
       int Id = std::stoi(Id_str);
-      std::vector<std::pair<float, float>> vertices = parse_vertices(all_points);
+      std::vector<JPoint> vertices = parse_vertices(all_points);
       
       polygons.emplace_back(Id, Name, Text, type, vertices);
 
     }
-    /*
-    
-    while (std::getline(infile, line)) {
-      std::istringstream ss(line);
-      
-        std::string Id_str, Name, Text, type, all_points;
-        std::getline(ss, Id_str, ',');
-        std::getline(ss, Name, ',');
-        std::getline(ss, Text, ',');
-        std::getline(ss, type, ',');
-        std::getline(ss, all_points, ',');
-
-	std::cerr << " all " << all_points << std::endl;
-	
-        int Id = std::stoi(Id_str);
-        std::vector<std::pair<float, float>> vertices = parse_vertices(all_points);
-
-        polygons.emplace_back(Id, Name, Text, type, vertices);
-    }
-    */
     return polygons;
 }
 
@@ -112,7 +92,7 @@ std::ostream& operator<<(std::ostream& os, const Polygon& polygon) {
 
     for (int i = 0; i < vertices_to_print; ++i) {
         const auto& vertex = polygon.vertices[i];
-        os << "(" << vertex.first << ", " << vertex.second << ") ";
+        os << "(" << vertex.x << ", " << vertex.y << ") ";
     }
 
     if (polygon.vertices.size() > 3) {

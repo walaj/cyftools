@@ -55,7 +55,8 @@ elif contains_string "$prostate" "$input_file"; then
     TUMOR_MARKER=4
     TCELL_MARKER=2048
     BCELL_MARKER=64
-    STROMA_MARKER=2096
+    IMMUNE_MARKER=268435408
+
 else
     parallel_echo "...header.sh: Warning: $input_file doesn't fit into cycif, prostate, orion, etc"
     exit 1
@@ -67,25 +68,6 @@ if [[ -f "$roi_file" ]]; then
 else
     roicmd=""
 fi
-
-## set a TLS finder
-# 1) Identify cells that have > 50% B cells neighbors as TLS
-# 2) Identify clusters of cells that have >20% TLS cells as neighbors
-# 3) Remove cells that are not immune cell from being TLS
-# 4) DBscan cluster on TLS cells, with min cluster size
-# 5) Clear the TLS field, and then setit only as surviving TLS clusters 
-TLSFINDER="cyftools filter - - -a $BCELL_MARKER -M |
-           cyftools annotate - - -f 0.5 -k 25 -F ${TLS_FLAG} |
-           cyftools filter -A ${TLS_FLAG} - - -M |
-           cyftools annotate - - -f 0.2 -F ${TLS_FLAG} -k 25 ${V} -t ${T} -d 100 |
-           cyftools filter -s ${STROMA_MARKER} -A ${TLS_FLAG} - - -M |
-	   cyftools flagset - - -C ${TLS_FLAG} |
-	   cyftools filter - - -A ${TLS_FLAG} -M |
-	   cyftools dbscan -c 200 - - ${V} |
-	   cyftools filter -A ${TLS_FLAG} - - -M |
-	   cyftools flagset - - -C ${TLS_FLAG} |
-	   cyftools filter -f dbscan_cluster -g 0 - - -M |
-	   cyftools flagset - - -c ${TLS_FLAG}"
 
 if [[ ! -f "$input_file" ]]; then
     parallel_echo "Error in chain.sh: File '$input_file' does not exist."
@@ -109,8 +91,7 @@ else
     parallel_echo "...running: cyftools chain on ${base}"
     cmd="cyftools pheno ${V} $input_file -t $pheno_file - |
     		      cyftools filter - - -a $TUMOR_MARKER ${V} -M | cyftools annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 | $roicmd
-		      cyftools filter - - -a $TCELL_MARKER ${V} -M | cyftools annotate - - -f 0.5 -k 25 -d 200 -t ${T} ${V} -F 16 |
-		      $TLSFINDER |
+		      cyftools tls - - -b $BCELL_MARKER -i $IMMUNE_MARKER -m 300 -d 35 ${V} |
  		      cyftools island - - -n 5000 -T | cyftools island - - -S -n 5000 | cyftools margin -d 100 - - |
            	      cyftools radialdens ${V} - - -t ${T} -f ${RAD} |  cyftools delaunay -l 20 - ${output_file}"
     echo "$cmd" | tr '\n' ' '

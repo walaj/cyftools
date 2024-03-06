@@ -714,9 +714,189 @@ CellTable::build_vp_tree(const std::vector<bool>& ix) const {
    
 }
 
+void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
+			int min_cluster_size, int dist_max) {
+
+  if (m_verbose)
+    std::cerr << "...cyftools tls - bcell marker " << bcell_marker << " immune marker(s) " <<
+      immune_marker << " min cluster size " << min_cluster_size << " dist max " << dist_max << std::endl;
+  
+  validate();
+
+  int n = CellCount();
+  
+  // Step 1) Identify B-cells and mark them
+  if (m_verbose) { std::cerr << "...cyftools tls - marking B-cells (flag = " << bcell_marker << ")" << std::endl; }
+  for (size_t i = 0; i < n; i++) {
+
+    cy_uint& cf  = (*m_cflag_ptr)[i];
+    cy_uint pf  = m_pflag_ptr->at(i);    
+    
+    // clear the mark (shouldn't be set anyway)
+    CLEAR_FLAG(cf, MARK_FLAG);
+    
+    // if the b-cell flag is set, set the mark
+    if (IS_FLAG_SET(pf, bcell_marker)) {
+      SET_FLAG(cf, MARK_FLAG);
+    }
+  }
+  if (m_verbose) { std::cerr << "...cyftools tls - " << CountCFlag(MARK_FLAG) << " B-cells using " << bcell_marker << std::endl; }
+  
+  // Step 2) Find cells that are surrounded by B-cells, mark as TLS
+  int num_neighbors = 25;
+  float frac_pos = 0.5;
+  if (m_verbose) { std::cerr << "...cyftools tls - KNN to find cells near B-cells" << std::endl; }  
+  ClearCFlag(TLS_FLAG); // start with all TLS_FLAG off
+  AnnotateCall(num_neighbors, frac_pos, dist_max, TLS_FLAG);
+  ClearCFlag(MARK_FLAG); // reset the mark
+  if (m_verbose) { std::cerr << "...cyftools tls - found " << CountCFlag(TLS_FLAG) << " cells near B-cells" << std::endl; }
+
+  // check that we found something
+  if (CountCFlag(TLS_FLAG) == 0) {
+    std::cerr << "cyftools tls -- Warning - no b-cell clusters found, using B-cell flag " << bcell_marker << std::endl;
+    return;
+  }
+  
+  // Step 3) Clear the TLS flag if its not a B-cell
+  //        , we are for now just finding B-cell clusters
+  if (m_verbose) { std::cerr << "...cyftools tls - removing non-bcells from clusters" << std::endl; }
+  for (size_t i = 0; i < n; i++) {
+    cy_uint& cf  = (*m_cflag_ptr)[i];
+    cy_uint pf  = m_pflag_ptr->at(i);
+    
+    // clear the TLS flag if not a B-cell
+    if (!IS_FLAG_SET(pf, bcell_marker))
+      CLEAR_FLAG(cf, TLS_FLAG);
+  }
+  if (m_verbose) { std::cerr << "...cyftools tls - found " << CountCFlag(TLS_FLAG) << " B-cells near B-cells" << std::endl; }
+
+  // check that we found something
+  if (CountCFlag(TLS_FLAG) == 0) {
+    std::cerr << "cyftools tls -- Warning - clusters found after removing non-B-cells " << bcell_marker << std::endl;
+    return;
+  }
+
+  
+  // Step 4) Find cells that are near B-cell clusters (TLS_FLAG)
+  //         This expands the area around the TLS
+  num_neighbors = 100;
+  frac_pos = 0.2;
+  ClearCFlag(MARK_FLAG); // ensure mark is cleared
+  CopyCFlag(TLS_FLAG, MARK_FLAG); // set mark as TLS for Annotate
+  /// this will look for cells that are near MARK cells, and add TLS_FLAG
+  // so after this, number of TLS_FLAG cells is >= number from before the call
+  if (m_verbose) { std::cerr << "...cyftools tls - KNN to find cells near" << std::endl; }
+  int dist_max_immune = 200;
+  AnnotateCall(num_neighbors, frac_pos, dist_max_immune, TLS_FLAG);
+  
+  // Step 5) Remove TLS_FLAG from non-immune cells
+  if (m_verbose) { std::cerr << "...cyftools tls - removing non-immune cells" << std::endl; }
+  for (size_t i = 0; i < n; i++) {
+    cy_uint& cf  = (*m_cflag_ptr)[i];
+    cy_uint pf  = m_pflag_ptr->at(i);
+    
+    // clear the TLS flag if not an immune cell (any of flags in immune-Marker oK)
+    if (!IS_FLAG_SET_OR(pf, immune_marker))
+      CLEAR_FLAG(cf, TLS_FLAG);
+  }
+  if (m_verbose) { std::cerr << "...cyftools tls - found " << CountCFlag(TLS_FLAG) << " cells (nominal) in TLSes" << std::endl; }
+  
+  // Step 6) DBscan clustering to identify clusters of TLS
+  ClearCFlag(MARK_FLAG); // ensure mark is cleared
+  CopyCFlag(TLS_FLAG, MARK_FLAG); // dbscan will cluster now on TLS_FLAG
+  if (m_verbose) { std::cerr << "...cyftools tls - dbscan clustering on TLS" << std::endl;  }
+  // dbscan params
+  float epsilon = 100.0f;
+  int min_size = 25;
+  clusterDBSCAN(epsilon, min_size, 50); //min_cluster_size);
+
+  // Step 7) Clear the TLS flag and re-label TLS if part of a non-zero dbscan cluster
+  ClearCFlag(MARK_FLAG + TLS_FLAG); // clear both flags
+  
+  // get the dbscan_cluster column
+   std::unordered_map<std::string, FloatColPtr>::iterator it = m_table.find("dbscan_cluster");
+  assert(it != m_table.end());
+  FloatColPtr db_cl_ptr = it->second;
+
+  // setup a new column for tls id
+  FloatColPtr tls_id = std::make_shared<FloatCol>();
+  tls_id->reserve(n);
+
+  // loop cells and transfer cluster number to TLS
+  for (size_t i = 0; i < n; i++) {
+    float dbcluster_num  = (*db_cl_ptr)[i];
+    tls_id->PushElem(dbcluster_num);
+  }
+  assert(tls_id->size() == n);
+
+  // Step 9) Convex hull to get cells inside
+  //
+
+  // get unique TLS ids
+  std::set<float> unique_tls(tls_id->begin(), tls_id->end()); 
+
+  // loop the clusters and make the convex hull
+  for (const auto& cl : unique_tls) {
+    
+    // cluster 0 is holder for not a cluster
+    if (cl == 0)
+      continue;
+    
+    // fill polygon with the points in the TLS definition
+    //    that will need to have hull around them
+    std::vector<JPoint> polygon;
+    polygon.reserve(n);
+    for (size_t i = 0; i < n; i++) {
+      if (tls_id->at(i) == cl)
+	polygon.push_back(JPoint(m_x_ptr->at(i), m_y_ptr->at(i)));
+    }
+
+    // get the convex hull
+    std::vector<JPoint> convex_hull = convexHull(polygon);
+
+    // Make a polygon (roi) from the points
+    Polygon tls_boundary_hull(convex_hull);
+
+    // loop all cells and see if they are members, if so, add
+    for (size_t i = 0; i < n; i++) {
+      if (tls_boundary_hull.PointIn(m_x_ptr->at(i), m_y_ptr->at(i))) {
+	if (IS_FLAG_SET_OR(m_pflag_ptr->at(i), immune_marker)) { // tls contains only immune cells
+	  tls_id->SetValueAt(i, cl); // set the tls id
+	}
+      }
+    }
+    
+  } // end cluster loop
+
+  // Step 9
+  // HIstogram the tls counts
+  std::unordered_map<float, size_t> histo;
+  for (const auto& t : *tls_id) 
+    histo[t]++;
+
+  // set tls-id elems to 0 if below threshold
+  for (auto& t : *tls_id)
+    if (histo[t] < min_cluster_size)
+      t = 0;
+  
+  // add the tls_id to the table
+  Tag tls_tag(Tag::CA_TAG, "tls_id", "");
+  AddColumn(tls_tag, tls_id);
+
+  // Step 8) Turn the TLS flag back on to mark individual cells
+  for (size_t i = 0; i < n; i++) {
+    cy_uint& cf  = (*m_cflag_ptr)[i];
+    if (tls_id->at(i) > 0)
+      SET_FLAG(cf, TLS_FLAG);
+  }
+
+  
+  return;
+  
+}  
+  
 void CellTable::AnnotateCall(int num_neighbors, float frac,
-			     cy_uint dist, cy_uint flag_to_set,
-			     bool build_tree_with_marked_only) {
+			     cy_uint dist, cy_uint flag_to_set) {
 
 #ifdef HAVE_KNNCOLLE
   
@@ -727,7 +907,7 @@ void CellTable::AnnotateCall(int num_neighbors, float frac,
   ix.reserve(nobs);
   
   // not really exposed, so should never run for right now
-  if (build_tree_with_marked_only) {
+  /*  if (build_tree_with_marked_only) {
 
     // not really exposed, so should never run for right now
     assert(false);
@@ -754,11 +934,11 @@ void CellTable::AnnotateCall(int num_neighbors, float frac,
 
   // build flag not set, so build all of them
   else {
-    
-    ix = std::vector<bool>(nobs, true);
-    
-  }
-
+  */    
+  ix = std::vector<bool>(nobs, true);
+  
+  //}
+  
   knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher = build_vp_tree(ix);
   
 #pragma omp parallel for num_threads(m_threads)

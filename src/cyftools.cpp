@@ -89,6 +89,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  pearson     - Calculate the Pearson correlation between marker intensities\n"
 " --- Clustering ---\n"
 "  dbscan      - Cluster cells based on the DBSCAN method\n"
+"  tls         - Identify TLS structures\n"
 " --- PDF/PNG ---\n"
 "  png         - Plot PNG\n"
   //"  plot       - Generate an ASCII style plot\n"
@@ -113,6 +114,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  synth       - Various approaches for creating synthetic data\n"  
 "\n";
 
+static int tlsfunc(int argc, char** argv);
 static int markcheckfunc(int argc, char** argv);
 static int magnifyfunc(int argc, char** argv);
 static int rescalefunc(int argc, char** argv);
@@ -195,6 +197,8 @@ int main(int argc, char **argv) {
   // get the module
   if (opt::module == "debug") {
     val = debugfunc(argc, argv);
+  } else if (opt::module == "tls") {
+    val = tlsfunc(argc, argv);
   } else if (opt::module == "flagset") {
     val = flagsetfunc(argc, argv);
   } else if (opt::module == "ldacreate") {
@@ -366,6 +370,63 @@ static int markcheckfunc(int argc, char** argv) {
   return 0;
 
   
+}
+
+static int tlsfunc(int argc, char** argv) {
+
+  cy_uint bcell_marker = 0;
+  cy_uint immune_marker = 0;  
+  int min_cluster_size = 100;
+  int dist_max = 100;
+  
+  const char* shortopts = "vm:d:b:i:";
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'b' : arg >> bcell_marker; break;
+    case 'i' : arg >> immune_marker; break;      
+    case 'd' : arg >> dist_max; break;
+    case 'm' : arg >> min_cluster_size; break;
+    default: die = true;
+    }
+  }
+
+  if (bcell_marker == 0 || immune_marker == 0) {
+    std::cerr << "Error: cyftools tls - need to specify -b (Bcell marker, as base-10 number) and immune-cell marker(s) (as base-10-number)" << std::endl;
+    die = true;
+  }
+    
+  
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools tls <in.cyf> <out.cyf>\n"
+      "  Identify tertiary lymphoid structures and enumarte in tls_id column\n"
+      "    .cyf file: filepath or a '-' to stream to stdin\n"
+      "Requred Input:\n"
+      "     -b [int]                  B-cell bit marker (e.g. 64)\n"
+      "     -i [int]                  Immune-cells bits marker (e.g. 382032)\n"
+      "Optional Options:\n"
+      "     -v, --verbose             Increase output to stderr.\n"
+      "     -m [100]                  Minimum number of cells to call a cluster\n"
+      "     -d [100]                  Distance threshold (microns) to consider in KNN calcs\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // build the table into memory
+  build_table();
+
+  table.SetupOutputWriter(opt::outfile);
+  
+  table.CallTLS(bcell_marker, immune_marker, min_cluster_size,
+		dist_max); 
+
+  table.OutputTable();
+  
+  return 0;
 }
 
 static int rescalefunc(int argc, char** argv) {
@@ -559,7 +620,7 @@ static int islandfunc(int argc, char** argv) {
 
   table.SetupOutputWriter(opt::outfile);
 
-  table.ClearFlag(MARGIN_FLAG);
+  table.ClearCFlag(MARGIN_FLAG);
   
   // fills NON-MARK with MARK
   if (tumor_fill)
@@ -656,7 +717,7 @@ static int dbscanfunc(int argc, char** argv) {
       "  [.cyf file]                 Input .cyf file path or '-' to stream from stdin.\n"
       "\n"
       "Optional Options:\n"
-      "  -v, --verbose             Increase output to stderr.\n"
+      "     -v, --verbose             Increase output to stderr.\n"
       "  -e [100]                Epsilon parameter for DBSCAN\n"
       "  -s [25]                 Min size parameter for DBSCAN\n"
       "  -c [100]                Min cluster size (otherwise mark as zero)\n"
@@ -1750,7 +1811,7 @@ static int tumorfunc(int argc, char** argv) {
 
   // when set, will only build KNN graph with BUILD_MARK + cells
   // not really used yet, so not exposed explicitly
-  bool build_tree_with_marked_only = false; 
+  //bool build_tree_with_marked_only = false; 
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -1798,7 +1859,7 @@ static int tumorfunc(int argc, char** argv) {
   
   table.SetupOutputWriter(opt::outfile);
 
-  table.AnnotateCall(n, frac, dist, flag_to_set, build_tree_with_marked_only);
+  table.AnnotateCall(n, frac, dist, flag_to_set);
 
   table.OutputTable();
 
@@ -1915,7 +1976,8 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "cut" || opt::module == "view" ||
 	 opt::module == "delaunay" || opt::module == "head" || 
 	 opt::module == "mean" || opt::module == "ldacreate" ||
-	 opt::module == "ldarun" || opt::module == "png" || 
+	 opt::module == "ldarun" || opt::module == "png" ||
+	 opt::module == "tls" || 
 	 opt::module == "radialdens" || opt::module == "margin" ||
 	 opt::module == "scramble" || opt::module == "scatter" ||
 	 opt::module == "hallucinate" || opt::module == "summary" ||
@@ -1984,8 +2046,8 @@ static int roifunc(int argc, char** argv) {
   // scale the polygons
   for (auto& p : rois) {
     for (auto& v : p.vertices) {
-      v.first *= micron_per_pixel;
-      v.second *= micron_per_pixel;
+      v.x *= micron_per_pixel;
+      v.y *= micron_per_pixel;
     }
   }
     
@@ -2978,11 +3040,13 @@ int debugfunc(int argc, char** argv) {
 
 static int convertfunc(int argc, char** argv) {
   const char* shortopts = "s:v";
+  bool mcmicro = false;
   uint32_t sampleid = static_cast<uint32_t>(-1);
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 's' : arg >> sampleid; break;
+    case 'c' : mcmicro = true; break;
     case 'v' : opt::verbose = true; break;
     default: die = true;
     }
@@ -3273,3 +3337,10 @@ static bool out_only_process(int argc, char** argv) {
   return opt::outfile.empty();
 
 }
+
+ Polygon::Polygon(const std::vector<JPoint>& vec) {
+   Id = -1;
+   Name = "na";
+   type = "na";
+   vertices = vec;
+ }

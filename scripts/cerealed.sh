@@ -12,5 +12,5 @@ if [[ ! -f "$input_file" ]]; then
     exit 1
 else
     echo "cysift convert ${input_file} ${output_file} -s $number"
-    cysift convert ${input_file} ${output_file} -s $number
+    cyftools convert ${input_file} ${output_file} -s $number
 fi

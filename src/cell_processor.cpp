@@ -53,14 +53,17 @@ int FilterProcessor::ProcessHeader(CellHeader& header) {
 int AverageProcessor::ProcessHeader(CellHeader& header) {
 
   m_header = header;
-
-  // which columns store data
-  /*for (size_t i = 0; i < m_header.GetAllTags()) {
-    const Tag& tag = m_header.GetAllTags().at(i);
-    if (tag.type == Tag::CA_TAG || tag.type == Tag::MA_TAG))
-    inds.push_back(i);
-    }*/
-
+  
+  // which column (if any) stores tls-id
+  size_t i = 0;
+  for (const auto& tag : m_header.GetDataTags()) {
+    if (tag.id == "tls_id") {
+      m_tls_column = i;
+      break;
+    }
+    i++;
+  }
+  
   // initialize sums to zero
   sums.resize(m_header.GetDataTags().size());
   if (sums.size())
@@ -87,6 +90,10 @@ int AverageProcessor::ProcessLine(Cell& cell) {
   }
   n++;
 
+  // if tls is a column, add ID to set
+  if (m_tls_column > 0)
+    m_tls_set.insert(cell.cols.at(m_tls_column));
+  
   // don't emit anything in StreamTable
   return CellProcessor::NO_WRITE_CELL;
 }
@@ -104,6 +111,9 @@ void AverageProcessor::EmitCell() const {
 
   cell.cols = means;
 
+  // for tls id column, we want the number of unique TLS
+  cell.cols[m_tls_column] = m_tls_set.size();
+  
   // write the one cell
   OutputLine(cell);
 }
@@ -1361,7 +1371,8 @@ int CerealProcessor::ProcessHeader(CellHeader& header) {
 
 int CerealProcessor::ProcessLine(const std::string& line) {
 
-  Cell row(line, m_header, m_cellid, m_sampleid);
+  Cell row(line, m_x_index, m_y_index, m_start, m_end,
+	   m_header, m_cellid, m_sampleid);
   m_cellid++;
 
   // serialize it

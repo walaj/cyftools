@@ -6,6 +6,7 @@
 #include "cell_selector.h"
 #include "polygon.h"
 
+#include <set>
 #include <string>
 #include <cassert>
 #include <random>
@@ -312,6 +313,10 @@ private:
 
   size_t n = 0;
   std::vector<double> sums;
+
+  // make a set to get uniqe tls ids
+  int m_tls_column = -1;
+  std::set<int> m_tls_set;
   
 };
 
@@ -719,6 +724,14 @@ class CerealProcessor : public LineProcessor {
     m_cmd = cmd;
     m_sampleid = sampleid;
   }
+
+  // which are the columns for X and Y
+  void SetXInd(int x) { m_x_index = x; }
+  void SetYInd(int y) { m_y_index = y; }
+
+  // which are the start and end columns for markers
+  void SetStartIndex(int start) { m_start = start; }
+  void SetEndIndex(int end) { m_end = end; }
   
   int ProcessHeader(CellHeader& header) override;
 
@@ -733,13 +746,21 @@ private:
 
   std::string m_cmd;
   std::string m_filename;
+
+  // index tracking
+  int m_x_index = 0;
+  int m_y_index = 1;  // assume starts with x and y
+  int m_start = 0;
+  int m_end = 0;  
   
   CellHeader m_header;
   
   std::unique_ptr<std::ofstream> m_os;
   std::unique_ptr<cereal::PortableBinaryOutputArchive> m_archive;
-  
 
+  // to catch ragged csv files
+  int m_last_line_count = -1;
+  
 };
 
 /*class RadialProcessor : public CellProcessor { 

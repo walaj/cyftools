@@ -5,6 +5,7 @@
 #include <limits>
 #include <cmath>
 #include <fstream>
+#include <unordered_set>
 
 #ifdef HAVE_CAIRO
 #include "cairo/cairo.h"
@@ -480,4 +481,19 @@ JPoint nextToTop(std::stack<JPoint> &S) {
 ///////////////
 //////////////
 
-
+bool is_mcmicro_meta(const std::string& str) {
+    static const std::unordered_set<std::string> keywords = {
+      "X_centroid",
+      "Y_centroid",
+      "CellID",
+      "Area",
+      "MajorAxisLength",
+      "MinorAxisLength",
+      "Eccentricity",
+      "Solidity",
+      "Extent",
+      "Orientation"
+    };
+    
+    return keywords.find(str) != keywords.end();
+}
