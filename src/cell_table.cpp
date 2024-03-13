@@ -950,7 +950,7 @@ int CellTable::PlotPNG(const std::string& file,
   std::uniform_int_distribution<> dis(0,1);
 
   float micron_per_pixel = 0.650f;
-  const float radius_size = 5.0f * scale_factor;
+  const float radius_size = 12.0f * scale_factor;
   const float ALPHA_VAL = 0.7f; // alpha for cell circles
   constexpr float TWO_PI = 2.0 * M_PI;
   
@@ -959,7 +959,7 @@ int CellTable::PlotPNG(const std::string& file,
   const int original_height = m_y_ptr->Max();    
 
   // Additional height to accommodate the legend at the top
-  const int legend_total_height = 400; // Adjust as needed
+  const int legend_total_height = original_height * 0.05; // Adjust as needed
 
   // New dimensions with extra space for the legend
   const int width = original_width;
@@ -979,7 +979,6 @@ int CellTable::PlotPNG(const std::string& file,
   cairo_rectangle(crp, 0, legend_total_height*scale_factor, width*scale_factor, height*scale_factor);
   cairo_fill(crp);
 
-  
   // defined below in color_map.cpp
   ColorLabelMap cm = ColorLabelMapForModule(module);
 
@@ -1030,6 +1029,20 @@ int CellTable::PlotPNG(const std::string& file,
 	c= color_dark_blue;
       else
 	c = color_gray;
+    }
+    else if (module == "jhuorion") {
+      if (IS_FLAG_SET(pf, ORIONJHU_CD3 + ORIONJHU_PD1))
+	c = color_red;
+      else if (IS_FLAG_SET(pf, ORIONJHU_CD3))
+	c = color_light_red;
+      else if (IS_FLAG_SET(pf, ORIONJHU_CD20))
+	c = color_purple;
+      else if (IS_FLAG_SET(pf, ORIONJHU_PANCK))
+	c = color_light_green;
+      else if (IS_FLAG_SET(pf, ORIONJHU_CD163))
+	c = color_cyan;
+      else if (IS_FLAG_SET(pf, ORIONJHU_FOXP3))
+	c = color_deep_pink;
     }
     else if (module == "margin") {
       if (IS_FLAG_SET(cf, MARGIN_FLAG) && !IS_FLAG_SET(cf, MARGIN_MANUAL_FLAG))

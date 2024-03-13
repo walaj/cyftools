@@ -1419,7 +1419,7 @@ static int plotpngfunc(int argc, char** argv) {
   
   float scale_factor = 0.25f;
   std::string roifile;
-  string colname;
+  std::string module;
   std::string title;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -1428,39 +1428,46 @@ static int plotpngfunc(int argc, char** argv) {
     case 'f' : arg >> scale_factor; break;
     case 'r' : arg >> roifile; break;
     case 't' : arg >> title; break;
-    case 'm' : arg >> colname; break;      
+    case 'm' : arg >> module; break;      
     default: die = true;
     }
   }
 
+  if (module.empty()) {
+    std::cerr << "ERROR: cyftools png -- need to input module with -m" << std::endl;
+    die = true;
+  }
+
+  
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE = 
-      "Usage: cyftools png <input.cyf> <output_png>\n"
+      "Usage: cyftools png <input.cyf> <output_png> -m module\n"
       "  Plot the input as a PNG file.\n"
       "\n"
       "Arguments:\n"
-      "  <input.cyf>           Input file path or '-' to stream from stdin.\n"
+      "  <input.cyf>               Input file path or '-' to stream from stdin.\n"
       "  <output_png>              Output PNG file path.\n"
+      "  -m <string>               Module (tumor, prostate, jhuorion, margin, orion, prostateimmune, pdl1, orionimmune)\n"      
       "\n"
       "Options:\n"
       "  -r <roifile>              Plot rois\n"
       "  -f <float>                Fractional scale factor. Default: 0.25. (1 means each pixel is 1 x-unit; smaller values result in a smaller image)\n"
-      "  -m <string>               Module (prostate, tumor, orion)\n"
       "  -t <string>               Title to display\n"
       "  -v, --verbose             Increase output to stderr.\n"
       "\n"
       "Example:\n"
-      "  cyftools png input.cyf output.png -f 0.5\n"
-      "  cyftools png - output.png -f 0.75 -v\n";
+      "  cyftools png input.cyf output.png -f 0.5 -m tls\n"
+      "  cyftools png - output.png -f 0.75 -v -m tumor\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
+
   // stream into memory
   build_table();
   
-  table.PlotPNG(opt::outfile, scale_factor, colname, roifile, title);
+  table.PlotPNG(opt::outfile, scale_factor, module, roifile, title);
   
   return 0;
 

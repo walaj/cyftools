@@ -145,6 +145,17 @@ ColorLabelMap ColorLabelMapForModule(const std::string& module) {
 	{color_dark_blue, "CD8+ only"}
       };
   }
+  else if (module == "jhuorion") {
+    cm = { 
+	{color_red,        "CD3+PD1+"},
+	{color_light_red,  "CD3+PD1-"},
+	{color_purple,     "CD20+"},
+	{color_light_green,"PanCK"},
+	{color_cyan,       "CD163+"},
+	{color_deep_pink,  "FOXP3+"},
+	{color_gray,       "Stroma"}
+    };
+  }
   else {
     std::cerr << "cyftools png -- color_map.cpp -- error, unknown module " << module << std::endl;
     assert(false);
