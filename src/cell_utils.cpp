@@ -288,7 +288,7 @@ void draw_scale_bar(cairo_t* cr, double x, double y, double bar_width, double ba
 }
 
 
-void add_legend_cairo(cairo_t* crp, int font_size,
+/*void add_legend_cairo(cairo_t* crp, int font_size,
 		      int legend_width, int legend_height,
 		      int legend_x, int legend_y,
 		      const ColorLabelMap& cm) {
@@ -321,9 +321,12 @@ void add_legend_cairo(cairo_t* crp, int font_size,
 #endif  
   
 }
+*/
+
 void add_legend_cairo_top(cairo_t* crp, int font_size,
                       int legend_height,
-                      int width, const ColorLabelMap& cm) {
+                      int width,
+			  const ColorLabelVec& cm) {
 #ifdef HAVE_CAIRO
   
   // Black background for legend area
@@ -337,7 +340,7 @@ void add_legend_cairo_top(cairo_t* crp, int font_size,
   cairo_text_extents_t extents;
   cairo_set_font_size(crp, font_size); // Adjust font size to your needs  
   for (const auto& entry : cm) {
-    std::string label = entry.second + space; // Add spaces between labels
+    std::string label = entry.label + space; // Add spaces between labels
     cairo_text_extents(crp, label.c_str(), &extents);
     total_width += extents.x_advance; // Use x_advance for accurate spacing
   }
@@ -353,8 +356,8 @@ void add_legend_cairo_top(cairo_t* crp, int font_size,
   
   // Draw the labels
   for (const auto& entry : cm) {
-    Color c = entry.first;
-    std::string label = entry.second;
+    Color c = entry.c;
+    std::string label = entry.label;
     
     // Set color for text
     cairo_set_source_rgb(crp, c.redf(), c.greenf(), c.bluef());
@@ -428,45 +431,55 @@ bool compare(const JPoint& p1, const JPoint& p2, const JPoint& p0) {
 }
 
 std::vector<JPoint> convexHull(std::vector<JPoint>& points) {
-    // Step 1: Find the bottommost point
-    std::swap(points[0], *std::min_element(points.begin(), points.end(), compareYThenX));
-    JPoint p0 = points[0];
 
-    // Step 2: Sort points based on polar angle with p0
-    std::sort(points.begin() + 1, points.end(), [p0](const JPoint& a, const JPoint& b) { return compare(a, b, p0); });
+  // returning since can't compute so small
+  if (points.size() < 3)
+    return std::vector<JPoint>();
+  
+  //std::cerr << "finding bottomost point" << std::endl;
+  // Step 1: Find the bottommost point
+  std::swap(points[0], *std::min_element(points.begin(), points.end(), compareYThenX));
+  JPoint p0 = points[0];
 
-    // Step 3: Remove points that are collinear with p0
-    int m = 1; // Initialize size of modified array
-    for (int i = 1; i < points.size(); ++i) {
-        while (i < points.size() - 1 && orientation(p0, points[i], points[i+1]) == 0) i++;
-        points[m++] = points[i];
-    }
+  //std::cerr << "sorting polar" << std::endl;
+  // Step 2: Sort points based on polar angle with p0
+  std::sort(points.begin() + 1, points.end(), [p0](const JPoint& a, const JPoint& b) { return compare(a, b, p0); });
 
-    // Convex hull is not possible if there are less than 3 unique points
-    if (m < 3) return std::vector<JPoint>();
-
-    // Step 4: Create an empty stack and push first three points to it
-    std::stack<JPoint> S;
-    S.push(points[0]);
-    S.push(points[1]);
-    S.push(points[2]);
-
-    // Step 5: Process remaining points
-    for (int i = 3; i < m; i++) {
-        while (S.size() > 1 && orientation(nextToTop(S), S.top(), points[i]) != 2) S.pop();
-        S.push(points[i]);
-    }
-
-    std::vector<JPoint> hull;
-    
-    // Now stack has the output points, print contents of stack
-    while (!S.empty()) {
-        JPoint p = S.top();
-	hull.push_back(p);
-        //std::cout << "(" << p.x << ", " << p.y << ")" << std::endl;
-        S.pop();
-    }
-    return hull;
+  //std::cerr << "removing colinear points" << std::endl;
+  // Step 3: Remove points that are collinear with p0
+  int m = 1; // Initialize size of modified array
+  for (int i = 1; i < points.size(); ++i) {
+    while (i < points.size() - 1 && orientation(p0, points[i], points[i+1]) == 0) i++;
+    points[m++] = points[i];
+  }
+  
+  // Convex hull is not possible if there are less than 3 unique points
+  if (m < 3) return std::vector<JPoint>();
+  
+  // Step 4: Create an empty stack and push first three points to it
+  std::stack<JPoint> S;
+  S.push(points[0]);
+  S.push(points[1]);
+  S.push(points[2]);
+  
+  // Step 5: Process remaining points
+  //std::cerr << "processing remaining points" << std::endl;
+  for (int i = 3; i < m; i++) {
+    while (S.size() > 1 && orientation(nextToTop(S), S.top(), points[i]) != 2) S.pop();
+    S.push(points[i]);
+  }
+  
+  std::vector<JPoint> hull;
+  
+  // Now stack has the output points, print contents of stack
+  //std::cerr << "emptying stack" << std::endl;
+  while (!S.empty()) {
+    JPoint p = S.top();
+    hull.push_back(p);
+    //std::cout << "(" << p.x << ", " << p.y << ")" << std::endl;
+    S.pop();
+  }
+  return hull;
 }
 
 

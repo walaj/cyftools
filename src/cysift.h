@@ -45,12 +45,12 @@
 // Macro to test if a flag is set
 // Data flag (cflag or pflag) is one, the flag to query is two
 // eg IS_FLAG_SET(cflag, TUMOR_FLAG)
-#define IS_FLAG_SET(flags, flag) (((flags) & (flag)) == (flag))
+#define IS_FLAG_SET(flags, flag) (((flags) & (flag)) == (flag) && flag > 0)
 
-#define IS_FLAG_I_SET(flags, i) ((flags & (1ull << (i))) != 0)
+#define IS_FLAG_I_SET(flags, i) ((flags & (1ull << (i))) != 0 && flag > 0)
 
 // Macro to test if any of the flags are set
-#define IS_FLAG_SET_OR(flags, flag) ((flags) & (flag))
+#define IS_FLAG_SET_OR(flags, flag) ((flags) & (flag) && flag > 0)
 
 // are all flags off
 #define ARE_FLAGS_OFF(flags, flag) (((flags) & (flag)) == 0)

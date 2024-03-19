@@ -814,15 +814,16 @@ void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
   ClearCFlag(MARK_FLAG + TLS_FLAG); // clear both flags
   
   // get the dbscan_cluster column
-   std::unordered_map<std::string, FloatColPtr>::iterator it = m_table.find("dbscan_cluster");
+  std::unordered_map<std::string, FloatColPtr>::iterator it = m_table.find("dbscan_cluster");
   assert(it != m_table.end());
   FloatColPtr db_cl_ptr = it->second;
-
+  
   // setup a new column for tls id
   FloatColPtr tls_id = std::make_shared<FloatCol>();
   tls_id->reserve(n);
-
+  
   // loop cells and transfer cluster number to TLS
+  if (m_verbose) { std::cerr << "...cyftools tls - transfering dbscan clusters to tls" << std::endl; }
   for (size_t i = 0; i < n; i++) {
     float dbcluster_num  = (*db_cl_ptr)[i];
     tls_id->PushElem(dbcluster_num);
@@ -836,12 +837,14 @@ void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
   std::set<float> unique_tls(tls_id->begin(), tls_id->end()); 
 
   // loop the clusters and make the convex hull
+  if (m_verbose) { std::cerr << "...cyftools tls - looping clusters and making convex hull" << std::endl; } 
   for (const auto& cl : unique_tls) {
     
     // cluster 0 is holder for not a cluster
     if (cl == 0)
       continue;
-    
+
+
     // fill polygon with the points in the TLS definition
     //    that will need to have hull around them
     std::vector<JPoint> polygon;
@@ -854,6 +857,9 @@ void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
     // get the convex hull
     std::vector<JPoint> convex_hull = convexHull(polygon);
 
+    if (polygon.empty())
+      continue;
+    
     // Make a polygon (roi) from the points
     Polygon tls_boundary_hull(convex_hull);
 
@@ -870,6 +876,7 @@ void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
 
   // Step 9
   // HIstogram the tls counts
+  if (m_verbose) { std::cerr << "...cyftools tls - histograming the tls counts " << std::endl; } 
   std::unordered_map<float, size_t> histo;
   for (const auto& t : *tls_id) 
     histo[t]++;

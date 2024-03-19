@@ -75,7 +75,8 @@ public:
 	      float scale_factor,
 	      const std::string& module,
 	      const std::string& roifile,
-	      const std::string& title	      
+	      const std::string& title,
+	      ColorLabelVec palette
 	      ) const;
 
   //////

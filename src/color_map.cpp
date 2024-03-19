@@ -4,6 +4,32 @@
 #include <iostream>
 #include <cassert>
 
+std::ostream& operator<<(std::ostream& os, const Color& obj) {
+  os << obj.red << "," << obj.green << "," << obj.blue << "," << obj.alpha;
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const CellColor& obj) {
+    os << "pflag: " << obj.pflag << ", "
+       << "cflag: " << obj.cflag << ", "
+       << "Color: " << obj.c << ", " 
+       << "label: " << obj.label;
+    return os;
+}
+
+
+Color select_color(cy_uint cflag, cy_uint pflag, const ColorLabelVec& palette) {
+  
+  for (const auto& c : palette) {
+    //    std::cerr << " cflag " << cflag << " c.cflag " << c.cflag << " ISC " <<
+    // IS_FLAG_SET(cflag, c.cflag) << " pflag " << pflag << " c.pflag " <<
+    // c.pflag << " ISP " << IS_FLAG_SET(pflag, c.pflag) << " c.c " << c.c << std::endl;
+    if (IS_FLAG_SET(cflag, c.cflag) || IS_FLAG_SET(pflag, c.pflag))
+      return c.c;
+  }
+  return palette.back().c; // default is the last
+}
+
 Color color_yellow = {255,255,0}; 
 Color color_deep_pink = {255,20,147};
 Color color_red = {255,0,0};
@@ -63,99 +89,99 @@ Color colorbrewer_3blue_light   = {222,235,247};
   };
 
 // get color map by module name
-ColorLabelMap ColorLabelMapForModule(const std::string& module) {
+ColorLabelVec ColorLabelVecForModule(const std::string& module) {
 
-  ColorLabelMap cm;
+  ColorLabelVec cm;
   if (module == "tumor") {
     cm = {
-      {colorbrewer_3red_light,    "Tumor (Automated)"},
-      {colorbrewer_3red_medium,   "Tumor (Manual)"},
-      {colorbrewer_3red_dark,     "Tumor (A+M)"},
-      {colorbrewer_3blue_light,   "Stroma"},
-      {color_cyan,                "Margin"},
-      {color_deep_pink,           "Tcell cluster"},
-      {colorbrewer_3green_light,  "CD57"},
-      {colorbrewer_3green_medium, "CD57"},
-      {colorbrewer_3green_dark,   "CD57"}
+      {TUMOR_FLAG,                     0, colorbrewer_3red_light,  "Tumor (Automated)"},
+      {TUMOR_MANUAL_FLAG,              0, colorbrewer_3red_medium, "Tumor (Manual)"},
+      {TUMOR_MANUAL_FLAG + TUMOR_FLAG, 0, colorbrewer_3red_dark,   "Tumor (A+M)"},
+      {MARGIN_FLAG,                    0, color_cyan,              "Margin"},
+      {0,                              0, colorbrewer_3blue_light, "Stroma"}
     };
   }
   else if (module == "tls") {
     cm = {
-      {color_deep_pink,         "CD3-only"},
-      {color_purple,            "CD20"},
-      {color_cyan,              "CD4"},
-      {color_red,               "CD8"},
-      {color_dark_blue,         "other TLS"}
+      {TLS_FLAG, PROSTATE_CD20,color_purple,            "CD20"},
+      {TLS_FLAG, PROSTATE_CD4, color_cyan,              "CD4"},
+      {TLS_FLAG, PROSTATE_CD8, color_red,               "CD8"},
+      {TLS_FLAG, PROSTATE_CD3, color_deep_pink,           "CD3"},
+      {TLS_FLAG, 0,            color_dark_blue,         "other TLS"},
+      {0,0,color_gray,      "Other"}
     };
   }
   else if (module == "margin") {
     cm = {
-      {colorbrewer_3red_light,  "Margin (Automated)"},
-      {colorbrewer_3red_medium, "Margin (Manual)"},
-      {colorbrewer_3red_dark,   "Margin (A+M)"}
+      {MARGIN_MANUAL_FLAG + MARGIN_FLAG, 0, colorbrewer_3red_dark,   "Margin (A+M)"},
+      {MARGIN_FLAG,                      0, colorbrewer_3red_light,  "Margin (Automated)"},
+      {MARGIN_MANUAL_FLAG,               0, colorbrewer_3red_medium, "Margin (Manual)"},
+      {0,0,color_gray,      "Other"}
     };
   }
   else if (module == "artifact") {
     cm = {
-      {color_red, "PanCK CD3"}
+      {0, ORION_CD3 + ORION_PANCK, color_red, "PanCK CD3"}
     };
   }
   else if (module == "pdl1") {
     cm = {
-      {color_light_red,  "PanCK PD-L1 neg"},
-      {color_red,        "PanCK PD-L1 pos"},
-      {color_light_green,"CD163 PD-L1 neg"},
-      {color_dark_green, "CD163 PD-L1 pos"}
+      {0, ORION_PANCK + ORION_PDL1, color_red,        "PanCK PD-L1 pos"},
+      {0, ORION_PANCK, color_light_red,  "PanCK PD-L1 neg"},
+      {0, ORION_CD163 + ORION_PDL1, color_dark_green, "CD163 PD-L1 pos"},
+      {0, ORION_CD163, color_light_green,"CD163 PD-L1 neg"},
+      {0,0,color_gray,      "Stroma"}
     };
   } else if (module == "prostateimmune") {
     cm = {
-      {color_light_red,    "CD3+"},
-      {color_yellow,       "CD8+"},
-      {color_deep_pink,    "CD20+"},
-      {color_light_green,  "FOXP3+"},
-      {color_purple,       "TLS"}
+      {0, PROSTATE_FOXP3, color_light_green,  "FOXP3+"},      
+      {0, PROSTATE_CD8, color_red,            "CD8+"},
+      {0, PROSTATE_CD3, color_deep_pink,      "CD3+"},      
+      {0, PROSTATE_CD20, color_purple,        "CD20+"},
+      {0,0,color_gray,      "Other"}
     };
   } else if (module == "orion") {
       cm = {
-	{color_red,        "T-cell PD-1 pos"},
-	{color_light_red,  "T-cell PD-1 neg"},
-	{color_purple,     "B-cell"},
-	{color_dark_green, "PanCK - PD-L1 pos"},
-	{color_light_green,"PanCK - PD-L1 neg"},
-	{color_cyan,       "Other PD-L1 pos"},
-	{color_deep_pink,  "FOXP3 pos"},
-	{color_gray,       "Stroma"}
+	{0, ORION_PD1 + ORION_CD3, color_red, "T-cell PD-1 pos"},
+	{0, ORION_CD3, color_light_red,       "T-cell PD-1 neg"},
+	{0, ORION_CD20, color_purple,     "B-cell"},
+	{0, ORION_PANCK + ORION_PDL1, color_dark_green, "PanCK - PD-L1 pos"},
+	{0, ORION_PANCK, color_light_green,"PanCK - PD-L1 neg"},
+	{0, ORION_PDL1, color_cyan,       "Other PD-L1 pos"},
+	{0, ORION_FOXP3, color_deep_pink,  "FOXP3 pos"},
+	{0,0,color_gray,      "Stroma"}
       };
   }
   else if (module == "prostate") {
       cm = {
-	{color_light_red, "T-cell PD-1 pos"},
-	{color_red,       "T-cell PD-1 neg"},
-	{color_purple,    "B-cell"},
-	{color_dark_green,"AMACR+"},
-	{color_gray,      "Stromal"}
+	{0, PROSTATE_PD1 + PROSTATE_CD3, color_light_red, "T-cell PD-1 pos"},
+	{0, PROSTATE_CD3, color_red,       "T-cell PD-1 neg"},
+	{0, PROSTATE_CD20, color_purple,    "B-cell"},
+	{0, PROSTATE_AMCAR, color_dark_green,"AMACR+"},
+	{0,0,color_gray,      "Stroma"}
       };
   }
   else if (module == "orionimmune") {
       cm = {
-	{color_light_red, "CD3+CD4+"},
-	{color_red,       "CD3+CD8+"},
-	{color_purple,    "CD3+ only"},
-	{color_dark_green,"CD4+ only"},
-	{color_dark_blue, "CD8+ only"}
+	{0, ORION_CD3 + ORION_CD4, color_light_red, "CD3+CD4+"},
+	{0, ORION_CD3 + ORION_CD8, color_red,       "CD3+CD8+"},
+	{0, ORION_CD3, color_purple,    "CD3+ only"},
+	{0, ORION_CD4, color_dark_green,"CD4+ only"},
+	{0, ORION_CD8, color_dark_blue, "CD8+ only"},
+	{0,0,color_gray,      "Other"}
       };
   }
   else if (module == "jhuorion") {
     cm = { 
-	{color_red,        "CD3+PD1+"},
-	{color_light_red,  "CD3+PD1-"},
-	{color_purple,     "CD20+"},
-	{color_light_green,"PanCK"},
-	{color_cyan,       "CD163+"},
-	{color_deep_pink,  "FOXP3+"},
-	{color_gray,       "Stroma"}
+      {0, ORIONJHU_CD3 + ORIONJHU_PD1, color_red,        "CD3+PD1+"},
+      {0, ORIONJHU_CD3, color_light_red,  "CD3+PD1-"},
+      {0, ORIONJHU_CD20, color_purple,     "CD20+"},
+      {0, ORIONJHU_PANCK, color_light_green,"PanCK"},
+      {0, ORIONJHU_CD163, color_cyan,       "CD163+"},
+      {0, ORIONJHU_FOXP3, color_deep_pink,  "FOXP3+"},
+      {0,0,color_gray,       "Stroma"}
     };
-  }
+  } 
   else {
     std::cerr << "cyftools png -- color_map.cpp -- error, unknown module " << module << std::endl;
     assert(false);

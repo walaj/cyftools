@@ -108,14 +108,15 @@ double jaccardSimilarity(const std::vector<bool>& v1, const std::vector<bool>& v
 /// plotting
 void add_legend_cairo_top(cairo_t* crp, int font_size,
 			  int legend_height,
-			  int width, const ColorLabelMap& cm);
+			  int width,
+			  const ColorLabelVec& cm);
 
 
-void add_legend_cairo(cairo_t* crp, int font_size,
+/*void add_legend_cairo(cairo_t* crp, int font_size,
 		      int legend_width, int legend_height,
 		      int legend_x, int legend_y,
 		      const ColorLabelMap& cm);
-
+*/
 void draw_scale_bar(cairo_t* cr, double x, double y, double bar_width, double bar_height, const std::string& text);
 
 void column_to_row_major(std::vector<float>& data, int nobs, int ndim);

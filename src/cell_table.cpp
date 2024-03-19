@@ -938,7 +938,8 @@ int CellTable::PlotPNG(const std::string& file,
 		       float scale_factor,
 		       const std::string& module,
 		       const std::string& roifile,
-		       const std::string& title
+		       const std::string& title,
+		       ColorLabelVec palette
 		       ) const {
   
 #ifdef HAVE_CAIRO
@@ -979,8 +980,17 @@ int CellTable::PlotPNG(const std::string& file,
   cairo_rectangle(crp, 0, legend_total_height*scale_factor, width*scale_factor, height*scale_factor);
   cairo_fill(crp);
 
+  // get a pre-selected module if the map is zero
+  if (palette.empty()) {
+    palette = ColorLabelVecForModule(module);
+  } 
+
+  if (m_verbose)
+    for (const auto& pp : palette)
+      std::cerr << pp << std::endl;
+  
   // defined below in color_map.cpp
-  ColorLabelMap cm = ColorLabelMapForModule(module);
+  //ColorLabelMap cm = ColorLabelMapForModule(module);
 
   // loop and draw
   size_t count = 0;
@@ -999,143 +1009,8 @@ int CellTable::PlotPNG(const std::string& file,
     CellFlag pflag(pf);
     CellFlag cflag(cf);
 
-    // default color
-    Color c = color_gray;
-
-    // Color by tumor / stromal call
-    if (module == "tumor") {
-      if (IS_FLAG_SET(cf, TUMOR_FLAG)  && !IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = cm[0].first;
-      else if (!IS_FLAG_SET(cf, TUMOR_FLAG) && IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = cm[1].first;
-      else if (IS_FLAG_SET(cf, TUMOR_FLAG) && IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = cm[2].first;
-      else if (!IS_FLAG_SET(cf, TUMOR_FLAG)  && !IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = cm[3].first;
-    }
-    
-    else if (module == "tls") {
-      if (IS_FLAG_SET(cf, PROSTATE_AMCAR))
-      	c= color_gray;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD20))
-	c= color_purple;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD8))
-	c= color_red;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD4))
-	c= color_cyan;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD3))
-	c= color_deep_pink;
-      else if (IS_FLAG_SET(cf, TLS_FLAG))
-	c= color_dark_blue;
-      else
-	c = color_gray;
-    }
-    else if (module == "jhuorion") {
-      if (IS_FLAG_SET(pf, ORIONJHU_CD3 + ORIONJHU_PD1))
-	c = color_red;
-      else if (IS_FLAG_SET(pf, ORIONJHU_CD3))
-	c = color_light_red;
-      else if (IS_FLAG_SET(pf, ORIONJHU_CD20))
-	c = color_purple;
-      else if (IS_FLAG_SET(pf, ORIONJHU_PANCK))
-	c = color_light_green;
-      else if (IS_FLAG_SET(pf, ORIONJHU_CD163))
-	c = color_cyan;
-      else if (IS_FLAG_SET(pf, ORIONJHU_FOXP3))
-	c = color_deep_pink;
-    }
-    else if (module == "margin") {
-      if (IS_FLAG_SET(cf, MARGIN_FLAG) && !IS_FLAG_SET(cf, MARGIN_MANUAL_FLAG))
-	c = cm[0].first;
-      else if (!IS_FLAG_SET(cf,MARGIN_FLAG) && IS_FLAG_SET(cf, MARGIN_MANUAL_FLAG))
-	c = cm[1].first;
-      else if (IS_FLAG_SET(cf, MARGIN_FLAG) && IS_FLAG_SET(cf, MARGIN_MANUAL_FLAG))
-	c = cm[2].first;
-    }
-    else if (module == "artifact") {
-      if (IS_FLAG_SET(pf, ORION_CD3) && IS_FLAG_SET(pf, ORION_PANCK))
-	c = color_red;
-    }
-    else if (module == "prostate") {
-      micron_per_pixel=0.650f;
-      if (IS_FLAG_SET(pf, PROSTATE_CD3) && IS_FLAG_SET(pf, PROSTATE_PD1))
-	c = color_red;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD3) && !IS_FLAG_SET(pf, PROSTATE_PD1))
-	c = color_light_red;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD20)) 
-	c = color_purple;
-      else if (IS_FLAG_SET(pf, PROSTATE_AMCAR)) 
-	c = color_dark_green;
-      else
-	c = color_gray;
-      
-      //overrite
-      if (IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = color_deep_pink;
-      
-    }
-    else if (module == "prostateimmune") {
-      micron_per_pixel=0.650f;      
-      if (IS_FLAG_SET(pf, PROSTATE_CD3))
-	c = color_light_red;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD8))
-	c = color_yellow;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD20)) 
-	c = color_deep_pink;
-      else if (IS_FLAG_SET(pf, PROSTATE_FOXP3)) 
-	c = color_dark_green;
-      else
-	c = color_gray;
-      
-      // override colors
-      if (IS_FLAG_SET(cf, TLS_FLAG))
-	c = color_purple;
-      
-    }
-    else if (module == "pdl1") {
-      if (IS_FLAG_SET(pf, ORION_PANCK)) {
-	c = IS_FLAG_SET(pf, ORION_PDL1) ? color_red : color_light_red;
-      } else if (IS_FLAG_SET(pf, ORION_CD163)) {
-	c = IS_FLAG_SET(pf, ORION_PDL1) ? color_dark_green : color_light_green;
-      } else {
-	c = color_gray_90;
-      }
-    }
-    else if (module == "orion") {
-      if (IS_FLAG_SET(pf, ORION_PD1+ORION_CD3))  // T-cell - PD-1+ 
-	c = color_red;
-      else if (IS_FLAG_SET(pf, ORION_PD1) && !IS_FLAG_SET(pf, ORION_PD1)) // T-cell - PD-1-
-	c = color_light_red;
-      else if (IS_FLAG_SET(pf, ORION_CD20))
-	c = color_purple;
-      else if (IS_FLAG_SET(pf, ORION_PANCK + ORION_PDL1))  // PD-L1 POS tumor cell
-	c = color_dark_green;
-      else if (IS_FLAG_SET(pf, ORION_PANCK) && !IS_FLAG_SET(pf, ORION_PDL1)) // PD-L1 NEG tumor cell
-	c = color_light_green;
-      else if (IS_FLAG_SET(pf, ORION_PDL1)) // PD-L1 any cell
-	c = color_cyan;
-      else
-	c = color_gray;
-      
-      // overwrite
-      if (IS_FLAG_SET(pf, ORION_FOXP3)) // foxp3
-	c = color_deep_pink;
-      
-    } else if (module == "orionimmune") {
-      if      (IS_FLAG_SET(pf, ORION_CD3 + ORION_CD4)) 
-	c = color_light_red;
-      else if (IS_FLAG_SET(pf, ORION_CD3 + ORION_CD8))
-	c = color_light_red;
-      else if (IS_FLAG_SET(pf, ORION_CD3) && !IS_FLAG_SET(pf, ORION_CD4) && !IS_FLAG_SET(pf, ORION_CD8))
-	c = color_purple;
-      else if (IS_FLAG_SET(pf,ORION_CD4) && !IS_FLAG_SET(pf,ORION_CD3)) // CD4+CD3-
-	c = color_dark_green;
-      else if (IS_FLAG_SET(pf,ORION_CD8) && !IS_FLAG_SET(pf,ORION_CD3)) //CD8+CD3-
-	c = color_dark_blue;
-    } else {
-      std::cerr << "ERROR: UNKNOWN MODULE. Must be one of: orion, prostate, tcell, tumor" << std::endl;
-      assert(false);
-    }
+    // select the color for this cell from the palette
+    Color c = select_color(cf, pf, palette);
     
     cairo_set_source_rgba(crp, c.redf(), c.greenf(), c.bluef(), ALPHA_VAL);
     cairo_arc(crp, x*scale_factor, y*scale_factor, radius_size, 0, TWO_PI);
@@ -1276,7 +1151,7 @@ int CellTable::PlotPNG(const std::string& file,
   add_legend_cairo_top(crp, font_size,
 		       legend_total_height*scale_factor,
 		       width*scale_factor,
-		       cm); 
+		       palette); 
 
   // this is where the y is for bottom of text
   float y_base = legend_total_height*scale_factor/2 + font_size/2;

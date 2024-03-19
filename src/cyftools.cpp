@@ -1,6 +1,7 @@
 #include "cell_column.h"
 #include "cell_table.h"
 #include "cell_processor.h"
+#include "color_map.h"
 
 #include <unistd.h> // or #include <getopt.h> on Windows systems
 #include <getopt.h>
@@ -1413,7 +1414,7 @@ static int ldarunfunc(int argc, char** argv) {
 }
 
 static int plotpngfunc(int argc, char** argv) {
-  const char* shortopts = "vf:m:r:t:";
+  const char* shortopts = "vf:m:r:t:p:";
   
 #ifdef HAVE_CAIRO
   
@@ -1421,6 +1422,7 @@ static int plotpngfunc(int argc, char** argv) {
   std::string roifile;
   std::string module;
   std::string title;
+  std::string palette;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -1428,13 +1430,14 @@ static int plotpngfunc(int argc, char** argv) {
     case 'f' : arg >> scale_factor; break;
     case 'r' : arg >> roifile; break;
     case 't' : arg >> title; break;
-    case 'm' : arg >> module; break;      
+    case 'm' : arg >> module; break;
+    case 'p' : arg >> palette; break;
     default: die = true;
     }
   }
 
-  if (module.empty()) {
-    std::cerr << "ERROR: cyftools png -- need to input module with -m" << std::endl;
+  if (module.empty() && palette.empty()) {
+    std::cerr << "ERROR: cyftools png -- need to input module with -m or palette with -p" << std::endl;
     die = true;
   }
 
@@ -1448,7 +1451,9 @@ static int plotpngfunc(int argc, char** argv) {
       "Arguments:\n"
       "  <input.cyf>               Input file path or '-' to stream from stdin.\n"
       "  <output_png>              Output PNG file path.\n"
-      "  -m <string>               Module (tumor, prostate, jhuorion, margin, orion, prostateimmune, pdl1, orionimmune)\n"      
+      "  -m <string>               Module (tumor, prostate, jhuorion, margin, orion, prostateimmune, pdl1, orionimmune)\n"
+      "  -p <file>                 File containing a palette which is: cflag value, pflag value, R, G, B, alpha, label. Colors are in order.\n"
+      "                            Example line: 0,1024,255,0,0,1,Tcell\n"
       "\n"
       "Options:\n"
       "  -r <roifile>              Plot rois\n"
@@ -1463,11 +1468,55 @@ static int plotpngfunc(int argc, char** argv) {
     return 1;
   }
 
+  ColorLabelVec colors;
+  
+  // read the palette file
+  if (!palette.empty()) {
+    std::ifstream input_file(palette);
+    if (!input_file.is_open()) {
+      throw std::runtime_error("Failed to open file: " + palette);
+    }
+    std::string line;
+    std::regex pattern("^[-+]?[0-9]*\\.?[0-9]+,");
 
+    // loop the lines
+    while (std::getline(input_file, line)) {
+
+      // remove white space
+      //line.erase(std::remove_if(line.begin(), line.end(), ::isspace),line.end());
+
+      // skip empty and comment
+      if (line.empty()) continue;
+      if (line.at(0) == '#') continue;
+
+      // tokenize
+      std::vector<std::string> tokens = tokenize_comma_delimited(line);
+      if (tokens.size() != 7) {
+	std::cerr << "Error: cytools png -- palette line " << line << " does not have 7 elements (pflag, cflag,r,g,b,a,label)" << std::endl;
+	return 1;
+      }
+
+      // build the color
+      CellColor col;
+      col.cflag   = std::stoi(tokens[0]);
+      col.pflag   = std::stoi(tokens[1]);
+      col.c.red   = std::stoi(tokens[2]);
+      col.c.green = std::stoi(tokens[3]);
+      col.c.blue  = std::stoi(tokens[4]);
+      col.c.alpha = std::stof(tokens[5]);
+      col.label   = tokens[6];
+
+      colors.push_back(col);
+
+      if (opt::verbose)
+	std::cerr << ".... read " << col << std::endl;
+    }
+  }
+  
   // stream into memory
   build_table();
   
-  table.PlotPNG(opt::outfile, scale_factor, module, roifile, title);
+  table.PlotPNG(opt::outfile, scale_factor, module, roifile, title, colors);
   
   return 0;
 
