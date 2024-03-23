@@ -2,6 +2,7 @@
 A command-line interface for wrangling data from CyCIF images
 
 ## Build
+Cyftools can currently only be built from source. It requires a few dependencies to be installed to compile, see instructions below.
 
 ### Clone
 Clone the project recursively (it has submodules):
