@@ -40,7 +40,7 @@ git clone git@github.com:angeloskath/supervised-lda $HOME/git/supervised-lda
 
 Then follow the instructions [here](https://github.com/angeloskath/supervised-lda/blob/master/CMakeLists.txt) to build it from source (might need to install cmake first as well).
 
-On MacBook Arm architectures the `make check` on supervised-lda might fail with stuff like:
+On MacBook ARM architectures the `make check` on supervised-lda might fail with stuff like:
 
 ```
 test_approximate_supervised_expectation_step.cpp:166:5: error: reference to 'VectorX' is ambiguous`
