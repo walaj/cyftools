@@ -2,8 +2,7 @@
 CC=g++
 
 HMSHOME=/home/jaw34
-BREWHOME=/
-#BREWHOME=/opt/homebrew/opt
+BREWHOME=/opt/homebrew/opt
 USE64BIT=-DUSE_64_BIT
 
 ######################################
@@ -15,12 +14,11 @@ CEREAL = -I../external/cereal/include ## header only
 
 ## Required header-only libraries for UMAP functionality (all are required)
 ## Could theoretically have KNN only if want KNN graphs but not umap
-UMAP =  #-I../external/umappp/include -I../external/CppIrlba/include ##-DHAVE_UMAPPP -DKNNCOLLE_NO_KMKNN -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
-KNN = #-I../external/knncolle/include -DHAVE_KNNCOLLE
-#EIGEN = -I../external/eigen -DHAVE_EIGEN -Wno-deprecated-declarations
+UMAP =  -I../external/umappp/include -I../external/CppIrlba/include -DHAVE_UMAPPP -DKNNCOLLE_NO_KMKNN -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
+KNN = -I../external/knncolle/include -DHAVE_KNNCOLLE
 
 ## Very optional header-only libraries for alternative neighor finding algorithms (e.g. in UMAP, etc)
-KMEANS = #-I../external/CppKmeans/include -DHAVE_KMEANS
+KMEANS = -I../external/CppKmeans/include -DHAVE_KMEANS
 
 ######################################
 ####### OTHER OPTIONAL LIBARARIES ####
