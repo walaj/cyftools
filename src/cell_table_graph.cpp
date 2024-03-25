@@ -27,10 +27,10 @@
 // but still here in case useful later
 #define CELL_BUFFER_LIMIT 1
 
-#ifdef __clang__
-std::vector<Cell> cell_buffer;
-#pragma omp threadprivate(cell_buffer)
-#endif
+//#ifdef __clang__
+//std::vector<Cell> cell_buffer;
+//#pragma omp threadprivate(cell_buffer)
+//#endif
 
 void CellTable::UMAP(int num_neighbors) { 
 
@@ -86,8 +86,12 @@ void CellTable::UMAP(int num_neighbors) {
 
   umappp::NeighborList<float> nlist;
   nlist.resize(nobs);
-  
+
+#ifdef HAVE_OMP  
 #pragma omp parallel for num_threads(m_threads)
+#else
+  std::cerr << "OMP not included, no support for multithreading. Compile with to support" << std::endl;
+#endif  
   for (size_t i = 0; i < nobs; ++i) {
     if (i % 50000 == 0 && m_verbose)
       std::cerr << "...processing cell "
@@ -99,8 +103,10 @@ void CellTable::UMAP(int num_neighbors) {
 		<< std::endl;      
     
     JNeighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
-    
+
+#ifdef HAVE_OMP  
 #pragma omp critical
+#endif  
     {
       nlist[i] = neigh;
     }
@@ -670,6 +676,7 @@ void CellTable::IslandFill(size_t n, int flag_from, bool invert_from,
   
 }
 
+#ifdef HAVE_KNNCOLLE
 knncolle::VpTree<knncolle::distances::Euclidean, int, float>
 CellTable::build_vp_tree(const std::vector<bool>& ix) const {
 
@@ -713,6 +720,7 @@ CellTable::build_vp_tree(const std::vector<bool>& ix) const {
    return searcher;
    
 }
+#endif
 
 void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
 			int min_cluster_size, int dist_max) {
@@ -947,8 +955,12 @@ void CellTable::AnnotateCall(int num_neighbors, float frac,
   //}
   
   knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher = build_vp_tree(ix);
-  
+
+#ifdef HAVE_OMP  
 #pragma omp parallel for num_threads(m_threads)
+#else
+  std::cerr << "OMP not included, no support for multithreading. Compile with to support" << std::endl;
+#endif  
   for (size_t i = 0; i < nobs; ++i) {
     
     // verbose printing
@@ -1048,7 +1060,11 @@ void CellTable::TumorMargin(float dist,
 
   size_t margin_count = 0;
   
+#ifdef HAVE_OMP  
 #pragma omp parallel for num_threads(m_threads) schedule(dynamic, 100)
+#else
+  std::cerr << "OMP not included, no support for multithreading. Compile with to support" << std::endl;
+#endif  
   for (size_t i = 0; i < num_cells; i++) {
     std::vector<float> cell_count;
     std::vector<size_t> total_cell_count;
@@ -1336,8 +1352,11 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   // this will be inclusive of this point
 
   assert(ml_kdtree);
-  
+#ifdef HAVE_OMP  
 #pragma omp parallel for num_threads(m_threads) schedule(dynamic, 100)
+#else
+  std::cerr << "OMP not included, no support for multithreading. Compile with to support" << std::endl;
+#endif
   for (size_t i = 0; i < m_pflag_ptr->size(); i++) {
     std::vector<float> cell_count;
     std::vector<size_t> total_cell_count;  
@@ -1438,6 +1457,8 @@ void CellTable::Select(CellSelector select,
 		       bool or_toggle,
 		       float radius) {
 
+#ifdef HAVE_MLPACK
+
   // add a dummy to ensure that OutputTable recognizes that m_cells_to_write is non-empty
   m_cells_to_write.insert(-1);
   validate();
@@ -1501,7 +1522,11 @@ void CellTable::Select(CellSelector select,
   if (m_verbose)
     std::cerr << "...starting second loop to include cells within radius of include" << std::endl;
 
+#ifdef HAVE_OMP  
 #pragma omp parallel for num_threads(m_threads)
+#else
+  std::cerr << "OMP not included, no support for multithreading. Compile with to support" << std::endl;
+#endif  
   for (size_t i = 0; i < count; i++) {
 
     if (i % 100000 == 0 && m_verbose)
@@ -1530,7 +1555,6 @@ void CellTable::Select(CellSelector select,
 
     // this will be inclusive of this point
     ml_kdtree->Search(query, r, neighbors, distances);
-
     
     // loop the inds, and check if neighbors a good cell
     for (const auto& j : neighbors.at(0)) {
@@ -1541,6 +1565,9 @@ void CellTable::Select(CellSelector select,
       }
     }
   }
-
+#else
+  std::cerr << "Warning -- not able to do radial selection without compiling with mlpack" << std::endl;
+#endif
+  
   return;
 }
