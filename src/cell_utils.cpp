@@ -260,7 +260,8 @@ std::pair<std::string, std::string> colon_parse(const std::string& str) {
 
 
 void draw_scale_bar(cairo_t* cr, double x, double y, double bar_width, double bar_height, const std::string& text) {
-  
+
+#ifdef HAVE_CAIRO
     // Set color to white for the bar
     cairo_set_source_rgb(cr, 1.0, 1.0, 1.0); // White color
     cairo_set_line_width(cr, bar_height); // Set bar height as line width
@@ -285,6 +286,9 @@ void draw_scale_bar(cairo_t* cr, double x, double y, double bar_width, double ba
     cairo_move_to(cr, text_x, text_y);
     cairo_show_text(cr, text.c_str());
     cairo_stroke(cr); // Apply the drawing
+#else
+    std::cerr << "Warning - unable to draw scale bar, need to link Cairo library" << std::endl;
+#endif    
 }
 
 

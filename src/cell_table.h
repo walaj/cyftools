@@ -289,13 +289,16 @@ public:
 	  std::vector<int>& component_label,
 	  int currentLabel,
 	  const std::vector<std::vector<size_t>>& neighbors) const;
-
+  
+#ifdef HAVE_KNNCOLLE
   knncolle::VpTree<knncolle::distances::Euclidean, int, float> build_vp_tree() const {
     static const std::vector<bool> empty_vector;
     return build_vp_tree(empty_vector);
   }
   
   knncolle::VpTree<knncolle::distances::Euclidean, int, float> build_vp_tree(const std::vector<bool>& ix) const;
+#endif
+
   
 #endif    
 };

@@ -421,7 +421,11 @@ void CellTable::Convolve(TiffWriter* otif, int boxwidth, float microns_per_pixel
 
   // perform the convolution
   int bw2 = boxwidth / 2;
+#ifdef HAVE_OMP  
 #pragma omp parallel for num_threads(m_threads)
+#else
+  std::cerr << "OMP not included, no support for multithreading. Compile with to support" << std::endl;
+#endif  
   for (int i = 0; i < xwidth; i++) {
     if (m_verbose && i % 10000 == 0)
       std::cerr << "...convolving on image row " << AddCommas(i) << " of " << AddCommas(xwidth) << std::endl;
