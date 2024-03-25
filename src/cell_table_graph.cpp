@@ -714,6 +714,70 @@ CellTable::build_vp_tree(const std::vector<bool>& ix) const {
    
 }
 
+void CellTable::Distances(const std::string& id) {
+
+#ifdef HAVE_KNNCOLLE
+  
+  validate();
+
+  int n = CellCount();
+  
+  // find which cells are "marked"
+  std::vector<bool> ix(n, false);
+  for (size_t i = 0; i <  n; i++) {
+    if (IS_FLAG_SET(m_cflag_ptr->at(i), MARK_FLAG))
+      ix[i] = true;
+  }
+
+  // ensure there are some that are set
+  int marked_cells = std::count(ix.begin(), ix.end(), true) == 0;
+  if (marked_cells == 0) {
+    std::cerr << "Warning - cyftools distance - No marked cells, did you run cyftools filter -M first?" << std::endl;
+    return;
+  }
+  if (m_verbose)
+    std::cerr << "...cyftools dist - Finding distance to " << marked_cells << " marked cells" << std::endl;
+   
+  // build the tree
+  knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher = build_vp_tree(ix);
+
+  // store the distances
+  auto dist_ptr = std::make_shared<FloatCol>();
+  dist_ptr->resize(n);
+  
+  // find the nearest neighbor
+  for (size_t i = 0; i < n; i++) {
+
+    if (i % 100000 == 0 && m_verbose) {
+      std::cerr << "...cyftools dist - getting dist for cell " << i << std::endl;
+    }
+
+    // if its already marked, dist 0 by definition
+    if (IS_FLAG_SET(m_cflag_ptr->at(i), MARK_FLAG)) {
+      dist_ptr->SetNumericElem(0, i);
+      continue;
+    }
+    
+    float x = m_x_ptr->at(i);
+    float y = m_y_ptr->at(i);
+    float point[2] = {x, y};
+    JNeighbors neigh = searcher.find_nearest_neighbors(point, 1);
+    assert(neigh.size() == 1);
+
+    // set the distance
+    dist_ptr->SetNumericElem(neigh.at(0).second, i);
+    
+  }
+
+  // add the columm
+  Tag dtag(Tag::CA_TAG, "dist_" + id, "");
+  AddColumn(dtag, dist_ptr);
+  std::cerr << "added column" << std::endl;
+#else
+  std::cerr << "Warning - not able to calculate without a KNN tree implementation linked" << std::endl;
+#endif  
+}
+
 void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
 			int min_cluster_size, int dist_max) {
 

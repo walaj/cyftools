@@ -88,6 +88,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  log10       - Apply a base-10 logarithm transformation to the data\n"
 "  jaccard     - Calculate the Jaccard similarty coeffiecient for cell flags\n"
 "  pearson     - Calculate the Pearson correlation between marker intensities\n"
+"  dist        - Calculate cell-cell distances\n"  
 " --- Clustering ---\n"
 "  dbscan      - Cluster cells based on the DBSCAN method\n"
 "  tls         - Identify TLS structures\n"
@@ -115,6 +116,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  synth       - Various approaches for creating synthetic data\n"  
 "\n";
 
+static int distfunc(int argc, char** argv);
 static int tlsfunc(int argc, char** argv);
 static int markcheckfunc(int argc, char** argv);
 static int magnifyfunc(int argc, char** argv);
@@ -220,6 +222,8 @@ int main(int argc, char **argv) {
     val = cellcountfunc(argc, argv);
   } else if (opt::module == "margin") {
     val = marginfunc(argc, argv);
+  } else if (opt::module == "dist") {
+    val = distfunc(argc, argv);
   } else if (opt::module == "subsample") {
     val = subsamplefunc(argc, argv);
   } else if (opt::module == "plot") {
@@ -373,6 +377,51 @@ static int markcheckfunc(int argc, char** argv) {
   
 }
 
+static int distfunc(int argc, char** argv) {
+
+  std::string id;
+  const char* shortopts = "vi:";
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'i' : arg >> id; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools dist <in.cyf> <out.cyf>\n"
+      "  Calculate the cell-to-cell distance, based on marked cells from cytools filter\n"
+      "    .cyf file: filepath or a '-' to stream to stdin\n"
+      "Requred Input:\n"
+      "     -i <string>               ID to mark the output column (will be dist_<id>)\n"
+      "Optional Options:\n"
+      "     -v, --verbose             Increase output to stderr.\n"
+      "Example:\n"
+      " cyftools filter -a 1024 -M <in> - | cyftools dist - <out>\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // build the table into memory
+  build_table();
+
+  std::cerr << " writing to " << opt::outfile << std::endl;
+  table.SetupOutputWriter(opt::outfile);
+
+  // get the distance
+  table.Distances(id);
+
+  // write it out
+  table.OutputTable();
+  
+  return 0;
+}
+
 static int tlsfunc(int argc, char** argv) {
 
   cy_uint bcell_marker = 0;
@@ -397,7 +446,6 @@ static int tlsfunc(int argc, char** argv) {
     std::cerr << "Error: cyftools tls - need to specify -b (Bcell marker, as base-10 number) and immune-cell marker(s) (as base-10-number)" << std::endl;
     die = true;
   }
-    
   
   if (die || in_out_process(argc, argv)) {
     
@@ -2033,7 +2081,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "delaunay" || opt::module == "head" || 
 	 opt::module == "mean" || opt::module == "ldacreate" ||
 	 opt::module == "ldarun" || opt::module == "png" ||
-	 opt::module == "tls" || 
+	 opt::module == "tls" || opt::module == "dist" || 
 	 opt::module == "radialdens" || opt::module == "margin" ||
 	 opt::module == "scramble" || opt::module == "scatter" ||
 	 opt::module == "hallucinate" || opt::module == "summary" ||

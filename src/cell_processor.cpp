@@ -442,6 +442,8 @@ int FilterProcessor::ProcessLine(Cell& cell) {
   write_cell = write_cell && flag_write_cell;
 
   bool m_trim = !(m_mark1 || m_mark2);
+
+  std::cerr << " m_mark1 " << m_mark1 << " m_mark2 " << m_mark2 << std::endl;
   
   // trim is set but cell passes
   if (m_trim && write_cell) {

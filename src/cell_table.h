@@ -137,6 +137,8 @@ public:
   
   void MoranI(const std::vector<cy_uint>& flags);
 
+  void Distances(const std::string& id);
+
   //////
   // Clustering ops
   //////

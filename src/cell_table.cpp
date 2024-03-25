@@ -1122,7 +1122,7 @@ int CellTable::PlotPNG(const std::string& file,
     // draw the hulls
     ///////
     cairo_set_source_rgb(crp, 1.0, 0.0, 0.0);
-    cairo_set_line_width(crp, 20.0*scale_factor); // Set the line width to 5.0
+    cairo_set_line_width(crp, 40.0*scale_factor); // Set the line width to 5.0
     // loop through invidual hulls
     for (auto& hullm : hull_map) {
       auto& hull = hullm.second;
