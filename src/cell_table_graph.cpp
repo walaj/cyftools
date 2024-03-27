@@ -513,6 +513,16 @@ void CellTable::IslandFill(size_t n, int flag_from, bool invert_from,
   
   validate();
 
+  if (flag_from == 0) {
+    std::cerr << "Error - cyftools island - flag from is zero, needs to be non-zero" << std::endl;
+    return;
+  } 
+  
+  if (flag_to == 0) {
+    std::cerr << "Error - cyftools island - flag to is zero, needs to be non-zero" << std::endl;
+    return;
+  } 
+
   const size_t NUM_NEIGHBORS = 10;
   const float DIST_LIMIT = 100;
   
@@ -738,7 +748,7 @@ void CellTable::Distances(const std::string& id) {
   }
 
   // ensure there are some that are set
-  int marked_cells = std::count(ix.begin(), ix.end(), true) == 0;
+  int marked_cells = std::count(ix.begin(), ix.end(), true);
   if (marked_cells == 0) {
     std::cerr << "Warning - cyftools distance - No marked cells, did you run cyftools filter -M first?" << std::endl;
     return;
@@ -776,11 +786,11 @@ void CellTable::Distances(const std::string& id) {
     dist_ptr->SetNumericElem(neigh.at(0).second, i);
     
   }
-
+  
   // add the columm
   Tag dtag(Tag::CA_TAG, "dist_" + id, "");
   AddColumn(dtag, dist_ptr);
-  std::cerr << "added column" << std::endl;
+  
 #else
   std::cerr << "Warning - not able to calculate without a KNN tree implementation linked" << std::endl;
 #endif  
@@ -789,6 +799,16 @@ void CellTable::Distances(const std::string& id) {
 void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
 			int min_cluster_size, int dist_max) {
 
+  if (bcell_marker == 0) {
+    std::cerr << "Error - cyftools tls - bcell_marker is zero, needs to be non-zero" << std::endl;
+    return;
+  } 
+  if (immune_marker == 0) {
+    std::cerr << "Error - cyftools tls - immune_marker is zero, needs to be non-zero" << std::endl;
+    return;
+  } 
+
+  
   if (m_verbose)
     std::cerr << "...cyftools tls - bcell marker " << bcell_marker << " immune marker(s) " <<
       immune_marker << " min cluster size " << min_cluster_size << " dist max " << dist_max << std::endl;
@@ -1098,6 +1118,16 @@ void CellTable::TumorMargin(float dist,
 
   validate();
 
+  if (tumor_flag == 0) {
+    std::cerr << "Error - cyftools annotate - tumor_flag is zero, needs to be non-zero" << std::endl;
+    return;
+  } 
+
+  if (margin_flag == 0) {
+    std::cerr << "Error - cyftools annotate - margin_flag is zero, needs to be non-zero" << std::endl;
+    return;
+  } 
+  
   // build the tree
   if (m_verbose)
     std::cerr << "...building the KDTree" << std::endl;

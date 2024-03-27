@@ -101,43 +101,73 @@ std::ostream& operator<<(std::ostream& os, const Cell& cell) {
     return os;
 }
 
-static void printValue(double value, int precision) {
-    double roundedValue = std::round(value * std::pow(10, precision)) / std::pow(10, precision);
+static void printValue(double value, int precision, int fixed_width) {
+
+  double roundedValue = std::round(value * std::pow(10, precision)) / std::pow(10, precision);
+  if (fixed_width > 0) {
     if (roundedValue == static_cast<int>(roundedValue)) {
-        std::cout << static_cast<int>(roundedValue);
+      std::cout << std::setw(fixed_width) << static_cast<int>(roundedValue);
     } else {
-        std::cout << std::fixed << std::setprecision(precision) << roundedValue;
+      std::cout << std::setw(fixed_width) << std::fixed << std::setprecision(precision) << roundedValue;
     }
+  } else {
+    if (roundedValue == static_cast<int>(roundedValue)) {
+      std::cout << static_cast<int>(roundedValue);
+    } else {
+      std::cout << std::fixed << std::setprecision(precision) << roundedValue;
+    }
+  }
 }
 
-void Cell::PrintWithHeader(int round, const CellHeader& header) const {
+/*void Cell::PrintWithHeader(int round, bool tabprint, const CellHeader& header) const {
 
-  char d = ',';
+  char d = tabprint ? '\n' : ',';
 
   uint32_t sampleID = static_cast<uint32_t>(id >> 32); // Extract the first 32 bits
   uint32_t cellID = static_cast<uint32_t>(id & 0xFFFFFFFF); // Extract the second 32 bits
-  
-  std::cout << "sid:" << sampleID << d << "cid:" << cellID << d << "cflag:" <<cflag <<
-    d << "pflag:" << pflag << d << "x:";
-  printValue(x, round);
-  std::cout << d << "y:";
-  printValue(y, round);  
 
-  // print cols
-  size_t i = 0;
-  for (const auto& t : header.GetDataTags()) {
-    std::cout << d;
-    std::cout << t.id << ":";
-    printWithoutScientific(cols.at(i), round);
-    i++;
+  if (tabprint) {
+    
+    std::cout << std::fixed; // Set output to fixed. This applies to all floating-point output after this statement.
+    std::cout << "sid:" << std::setw(8) << sampleID << d << "cid:" << std::setw(8) << cellID << d << "cflag:" << std::setw(8) << cflag <<
+      d << "pflag:" << std::setw(8) << pflag << d << "x:";
+    printValue(x, round, 8); // Assuming you modify printValue to use std::setw(8)
+    std::cout << d << "y:";
+    printValue(y, round, 8); // Assuming you modify printValue to use std::setw(8)
+    
+    // print cols
+    size_t i = 0;
+    for (const auto& t : header.GetDataTags()) {
+      std::cout << d;
+      std::cout << std::setw(8) << t.id << ":";
+      printWithoutScientific(cols.at(i), round); // Assuming you modify printWithoutScientific to use std::setw(8)
+      i++;
+    }
+  } else {
+
+    std::cout << "sid:" << sampleID << d << "cid:" << cellID << d << "cflag:" <<cflag <<
+      d << "pflag:" << pflag << d << "x:";
+    printValue(x, round, -1);
+    std::cout << d << "y:";
+    printValue(y, round, -1);  
+    
+    // print cols
+    size_t i = 0;
+    for (const auto& t : header.GetDataTags()) {
+      std::cout << d;
+      std::cout << t.id << ":";
+      printWithoutScientific(cols.at(i), round);
+      i++;
+    }
+
   }
   
-  std::cout << std::endl;  
+    std::cout << std::endl;  
 }
 
-void Cell::Print(int round) const {
+void Cell::Print(int round, bool tabprint) const {
 
-  char d = ',';
+  char d = tabprint ? '\t' : ',';
 
   uint32_t sampleID = static_cast<uint32_t>(id >> 32); // Extract the first 32 bits
   uint32_t cellID = static_cast<uint32_t>(id & 0xFFFFFFFF); // Extract the second 32 bits
@@ -153,23 +183,48 @@ void Cell::Print(int round) const {
     printWithoutScientific(c, round);
   }
 
-  // print graph
-  /////////
-
-  // print delimiter if graph non-empty
-  /* if (m_spatial_ids.size())
-    std::cout << d;
-
-  // [print
-  for (size_t i = 0; i < m_spatial_ids.size(); i++) {
-    std::cout << m_spatial_ids.at(i) << "^" << m_spatial_dist.at(i) <<
-      "&" << m_spatial_flags.at(i);
-    if (i != m_spatial_ids.size() - 1)
-      std::cout << ";";
-      }
-  */
-  
   std::cout << std::endl;
+}
+*/
+
+void Cell::PrintWithHeader(int round,
+			   bool tabprint,
+			   bool header_print, 
+			   const CellHeader& header) const {
+  
+    char d = tabprint ? '\t' : ',';
+    uint32_t sampleID = static_cast<uint32_t>(id >> 32);
+    uint32_t cellID = static_cast<uint32_t>(id & 0xFFFFFFFF);
+
+    std::vector<std::string> headers(6,"");
+    
+    if (header_print)
+      headers = {"sid:","cid:","cflag:","pflag:","x:","y:"};
+    
+    if (tabprint) std::cout << std::fixed; // Applies to all floating-point output after this statement
+
+    int fixed_width = 6 + round;
+    outputValue(headers[0], sampleID, tabprint, fixed_width, d);
+    outputValue(headers[1], cellID, tabprint, fixed_width, d);
+    outputValue(headers[2], cflag, tabprint, fixed_width, d);
+    outputValue(headers[3], pflag, tabprint, fixed_width, d);
+    std::cout << headers[4];
+    printValue(x, round, tabprint ? fixed_width : -1);
+    std::cout << d << headers[5];
+    printValue(y, round, tabprint ? fixed_width : -1);
+
+    // print cols
+    size_t i = 0;
+    for (const auto& t : header.GetDataTags()) {
+      std::cout << (i > 0 || tabprint ? d : ','); // Conditional delimiter for the first column based on tabprint
+      if (header_print)
+	std::cout << t.id << ":";
+      if (tabprint) std::cout << std::setw(fixed_width);
+      printWithoutScientific(cols.at(i), round);
+      i++;
+    }
+    
+    std::cout << std::endl;
 }
 
 Cell::Cell(const std::string& row,

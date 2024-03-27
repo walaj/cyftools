@@ -24,7 +24,7 @@ Color select_color(cy_uint cflag, cy_uint pflag, const ColorLabelVec& palette) {
     //    std::cerr << " cflag " << cflag << " c.cflag " << c.cflag << " ISC " <<
     // IS_FLAG_SET(cflag, c.cflag) << " pflag " << pflag << " c.pflag " <<
     // c.pflag << " ISP " << IS_FLAG_SET(pflag, c.pflag) << " c.c " << c.c << std::endl;
-    if (IS_FLAG_SET(cflag, c.cflag) || IS_FLAG_SET(pflag, c.pflag))
+    if ( (c.cflag && IS_FLAG_SET(cflag, c.cflag)) || (c.pflag && IS_FLAG_SET(pflag, c.pflag)))
       return c.c;
   }
   return palette.back().c; // default is the last

@@ -53,21 +53,37 @@ int FilterProcessor::ProcessHeader(CellHeader& header) {
 int AverageProcessor::ProcessHeader(CellHeader& header) {
 
   m_header = header;
+
+  // check that group by is in the header
+  if (!m_group_by.empty()) {
+    size_t i = 0;
+    for (const auto& tag : m_header.GetDataTags()) {
+      if (tag.id == m_group_by) {
+	m_group_by_id = i;
+	continue;
+      }
+      i++;
+    }
+    if (m_group_by_id < 0) {
+      std::cerr << "Error: cyftools mean - group by of " << m_group_by << " not found in data header" << std::endl;
+      assert(false);
+    }
+  }
   
   // which column (if any) stores tls-id
-  size_t i = 0;
+  /*size_t i = 0;
   for (const auto& tag : m_header.GetDataTags()) {
     if (tag.id == "tls_id") {
       m_tls_column = i;
       break;
     }
     i++;
-  }
+    }*/
   
   // initialize sums to zero
-  sums.resize(m_header.GetDataTags().size());
-  if (sums.size())
-    assert(sums.at(0) == 0);
+  //sums.resize(m_header.GetDataTags().size());
+  //if (sums.size())
+  //  assert(sums.at(0) == 0);
   
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
 
@@ -86,36 +102,34 @@ int AverageProcessor::ProcessHeader(CellHeader& header) {
 int AverageProcessor::ProcessLine(Cell& cell) {
 
   for (size_t i = 0; i < cell.cols.size(); i++) {
-    sums[i] += cell.cols.at(i);
+    
+    // get the group-by key, unless no group then all are ZERO key
+    int key = m_group_by_id < 0 ? 0 : cell.cols.at(m_group_by_id);
+
+    // add the data point
+    allgroups[key].Add(i, cell.cols.at(i));
   }
-  n++;
 
   // if tls is a column, add ID to set
-  if (m_tls_column > 0)
-    m_tls_set.insert(cell.cols.at(m_tls_column));
+  //if (m_tls_column > 0)
+  //  m_tls_set.insert(cell.cols.at(m_tls_column));
   
   // don't emit anything in StreamTable
   return CellProcessor::NO_WRITE_CELL;
 }
 
-void AverageProcessor::EmitCell() const {
+void AverageProcessor::EmitCells() const {
 
-  Cell cell;
-
-  std::vector<float> means(sums.size());
-  if (n > 0) {
-    for (size_t i = 0; i < means.size(); i++) {
-      means[i] = sums.at(i) / n;
-    }
+  // loop each group and emit the cell with the means
+  for (const auto& d : allgroups) {
+    OutputLine(d.second.EmitCell());
   }
-
-  cell.cols = means;
-
+  
   // for tls id column, we want the number of unique TLS
-  cell.cols[m_tls_column] = m_tls_set.size();
+  //cell.cols[m_tls_column] = m_tls_set.size();
   
   // write the one cell
-  OutputLine(cell);
+  //OutputLine(cell);
 }
 
 int CellCountProcessor::ProcessHeader(CellHeader& header) {
@@ -157,14 +171,13 @@ int CellCountProcessor::ProcessLine(Cell& cell) {
   for (size_t i = 0; i < m_num_marker_tags; i++) {
     CellFlag f(cell.pflag);
     cy_uint to_test = static_cast<cy_uint>(std::pow(2, i));
+    assert(to_test > 0);
     if (f.testAndOr(to_test, 0))
       m_counts[i]++;
   }
 
   // additional flags
   for (size_t i = m_num_marker_tags; i < (m_num_marker_tags + m_additional_flags.size()); i++) {
-    //if (cell.id==33)
-    //std::cerr << " i " << i << " m_additiona  "<< m_additional_flags[i-m_num_marker_tags] << std::endl;
     if (m_additional_flags[i-m_num_marker_tags] == 0) {
       m_counts[i] += (cell.pflag == 0);
     } else if (IS_FLAG_SET(cell.pflag, m_additional_flags[i - m_num_marker_tags])) {
@@ -184,8 +197,8 @@ void CellCountProcessor::EmitCell() const {
     cell.cols.push_back(0);
 
   // add the count data
-  for (size_t i = 0; i < m_counts.size(); i++)
-    cell.cols.push_back(m_counts.at(i));
+  //for (size_t i = 0; i < m_counts.size(); i++)
+  // cell.cols.push_back(m_counts.at(i));
 
   // zero the hard data since they are meaningless
   cell.x = 0;
@@ -443,7 +456,8 @@ int FilterProcessor::ProcessLine(Cell& cell) {
 
   bool m_trim = !(m_mark1 || m_mark2);
 
-  std::cerr << " m_mark1 " << m_mark1 << " m_mark2 " << m_mark2 << std::endl;
+  //  std::cerr << " m_mark1 " << m_mark1 << " m_mark2 " << m_mark2 << " mtrim " << m_trim << " write_cell " << write_cell << " cflag " <<
+  //  cell.cflag << std::endl;
   
   // trim is set but cell passes
   if (m_trim && write_cell) {
@@ -460,12 +474,14 @@ int FilterProcessor::ProcessLine(Cell& cell) {
   } else if (m_mark2 && write_cell) {
     SET_FLAG(cell.cflag, BUILD_GRAPH_FLAG);
     return CellProcessor::WRITE_CELL;
-    // cell fails, but trimming is off (no marks set)
+  // cell fails, but mode is mark not trim
   } else if (!m_trim && !write_cell) {
-    CLEAR_FLAG(cell.cflag, MARK_FLAG);
-    CLEAR_FLAG(cell.cflag, BUILD_GRAPH_FLAG);    
+    if (m_mark1)
+      CLEAR_FLAG(cell.cflag, MARK_FLAG);
+    if (m_mark2)
+      CLEAR_FLAG(cell.cflag, BUILD_GRAPH_FLAG);
     return CellProcessor::WRITE_CELL;
-    // should never get here
+  // should never get here
   } else {
     assert(false);
   }
@@ -547,8 +563,8 @@ int CountProcessor::ProcessHeader(CellHeader& header) {
 
 int CountProcessor::ProcessLine(Cell& cell) {
   
-  if (IS_FLAG_SET(cell.cflag, m_c_and_flags) && IS_FLAG_SET(cell.pflag, m_p_and_flags) &&
-      ARE_FLAGS_OFF(cell.cflag, m_c_not_flags) && ARE_FLAGS_OFF(cell.pflag, m_p_not_flags))
+  //  if (IS_FLAG_SET(cell.cflag, m_c_and_flags) && IS_FLAG_SET(cell.pflag, m_p_and_flags) &&
+  //    ARE_FLAGS_OFF(cell.cflag, m_c_not_flags) && ARE_FLAGS_OFF(cell.pflag, m_p_not_flags))
     m_count++;
   
   return NO_WRITE_CELL; // do nothing
@@ -1249,8 +1265,9 @@ int ViewProcessor::ProcessLine(Cell& cell) {
       cell.PrintForCrevasse(m_header);
       return NO_WRITE_CELL;
     }
-      
-    m_adjacent ? cell.PrintWithHeader(m_round, m_header) : cell.Print(m_round);
+    
+    cell.PrintWithHeader(m_round, m_tabprint, m_adjacent, m_header);
+
     return NO_WRITE_CELL; // don't output, since already printing it
   }
   
@@ -1267,7 +1284,7 @@ int ViewProcessor::ProcessLine(Cell& cell) {
   }
   cell.cols = cols_new;
   
-  m_adjacent ? cell.PrintWithHeader(m_round, m_header) : cell.Print(m_round);
+  cell.PrintWithHeader(m_round, m_tabprint, m_adjacent, m_header);
     
   return NO_WRITE_CELL; // don't output, since already printing it
 }

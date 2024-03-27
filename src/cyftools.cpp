@@ -410,7 +410,6 @@ static int distfunc(int argc, char** argv) {
   // build the table into memory
   build_table();
 
-  std::cerr << " writing to " << opt::outfile << std::endl;
   table.SetupOutputWriter(opt::outfile);
 
   // get the distance
@@ -1858,11 +1857,13 @@ static int cutfunc(int argc, char** argv) {
 
 static int meanfunc(int argc, char** argv) {
 
-  const char* shortopts = "v";  
+  std::string group_by;
+  const char* shortopts = "vb:";  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
+    case 'b' : arg >> group_by; break;
     default: die = true;
     }
   }
@@ -1880,10 +1881,10 @@ static int meanfunc(int argc, char** argv) {
       "\n"
       "Options:\n"
       "  -v, --verbose             Increase output to stderr.\n"
+      "  -b <string>               Column name to group means by, so each unique elem of groupby column is own \"meta\" cell\n"
       "\n"
       "Example:\n"
-      "  cyftools mean input.cyf output_mean.cyf\n"
-      "  cyftools mean input.cyf - -v\n";
+      "  cyftools mean input.cyf output_mean.cyf -b tls_id\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -1892,13 +1893,14 @@ static int meanfunc(int argc, char** argv) {
   table.setVerbose(opt::verbose);
 
   AverageProcessor avgp;
-  avgp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);  
+  avgp.SetParams(group_by);
+  avgp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
 
   if (table.StreamTable(avgp, opt::infile))
     return 1; // non-zero status on StreamTable
 
   // write the one line with the averages
-  avgp.EmitCell();
+  avgp.EmitCells();
   
   return 0;
 
@@ -2173,11 +2175,12 @@ static int roifunc(int argc, char** argv) {
 
 static int viewfunc(int argc, char** argv) {
   
-  const char* shortopts = "vn:hHRACx:";
+  const char* shortopts = "vn:hHRAtCx:";
   int precision = 2;
   bool rheader = false;  // view as csv with csv header
   bool adjacent = false; // view as name:value
   bool crevasse = false; // view as output for crevasse
+  bool tabprint = false; // view as tab-delimited and columns justified
   std::string cut; // list of markers, csv separated, to cut on
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -2187,6 +2190,7 @@ static int viewfunc(int argc, char** argv) {
     case 'n' : arg >> precision; break;
     case 'C' : crevasse = true; break;
     case 'x' : arg >> cut; break;
+    case 't' : tabprint = true; break;
     case 'A' : adjacent = true; break;
     case 'R' : rheader = true; break;
     case 'h' : opt::header = true; break;
@@ -2212,7 +2216,8 @@ static int viewfunc(int argc, char** argv) {
       "Optional Options:\n"
       "  -R                         Print (with header) in csv format\n"
       "  -A                         Print as name:value format for viewing\n"
-      "  -C                         Print as CellID,x,y,...markers... for Crevasse\n" 
+      "  -C                         Print as CellID,x,y,...markers... for Crevasse\n"
+      "  -t                         Print tab-delimited and const space\n"
       "  -x <fields>                Comma-separated list of fields to trim output to.\n"
       "  -n <decimals>              Number of decimals to keep. Default is -1 (no change).\n"
       "  -H                         View only the header.\n"
@@ -2239,7 +2244,7 @@ static int viewfunc(int argc, char** argv) {
   
   ViewProcessor viewp;
   viewp.SetParams(opt::header, opt::header_only, rheader, adjacent, crevasse,
-		  precision, tokens);
+		  precision, tokens, tabprint);
 
   table.StreamTable(viewp, opt::infile);
   
@@ -3307,19 +3312,12 @@ static int sortfunc(int argc, char** argv) {
 
 
 static int countfunc(int argc, char** argv) {
-  const char* shortopts = "va:A:N:";
-  cy_uint p_and_flags = 0;
-  cy_uint c_and_flags = 0;
-  cy_uint p_not_flags = 0;
-  cy_uint c_not_flags = 0;  
+  
+  const char* shortopts = "v";
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'a' : arg >> p_and_flags; break;
-    case 'A' : arg >> c_and_flags; break;
-    case 'n' : arg >> p_not_flags; break;
-    case 'N' : arg >> c_not_flags; break;      
     default: die = true;
     }
   }
@@ -3331,17 +3329,12 @@ static int countfunc(int argc, char** argv) {
       "  Output the number of cells in a file\n"
       "    .cyf file: filepath or a '-' to stream to stdin\n"
       "    -v, --verbose         Increase output to stderr\n"
-      "    -a                    Phenotype logical AND\n"
-      "    -A                    Cell logical AND\n"
-      "    -n                    Phenotype logical NOT\n"
-      "    -N                    Cell logical NOT\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
   CountProcessor countp;
-  countp.SetParams(p_and_flags, c_and_flags,p_not_flags, c_not_flags);
   countp.SetCommonParams(opt::outfile, cmd_input, opt::verbose); // really shouldn't need any of these
 
   if (table.StreamTable(countp, opt::infile)) 

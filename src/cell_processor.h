@@ -297,26 +297,112 @@ private:
   
 };
 
+// a single collection of value to calculate a mean on
+// so it's one data type (e.g. dist_tls) and one group by
+// e.g. tls_id
+struct SumElement {
+
+  std::vector<double> elems;
+  
+  // add a new
+  void Add(float val) {
+    elems.push_back(val);
+  }
+
+  float Mean() const {
+
+    double n = static_cast<double>(elems.size());
+    
+    if (n == 0) {
+      std::cerr << "Error - Unable to get mean, no elements" << std::endl;
+      assert(false);
+    }
+    
+    // calculate the means
+    double mean = 0;
+    for (size_t i = 0; i < elems.size(); i++) {
+      mean += elems.at(i) / n;
+    }
+    
+    return mean;
+  }
+};
+
+// a collection of SumElements for one group (e.g. tls_id)
+// but for all data
+struct SumGroup {
+  
+  // the key is the unique group-by value (e.g. tls id)
+  std::vector<SumElement> data;
+
+  // add a single data point
+  void Add(size_t cols_index, float value) {
+
+    // already have this group, just add to it
+    if (cols_index < data.size()) {
+      ; 
+    // a new one
+    } else if (cols_index == data.size()) {
+      data.push_back(SumElement());
+    } else {
+      assert(false);
+    }
+    
+    data[cols_index].Add(value);
+
+  }
+
+  // construct a cell with means
+  Cell EmitCell() const {
+
+    assert(data.size());
+    
+    Cell cell;
+
+    // calculate the means and push
+    for (size_t i = 0; i < data.size(); i++) {
+      cell.cols.push_back(data.at(i).Mean());
+    }
+
+    // zero the hard data since they are meaningless
+    cell.x = 0;
+    cell.y = 0;  
+    cell.pflag = 0;
+    cell.cflag = 0;
+    cell.id = 0;
+
+    return cell;
+  }
+  
+};
+
 class AverageProcessor : public CellProcessor {
 
 public:
 
-  void SetParams() {}
+  void SetParams(const std::string& by) {
+    m_group_by = by;
+  }
 
   int ProcessHeader(CellHeader& header) override;
   
   int ProcessLine(Cell& cell) override;
 
-  void EmitCell() const;
+  void EmitCells() const;
   
 private:
 
-  size_t n = 0;
-  std::vector<double> sums;
+  // here, the key is the group and each SumGroup
+  // holds all of the numerical data for all columns with that group-by
+  std::unordered_map<float, SumGroup> allgroups;
 
+  // group means by this column
+  std::string m_group_by;
+  int m_group_by_id = -1;
+  
   // make a set to get uniqe tls ids
-  int m_tls_column = -1;
-  std::set<int> m_tls_set;
+  //int m_tls_column = -1;
+  //std::set<int> m_tls_set;
   
 };
 
@@ -399,16 +485,6 @@ class CountProcessor : public CellProcessor {
   
  public:
   
-  void SetParams(cy_uint p_and_flags,
-		 cy_uint c_and_flags,
-		 cy_uint p_not_flags,
-		 cy_uint c_not_flags) {
-    m_p_and_flags = p_and_flags;
-    m_c_and_flags = c_and_flags;
-    m_p_not_flags = p_not_flags;
-    m_c_not_flags = c_not_flags;    
-    
-  }
   
   int ProcessHeader(CellHeader& header) override;
   
@@ -418,12 +494,6 @@ class CountProcessor : public CellProcessor {
   
  private:
   size_t m_count = 0;
-
-  cy_uint m_p_and_flags = 0;
-  cy_uint m_c_and_flags = 0;
-  cy_uint m_p_not_flags = 0;
-  cy_uint m_c_not_flags = 0;  
-  
 };
 
 
@@ -592,7 +662,8 @@ class ViewProcessor : public CellProcessor {
 		 bool adjacent,
 		 bool crevasse,
 		 int round,
-		 const std::unordered_set<std::string>& include
+		 const std::unordered_set<std::string>& include,
+		 bool tabprint
 		 ) {
     
     m_print_header = print_header;
@@ -602,6 +673,7 @@ class ViewProcessor : public CellProcessor {
     m_to_view = include;
     m_csv_header = rheader;
     m_adjacent = adjacent;
+    m_tabprint = tabprint;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -610,6 +682,8 @@ class ViewProcessor : public CellProcessor {
   
  private:
 
+  bool m_tabprint = false;
+  
   bool m_csv_header = false;
 
   bool m_adjacent = false;

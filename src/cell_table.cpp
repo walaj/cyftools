@@ -1191,6 +1191,9 @@ int CellTable::PlotPNG(const std::string& file,
 }
 
 size_t CellTable::CountCFlag(int flag) const {
+
+  assert(flag > 0);
+  
   size_t count = 0;
   const size_t n = CellCount();
   for (int i = 0; i < n; i++)
@@ -1209,6 +1212,9 @@ void CellTable::ClearCFlag(int flag) {
 
 void CellTable::CopyCFlag(cy_uint flag_from, cy_uint flag_to) {
 
+  assert(flag_from > 0);
+  assert(flag_to > 0);
+  
   const size_t n = CellCount();
 
   for (size_t i = 0; i < n; i++) {

@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <iomanip>
 
 #include "cell_header.h"
 
@@ -22,9 +23,23 @@ class Cell {
        uint32_t cellid,
        uint32_t sampleid);
 
-  void Print(int round) const;
+  template <typename T>
+  void outputValue(const std::string& prefix, const T& value, bool tabPrint, int width, char delimiter) const {
+    std::cout << prefix;
+    if (tabPrint) {
+      std::cout << std::setw(width) << value;
+    } else {
+      std::cout << value;
+    }
+    std::cout << delimiter;
+  }
+  
+  void Print(int round, bool tabprint) const;
 
-  void PrintWithHeader(int round, const CellHeader& header) const;
+  void PrintWithHeader(int round,
+		       bool tabprint,
+		       bool header_print,
+		       const CellHeader& header) const;
 
   void PrintForCrevasse(const CellHeader& header) const;
 
