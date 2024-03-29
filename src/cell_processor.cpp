@@ -197,9 +197,9 @@ void CellCountProcessor::EmitCell() const {
     cell.cols.push_back(0);
 
   // add the count data
-  //for (size_t i = 0; i < m_counts.size(); i++)
-  // cell.cols.push_back(m_counts.at(i));
-
+  for (size_t i = 0; i < m_counts.size(); i++)
+    cell.cols.push_back(m_counts.at(i));
+  
   // zero the hard data since they are meaningless
   cell.x = 0;
   cell.y = 0;  

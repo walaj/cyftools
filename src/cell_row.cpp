@@ -191,39 +191,39 @@ void Cell::PrintWithHeader(int round,
 			   bool tabprint,
 			   bool header_print, 
 			   const CellHeader& header) const {
+
+  char d = tabprint ? '\t' : ',';
+  uint32_t sampleID = static_cast<uint32_t>(id >> 32);
+  uint32_t cellID = static_cast<uint32_t>(id & 0xFFFFFFFF);
   
-    char d = tabprint ? '\t' : ',';
-    uint32_t sampleID = static_cast<uint32_t>(id >> 32);
-    uint32_t cellID = static_cast<uint32_t>(id & 0xFFFFFFFF);
+  std::vector<std::string> headers(6,"");
+  
+  if (header_print)
+    headers = {"sid:","cid:","cflag:","pflag:","x:","y:"};
+  
+  if (tabprint) std::cout << std::fixed; // Applies to all floating-point output after this statement
+  
+  int fixed_width = 6 + round;
+  outputValue(headers[0], sampleID, tabprint, fixed_width, d);
+  outputValue(headers[1], cellID, tabprint, fixed_width, d);
+  outputValue(headers[2], cflag, tabprint, fixed_width, d);
+  outputValue(headers[3], pflag, tabprint, fixed_width, d);
+  std::cout << headers[4];
+  printValue(x, round, tabprint ? fixed_width : -1);
+  std::cout << d << headers[5];
+  printValue(y, round, tabprint ? fixed_width : -1);
 
-    std::vector<std::string> headers(6,"");
-    
+  // print cols
+  size_t i = 0;
+  for (const auto& t : header.GetDataTags()) {
+    std::cout << (i > 0 || tabprint ? d : ','); // Conditional delimiter for the first column based on tabprint
     if (header_print)
-      headers = {"sid:","cid:","cflag:","pflag:","x:","y:"};
-    
-    if (tabprint) std::cout << std::fixed; // Applies to all floating-point output after this statement
-
-    int fixed_width = 6 + round;
-    outputValue(headers[0], sampleID, tabprint, fixed_width, d);
-    outputValue(headers[1], cellID, tabprint, fixed_width, d);
-    outputValue(headers[2], cflag, tabprint, fixed_width, d);
-    outputValue(headers[3], pflag, tabprint, fixed_width, d);
-    std::cout << headers[4];
-    printValue(x, round, tabprint ? fixed_width : -1);
-    std::cout << d << headers[5];
-    printValue(y, round, tabprint ? fixed_width : -1);
-
-    // print cols
-    size_t i = 0;
-    for (const auto& t : header.GetDataTags()) {
-      std::cout << (i > 0 || tabprint ? d : ','); // Conditional delimiter for the first column based on tabprint
-      if (header_print)
-	std::cout << t.id << ":";
-      if (tabprint) std::cout << std::setw(fixed_width);
-      printWithoutScientific(cols.at(i), round);
-      i++;
-    }
-    
+      std::cout << t.id << ":";
+    if (tabprint) std::cout << std::setw(fixed_width);
+    printWithoutScientific(cols.at(i), round);
+    i++;
+  }
+  
     std::cout << std::endl;
 }
 

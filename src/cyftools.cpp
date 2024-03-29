@@ -116,6 +116,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  synth       - Various approaches for creating synthetic data\n"  
 "\n";
 
+static int forprintfunc(int argc, char** argv);
 static int distfunc(int argc, char** argv);
 static int tlsfunc(int argc, char** argv);
 static int markcheckfunc(int argc, char** argv);
@@ -222,6 +223,8 @@ int main(int argc, char **argv) {
     val = cellcountfunc(argc, argv);
   } else if (opt::module == "margin") {
     val = marginfunc(argc, argv);
+  } else if (opt::module == "for") {
+    val = forprintfunc(argc, argv);
   } else if (opt::module == "dist") {
     val = distfunc(argc, argv);
   } else if (opt::module == "subsample") {
@@ -353,6 +356,37 @@ static int magnifyfunc(int argc, char** argv) {
   
   if (table.StreamTable(res, opt::infile)) 
     return 1; // non-zero status on StreamTable
+  return 0;
+}
+
+// hidden function for easy looping in bash
+static int forprintfunc(int argc, char** argv) {
+
+  bool xargs = false;
+  const char* shortopts = "xp";
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+      std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'x' : xargs=true; break;
+    default: die = true;
+    }
+  }
+
+  if (xargs) {
+    std::cout << "find . -name \"*.cyf\" " <<
+      "| xargs -I{} -P 4 bash -c " <<
+      "'filename=$(basename {}); " <<
+      "base_name=$(echo $filename | cut -d \".\" -f 1); " <<
+      "echo \"...working on $base_name\"; " <<
+      "cyftools cmd {} ${base_name}.cyf;'" << std::endl;
+  } else {
+    std::cout << "for file in *.cyf; do" <<
+      " filename=$(basename $file); " << 
+      " base_name=$(echo $filename | cut -d \".\" -f 1); " <<
+      " echo \"...working on $base_name\"; " <<
+      "cyftools cmd $file ${base_name}.out.cyf; done" << std::endl;
+  }
+  
   return 0;
 }
 
@@ -2083,7 +2117,8 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "delaunay" || opt::module == "head" || 
 	 opt::module == "mean" || opt::module == "ldacreate" ||
 	 opt::module == "ldarun" || opt::module == "png" ||
-	 opt::module == "tls" || opt::module == "dist" || 
+	 opt::module == "tls" || opt::module == "dist" ||
+	 opt::module == "for" || 
 	 opt::module == "radialdens" || opt::module == "margin" ||
 	 opt::module == "scramble" || opt::module == "scatter" ||
 	 opt::module == "hallucinate" || opt::module == "summary" ||
