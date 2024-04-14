@@ -747,10 +747,13 @@ void CellTable::Distances(const std::string& id) {
       ix[i] = true;
   }
 
+  // clear the mark
+  ClearCFlag(MARK_FLAG);
+
   // ensure there are some that are set
   int marked_cells = std::count(ix.begin(), ix.end(), true);
   if (marked_cells == 0) {
-    std::cerr << "Warning - cyftools distance - No marked cells, did you run cyftools filter -M first?" << std::endl;
+    std::cerr << "Warning - cyftools distance on id " << id << " - No marked cells, did you run cyftools filter -M first?" << std::endl;
     return;
   }
   if (m_verbose)

@@ -1257,6 +1257,34 @@ int ViewProcessor::ProcessHeader(CellHeader& header) {
   
 }
 
+int OffsetProcessor::ProcessLine(Cell& cell) {
+  
+  cell.x = cell.x + m_x;
+  cell.y = cell.y + m_y;
+
+  return WRITE_CELL;
+}
+
+int OffsetProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+  
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  
+  this->SetupOutputStream(); 
+  
+    m_header.SortTags();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+  
+  return HEADER_NO_ACTION;
+  
+}
+
+
+
 int ViewProcessor::ProcessLine(Cell& cell) {
 
   // classic view, no cut

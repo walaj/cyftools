@@ -96,7 +96,7 @@ ColorLabelVec ColorLabelVecForModule(const std::string& module) {
     cm = {
       {TUMOR_FLAG,                     0, colorbrewer_3red_light,  "Tumor (Automated)"},
       {TUMOR_MANUAL_FLAG,              0, colorbrewer_3red_medium, "Tumor (Manual)"},
-      {TUMOR_MANUAL_FLAG + TUMOR_FLAG, 0, colorbrewer_3red_dark,   "Tumor (A+M)"},
+     {TUMOR_MANUAL_FLAG + TUMOR_FLAG, 0, colorbrewer_3red_dark,   "Tumor (A+M)"},
       {MARGIN_FLAG,                    0, color_cyan,              "Margin"},
       {0,                              0, colorbrewer_3blue_light, "Stroma"}
     };

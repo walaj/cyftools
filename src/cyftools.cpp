@@ -76,6 +76,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  subsample   - Subsample cells randomly\n"
 "  magnify     - Rescale the x and y coordinates\n"  
 "  sampleselect- Select a particular sample from a multi-sample file\n"
+"  offset      - Offset the x-y positions of the cells\n"  
 " --- Marker ops ---\n"  
 "  pheno       - Phenotype cells (set the phenotype flags)\n"
 "  filter      - Mark cellsfor later processing (filtering etc)\n"  
@@ -116,6 +117,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  synth       - Various approaches for creating synthetic data\n"  
 "\n";
 
+static int offsetfunc(int argc, char** argv);
 static int forprintfunc(int argc, char** argv);
 static int distfunc(int argc, char** argv);
 static int tlsfunc(int argc, char** argv);
@@ -233,6 +235,8 @@ int main(int argc, char **argv) {
     return(plotfunc(argc, argv));
   } else if (opt::module == "divide") {
     return (dividefunc(argc, argv));
+  } else if (opt::module == "offset") {
+    return (offsetfunc(argc, argv));
   } else if (opt::module == "roi") {
     val = roifunc(argc, argv);
   } else if (opt::module == "crop") {
@@ -1608,6 +1612,63 @@ static int plotpngfunc(int argc, char** argv) {
   
 }
 
+ static int offsetfunc(int argc, char** argv) {
+
+   const char* shortopts = "vx:y:";
+   float x = 0;
+   float y = 0;
+
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'x' : arg >> x; break;
+    case 'y' : arg >> y; break;
+    default: die = true;
+    }
+  }
+
+  if (!x & !y && opt::verbose) {
+    std::cerr << "******************************" << std::endl;
+    std::cerr << "No offsets provided, see usage" << std::endl;
+    std::cerr << "******************************" << std::endl;    
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE = 
+      "Usage: cyftools offset <input.cyf> <output.cyf file> [options]\n"
+      "  Offset (shift) the cells in x and y (to align with e.g. ROIs)\n"
+      "\n"
+      "Arguments:\n"
+      "  <input.cyf>           Input file path or '-' to stream from stdin.\n"
+      "  <output.cyf file>          Output .cyf file path or '-' to stream as a cyf-formatted stream to stdout.\n"
+      "\n"
+      "Options:\n"
+      "  -x                        X offset [0]\n"
+      "  -y                        Y offset [0]\n"      
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cyftools offset input.cyf cleaned_output.cyf -x 100 -y 100\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  OffsetProcessor offp;
+  offp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  offp.SetParams(x, y); 
+  
+  // process 
+  if (!table.StreamTable(offp, opt::infile)) {
+    return 1;
+  }
+
+  return 0;
+
+  
+ }
+ 
 static int cleanfunc(int argc, char** argv) {
 
   const char* shortopts = "vmMPCcp";
@@ -1671,6 +1732,8 @@ static int cleanfunc(int argc, char** argv) {
   
 }
 
+
+ 
 static int catfunc(int argc, char** argv) {
 
   const char* shortopts = "v";
@@ -2118,7 +2181,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "mean" || opt::module == "ldacreate" ||
 	 opt::module == "ldarun" || opt::module == "png" ||
 	 opt::module == "tls" || opt::module == "dist" ||
-	 opt::module == "for" || 
+	 opt::module == "for" || opt::module == "offset" || 
 	 opt::module == "radialdens" || opt::module == "margin" ||
 	 opt::module == "scramble" || opt::module == "scatter" ||
 	 opt::module == "hallucinate" || opt::module == "summary" ||

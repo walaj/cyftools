@@ -344,6 +344,8 @@ void add_legend_cairo_top(cairo_t* crp, int font_size,
   cairo_text_extents_t extents;
   cairo_set_font_size(crp, font_size); // Adjust font size to your needs  
   for (const auto& entry : cm) {
+    if (entry.label == "nolabel") // keyword to skip the label
+      continue;
     std::string label = entry.label + space; // Add spaces between labels
     cairo_text_extents(crp, label.c_str(), &extents);
     total_width += extents.x_advance; // Use x_advance for accurate spacing
@@ -360,6 +362,9 @@ void add_legend_cairo_top(cairo_t* crp, int font_size,
   
   // Draw the labels
   for (const auto& entry : cm) {
+    if (entry.label == "nolabel") // keyword to skip the label
+      continue;
+
     Color c = entry.c;
     std::string label = entry.label;
     

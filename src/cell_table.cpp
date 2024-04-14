@@ -954,7 +954,7 @@ int CellTable::PlotPNG(const std::string& file,
   std::mt19937 gen(rd()); 
   std::uniform_int_distribution<> dis(0,1);
 
-  float micron_per_pixel = 0.650f;
+  float micron_per_pixel = 0.325f;
   const float radius_size = 12.0f * scale_factor;
   const float ALPHA_VAL = 0.7f; // alpha for cell circles
   constexpr float TWO_PI = 2.0 * M_PI;
@@ -1050,7 +1050,8 @@ int CellTable::PlotPNG(const std::string& file,
       
       // Move to the first vertex
       auto firstVertex = *polygon.begin();
-      cairo_move_to(crp, firstVertex.x*scale_factor*micron_per_pixel, (firstVertex.y+legend_total_height)*scale_factor*micron_per_pixel);
+      cairo_move_to(crp, firstVertex.x*scale_factor*micron_per_pixel,
+    (firstVertex.y*micron_per_pixel+legend_total_height)*scale_factor);
       
       // Draw lines to each subsequent vertex
       for (const auto& v : polygon) {
@@ -1060,7 +1061,7 @@ int CellTable::PlotPNG(const std::string& file,
 	//cairo_arc(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel, 10, 0, TWO_PI);
 	//cairo_fill(crp);
 	
-	cairo_line_to(crp, v.x*scale_factor*micron_per_pixel, (v.y+legend_total_height)*scale_factor*micron_per_pixel);
+	cairo_line_to(crp, v.x*scale_factor*micron_per_pixel, (v.y*micron_per_pixel+legend_total_height)*scale_factor);
       }
       
       // Close the polygon
@@ -1069,9 +1070,11 @@ int CellTable::PlotPNG(const std::string& file,
       const float alphaval = 0.2;
       // Set the source color for fill and line (red with high alpha for transparency)
       if (polygon.Text.find("tumor") != std::string::npos || polygon.Name.find("tumor") != std::string::npos)
-	cairo_set_source_rgba(crp, 1, 0, 0, alphaval); // Green with alpha = alphaval
+	cairo_set_source_rgba(crp, 1, 0, 0, alphaval); // Red with alpha = alphaval
       else if (polygon.Text.find("normal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) 
 	cairo_set_source_rgba(crp, 1, 1, 0, alphaval); // Yellow with alpha = alphaval
+      else if (polygon.Text.find("eminal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) 
+	cairo_set_source_rgba(crp, 0, 1, 0, alphaval); // Grexen with alpha = alphaval
       else if (polygon.Text.find("blacklist") != std::string::npos || polygon.Name.find("blacklist") != std::string::npos ||
 	       polygon.Text.find("rtifact") != std::string::npos || polygon.Name.find("rtifact") != std::string::npos)
 	cairo_set_source_rgba(crp, 0.5, 0.5, 0.5, alphaval); // Gray with alpha = 0.5	

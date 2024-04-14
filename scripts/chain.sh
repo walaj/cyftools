@@ -23,13 +23,15 @@ base="${input_file%%.*}"
 # radial file
 
 if [ -d /Users ]; then
-    PROJ_HOME=/Users/jeremiahwala/Sorger/projects
-    PROJ_DATA=/Users/jeremiahwala/Sorger/projects    
+    PROJ_HOME=/Users/jeremiahwala/Dropbox/Sorger/projects
+    PROJ_DATA=/Users/jeremiahwala/Dropbox/Sorger/projects    
 else
     PROJ_HOME=/home/jaw34/projects/
     PROJ_DATA=/n/scratch3/users/j/jaw34/
 fi    
 
+xoffset=0;
+yoffset=0;
 if [[ ! -f "$input_file" ]]; then
     parallel_echo "Error: File '$input_file' does not exist."
     exit 1
@@ -56,11 +58,53 @@ elif contains_string "$prostate" "$input_file"; then
     TCELL_MARKER=2048
     BCELL_MARKER=64
     IMMUNE_MARKER=268435408
-
+    yoffset=0
 else
     parallel_echo "...header.sh: Warning: $input_file doesn't fit into cycif, prostate, orion, etc"
     exit 1
 fi
+
+# ## set the offsets
+# declare -A xoffsetlut=(
+#     [LSP12601]=0
+#     [LSP12603]=0
+#     [LSP12605]=0
+#     [LSP12607]=0
+#     [LSP12609]=0
+#     [LSP12611]=0
+#     [LSP12613]=0
+#     [LSP12615]=0    
+# )
+# declare -A yoffsetlut=(
+#     [LSP12601]=-275
+#     [LSP12603]=-275
+#     [LSP12605]=-275
+#     [LSP12607]=-275
+#     [LSP12609]=-275
+#     [LSP12611]=-275
+#     [LSP12613]=-275    
+# )
+
+# # Extract the offset from the string
+# if [[ $input_file =~ (LSP[0-9]+) ]]; then
+#     PATTERN=${BASH_REMATCH[1]}
+#     echo "Extracted pattern: $PATTERN"
+
+#     # Lookup the pattern in the LUT
+#     if [[ -n "${lut[$PATTERN]}" ]]; then
+#         xoffset=${xoffsetlut[$PATTERN]}
+#         yoffset=${yoffsetlut[$PATTERN]}	
+#         echo "Found in LUT: $X"
+#     else
+#         # Pattern not found in LUT, default X to zero
+#         xoffset=0
+# 	yoffset=0
+#         echo "Pattern not found in LUT. Defaulting X to $X"
+#     fi
+# else
+#     echo "Warning: No pattern found in the string."
+#     # Handle the case where no pattern is found as needed
+# fi
 
 ## set the roi file
 if [[ -f "$roi_file" ]]; then
@@ -89,11 +133,18 @@ elif [[ "$input_file" == *"LSP10388"* || "$input_file" == *"LSP10353"* || "$inpu
     eval "$cmd"
 else
     parallel_echo "...running: cyftools chain on ${base}"
-    cmd="cyftools pheno ${V} $input_file -t $pheno_file - |
+    cmd="cyftools offset ${input_file} - ${V} -x $xoffset -y $yoffset | cyftools pheno ${V} - -t $pheno_file - |
     		      cyftools filter - - -a $TUMOR_MARKER ${V} -M | cyftools annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 | $roicmd
 		      cyftools tls - - -b $BCELL_MARKER -i $IMMUNE_MARKER -m 300 -d 35 ${V} |
  		      cyftools island - - -n 5000 -T | cyftools island - - -S -n 5000 | cyftools margin -d 100 - - |
-           	      cyftools radialdens ${V} - - -t ${T} -f ${RAD} |  cyftools delaunay -l 20 - ${output_file}"
+ 		      cyftools filter - - -A 8 -M | cyftools dist -i tumor - - |
+ 		      cyftools filter - - -a 2048 -M | cyftools dist -i CD3 - - |
+ 		      cyftools filter - - -a 4096 -M | cyftools dist -i CD8 - - |
+ 		      cyftools filter - - -a 32768 -M | cyftools dist -i PD1 - - |
+ 		      cyftools filter - - -a 16384 -M | cyftools dist -i FOXP3 - - |
+ 		      cyftools filter - - -a 4 -M | cyftools dist -i AMCAR - - |
+ 		      cyftools filter - - -A 32 -M | cyftools dist -i TLS - - | 
+           	      cyftools radialdens ${V} - - -t ${T} -f ${RAD} | cyftools delaunay -l 20 - ${output_file}"
     echo "$cmd" | tr '\n' ' '
     echo ""
     eval "$cmd"
