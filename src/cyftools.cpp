@@ -76,7 +76,8 @@ static const char *RUN_USAGE_MESSAGE =
 "  subsample   - Subsample cells randomly\n"
 "  magnify     - Rescale the x and y coordinates\n"  
 "  sampleselect- Select a particular sample from a multi-sample file\n"
-"  offset      - Offset the x-y positions of the cells\n"  
+"  offset      - Offset the x-y positions of the cells\n"
+"  flip        - Flip x and/or y positions\n"  
 " --- Marker ops ---\n"  
 "  pheno       - Phenotype cells (set the phenotype flags)\n"
 "  filter      - Mark cellsfor later processing (filtering etc)\n"  
@@ -117,6 +118,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  synth       - Various approaches for creating synthetic data\n"  
 "\n";
 
+static int flipfunc(int argc, char** argv);
 static int offsetfunc(int argc, char** argv);
 static int forprintfunc(int argc, char** argv);
 static int distfunc(int argc, char** argv);
@@ -271,6 +273,8 @@ int main(int argc, char **argv) {
     val = umapfunc(argc, argv);
   } else if (opt::module == "filter") {
     val = filterfunc(argc, argv);
+  } else if (opt::module == "flip") {
+    val = flipfunc(argc, argv);
   } else if (opt::module == "sampleselect") {
     val = sampleselectfunc(argc, argv);
   } else if (opt::module == "convolve") {
@@ -307,6 +311,7 @@ int main(int argc, char **argv) {
 
   return 0;
 }
+
 
 // build the table into memory
 static void build_table() {
@@ -361,6 +366,56 @@ static int magnifyfunc(int argc, char** argv) {
   if (table.StreamTable(res, opt::infile)) 
     return 1; // non-zero status on StreamTable
   return 0;
+}
+
+static int flipfunc(int argc, char** argv) {
+
+  // parse the command line options
+  int xflip = 0;
+  int yflip = 0;
+  const char* shortopts = "vx:y:"; // : means theres and argument. No colon = flag
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+      std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'x' : arg >> xflip; break;
+    case 'y' : arg >> yflip; break;      
+    default: die = true;
+    }
+  }
+  
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE = 
+      "Usage: cyftools flip <input.cyf> <output.cyf file> [options]\n"
+      "  Flip the x or y position (reflection operation)\n"
+      "\n"
+      "Arguments:\n"
+      "  <input.cyf>           Input file path or '-' to stream from stdin.\n"
+      "  <output.cyf file>          Output .cyf file path or '-' to stream as a cyf-formatted stream to stdout.\n"
+      "\n"
+      "Options:\n"
+      "  -x                        Position of a X-flip line\n"
+      "  -y                        Position of a Y-flip line\n"      
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cyftools flip input.cyf cleaned_output.cyf -x 100 -y 100\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // anything that is as "stream" function wher ethere is no dependency between cells, gets a "Processor" objects
+  FlipProcessor flipp;
+  flipp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  flipp.SetParams(xflip, yflip); 
+  
+  // run the processor and return if it fails
+  if (!table.StreamTable(flipp, opt::infile)) {
+    return 1;
+  }
+
+  return 0;
+
 }
 
 // hidden function for easy looping in bash
@@ -2185,7 +2240,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "radialdens" || opt::module == "margin" ||
 	 opt::module == "scramble" || opt::module == "scatter" ||
 	 opt::module == "hallucinate" || opt::module == "summary" ||
-	 opt::module == "magnify" ||
+	 opt::module == "magnify" || opt::module == "flip" || 
 	 opt::module == "island" || opt::module == "rescale" || 
 	 opt::module == "jaccard" || opt::module == "cellcount" ||
 	 opt::module == "synth" || 
@@ -3005,6 +3060,19 @@ static int phenofunc(int argc, char** argv) {
   return 0;
 }
 
+static void assign_uint64_t_from_int(std::istream& stream, uint64_t& variable) {
+    int temp;
+    if (stream >> temp) {
+        if (temp < 0) {
+            variable = std::numeric_limits<uint64_t>::max();
+        } else {
+            variable = static_cast<uint64_t>(temp);
+        }
+    } else {
+        std::cerr << "Invalid input for uint64_t assignment" << std::endl;
+    }
+}
+ 
 static int radialdensfunc(int argc, char** argv) {
   const char* shortopts = "vR:r:o:a:l:f:jJt:";
   cy_uint inner = 0;
@@ -3025,8 +3093,8 @@ static int radialdensfunc(int argc, char** argv) {
     case 't' : arg >> opt::threads; break;
     case 'r' : arg >> inner; break;
     case 'R' : arg >> outer; break;
-    case 'o' : arg >> logor; break;
-    case 'a' : arg >> logand; break;
+    case 'o' : assign_uint64_t_from_int(arg, logor); break;
+    case 'a' : assign_uint64_t_from_int(arg, logand); break;      
     case 'j' : normalize_local = true; break;
     case 'J' : normalize_global = true; break;
     case 'l' : arg >> label; break;

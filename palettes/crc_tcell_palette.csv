@@ -5,6 +5,8 @@
 ##     This then is the way to specify a NOT (e.g. CD3+ NOT CD4+)
 ##     would be a cell that didn't get the CD4+ color, but then on later
 ##     line does get the CD3+ color. 
-0,131072,90,180,172,0.6,PanCK
-0,262144,208,28,139,0.4,SMA
-0,0,128,128,128,0.2,Other
+0,1024,128,0,128,1,CD20
+0,4096,255,0,255,1,CD3
+0,256,255,0,0,1,CD3
+0,131072,0,255,0,0.5,PanCK
+0,0,128,128,128,0.5,Other

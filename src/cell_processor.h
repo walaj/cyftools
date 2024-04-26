@@ -767,6 +767,26 @@ private:
   
 };
 
+class FlipProcessor : public CellProcessor {
+  
+public:
+  
+  void SetParams(float x, float y) {
+    m_x = x;
+    m_y = y;
+  }
+  
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+  
+private:
+  
+  float m_x = 0;
+  float m_y = 0;
+  
+};
+
 class CatProcessor : public CellProcessor { 
 
  public:

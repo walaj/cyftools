@@ -955,7 +955,7 @@ int CellTable::PlotPNG(const std::string& file,
   std::uniform_int_distribution<> dis(0,1);
 
   float micron_per_pixel = 0.325f;
-  const float radius_size = 12.0f * scale_factor;
+  const float radius_size = 6.0f * scale_factor;
   const float ALPHA_VAL = 0.7f; // alpha for cell circles
   constexpr float TWO_PI = 2.0 * M_PI;
   
@@ -1020,15 +1020,22 @@ int CellTable::PlotPNG(const std::string& file,
     cairo_arc(crp, x*scale_factor, y*scale_factor, radius_size, 0, TWO_PI);
     cairo_fill(crp); 
 
-    // red radius
-    /*    if (pflag.testAndOr(147456,0) && j % 100000 == 0) { //dis(gen) < 0.00002)  {
-      cairo_set_source_rgb(crp, 1, 0, 0);
-      cairo_set_line_width(crp, 4);
-      cairo_arc(crp, x*scale_factor, y*scale_factor, 200.0f/0.325f*scale_factor, 0, 2*M_PI);
-      cairo_stroke(crp);
-      }*/
   }
 
+  // red radius
+  if (false)
+  for (size_t j = 0; j < CellCount(); j++) { // loop the cells
+    const float x = m_x_ptr->at(j);
+    const float y = m_y_ptr->at(j) + legend_total_height;
+    if (j % 10000 == 0) { 
+      cairo_set_source_rgb(crp, 1, 0, 0);
+      cairo_set_line_width(crp, 16);
+      cairo_arc(crp, x*scale_factor, y*scale_factor, 50.0f/0.325f*scale_factor, 0, 2*M_PI);
+      cairo_stroke(crp);
+    }
+  }
+
+  
   ////////
   // ROI
   // read in the roi file
@@ -1072,7 +1079,7 @@ int CellTable::PlotPNG(const std::string& file,
       if (polygon.Text.find("tumor") != std::string::npos || polygon.Name.find("tumor") != std::string::npos)
 	cairo_set_source_rgba(crp, 1, 0, 0, alphaval); // Red with alpha = alphaval
       else if (polygon.Text.find("normal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) 
-	cairo_set_source_rgba(crp, 1, 1, 0, alphaval); // Yellow with alpha = alphaval
+	cairo_set_source_rgba(crp, 1, 1, 0, alphaval); // Yelslow with alpha = alphaval
       else if (polygon.Text.find("eminal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) 
 	cairo_set_source_rgba(crp, 0, 1, 0, alphaval); // Grexen with alpha = alphaval
       else if (polygon.Text.find("blacklist") != std::string::npos || polygon.Name.find("blacklist") != std::string::npos ||
@@ -1108,7 +1115,7 @@ int CellTable::PlotPNG(const std::string& file,
     for (const auto& cl : unique_clusters) {
       
       // cluster 0 is holder for not a cluster
-      if (cl == 0)
+      if (cl == 0 || true) // debug - true means dont' plot
 	continue;
 
       // fill polygon with the points that will need to have hull around them
@@ -1129,7 +1136,7 @@ int CellTable::PlotPNG(const std::string& file,
     // draw the hulls
     ///////
     cairo_set_source_rgb(crp, 1.0, 0.0, 0.0);
-    cairo_set_line_width(crp, 40.0*scale_factor); // Set the line width to 5.0
+    cairo_set_line_width(crp, 60.0*scale_factor); // Set the line width to 5.0
     // loop through invidual hulls
     for (auto& hullm : hull_map) {
       auto& hull = hullm.second;

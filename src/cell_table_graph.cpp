@@ -1387,7 +1387,11 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   for (size_t i = 0; i < m_pflag_ptr->size(); i++) {
     CellFlag mflag(m_pflag_ptr->getData().at(i));
     for (size_t j = 0; j < inner.size(); j++) {
-      if ( (!logor[j] && !logand[j]) || mflag.testAndOr(logor[j], logand[j])) {
+      if (logor[j]  == std::numeric_limits<cy_uint>::max() ||
+	  logand[j] == std::numeric_limits<cy_uint>::max()) { // special for ALL cells
+	flag_result[j][i] = 1;
+      } 
+      else if ( (!logor[j] && !logand[j]) || mflag.testAndOr(logor[j], logand[j])) {
 	flag_result[j][i] = 1; 
       }
     }

@@ -16,7 +16,7 @@ source ~/git/cyftools/scripts/config.sh
 
 TLS_FLAG=32
 T=6
-#V="-v"
+V="-v"
 
 base="${input_file%%.*}"
 
@@ -44,7 +44,7 @@ elif contains_string "$orion1_40" "$input_file"; then
     parallel_echo "...chain.sh: detected Orion 1-40"
     RAD=${PROJ_HOME}/orion/radial.csv    
     TUMOR_MARKER=131072
-    TCELL_MARKER=4096    
+    TCELL_MARKER=4096
 elif [[ "$input_file" == *"immune"* ]]; then
     parallel_echo "...chain.sh: detected CyCIF Immune. Need radial file"
     exit 1
@@ -59,6 +59,22 @@ elif contains_string "$prostate" "$input_file"; then
     BCELL_MARKER=64
     IMMUNE_MARKER=268435408
     yoffset=0
+    distann="cyftools filter - - -A 8 -M | cyftools dist -i tumor - - |
+ cyftools filter - - -a 2048 -M | cyftools dist -i CD3 - - |
+ cyftools filter - - -a 4096 -M | cyftools dist -i CD8 - - |
+ cyftools filter - - -a 32768 -M | cyftools dist -i PD1 - - |
+ cyftools filter - - -a 16384 -M | cyftools dist -i FOXP3 - - |
+ cyftools filter - - -a 4 -M | cyftools dist -i AMCAR - - |
+ cyftools filter - - -a 8 -M | cyftools dist -i HMWCK - - |
+ cyftools filter - - -a 65536 -M | cyftools dist -i CD57 - - |
+ cyftools filter - - -A 4096 -M | cyftools dist -i GG1 - - |
+ cyftools filter - - -A 8192 -M | cyftools dist -i GG2 - - |
+ cyftools filter - - -A 16384 -M | cyftools dist -i GG3 - - |
+ cyftools filter - - -A 32768 -M | cyftools dist -i GG4 - - |
+ cyftools filter - - -A 65536 -M | cyftools dist -i GG5 - - |
+ cyftools filter - - -A 131072 -M | cyftools dist -i PNI - - |
+ cyftools filter - - -A 262144 -M | cyftools dist -i SV - - |
+ cyftools filter - - -A 32 -M | cyftools dist -i TLS - - |"
 else
     parallel_echo "...header.sh: Warning: $input_file doesn't fit into cycif, prostate, orion, etc"
     exit 1
@@ -120,31 +136,29 @@ elif [[ "$input_file" == *"LSP10388"* || "$input_file" == *"LSP10353"* || "$inpu
     # Your slightly different command here
     parallel_echo "Running the rescale version for LSP10388, LSP10353, LSP10375, or LSP10364"
     cmd="cyftools magnify $input_file -f 1.015625 - | cyftools pheno ${V} - -t $pheno_file - |
-    		      cyftools filter - - -a $TUMOR_MARKER ${V} -M |
-		      cyftools annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 | $roicmd
-		      cyftools filter - - -a $TCELL_MARKER ${V} -M |
-		      cyftools annotate - - -f 0.50 -k 25 -d 100000 -t ${T} ${V} -F 16 | 
-		      cyftools island - - -n 5000 -T | cyftools island - - -S -n 5000 |
-		      cyftools margin -d 100 - - |
-		      cyftools radialdens ${V} - - -t ${T} -f ${RAD} |
-		      cyftools delaunay -l 20 - ${output_file}"
+ cyftools filter - - -a $TUMOR_MARKER ${V} -M |
+ cyftools annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 |
+ $roicmd
+ cyftools filter - - -a $TCELL_MARKER ${V} -M |
+ cyftools annotate - - -f 0.50 -k 25 -d 100000 -t ${T} ${V} -F 16 | 
+ cyftools island - - -n 5000 -T | cyftools island - - -S -n 5000 |
+ cyftools margin -d 100 - - |
+ $distann
+ cyftools radialdens ${V} - - -t ${T} -f ${RAD} |
+ cyftools delaunay -l 20 - ${output_file}"
     echo "$cmd" | tr '\n' ' '
     echo ""    
     eval "$cmd"
 else
     parallel_echo "...running: cyftools chain on ${base}"
-    cmd="cyftools offset ${input_file} - ${V} -x $xoffset -y $yoffset | cyftools pheno ${V} - -t $pheno_file - |
-    		      cyftools filter - - -a $TUMOR_MARKER ${V} -M | cyftools annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 | $roicmd
-		      cyftools tls - - -b $BCELL_MARKER -i $IMMUNE_MARKER -m 300 -d 35 ${V} |
- 		      cyftools island - - -n 5000 -T | cyftools island - - -S -n 5000 | cyftools margin -d 100 - - |
- 		      cyftools filter - - -A 8 -M | cyftools dist -i tumor - - |
- 		      cyftools filter - - -a 2048 -M | cyftools dist -i CD3 - - |
- 		      cyftools filter - - -a 4096 -M | cyftools dist -i CD8 - - |
- 		      cyftools filter - - -a 32768 -M | cyftools dist -i PD1 - - |
- 		      cyftools filter - - -a 16384 -M | cyftools dist -i FOXP3 - - |
- 		      cyftools filter - - -a 4 -M | cyftools dist -i AMCAR - - |
- 		      cyftools filter - - -A 32 -M | cyftools dist -i TLS - - | 
-           	      cyftools radialdens ${V} - - -t ${T} -f ${RAD} | cyftools delaunay -l 20 - ${output_file}"
+    cmd="cyftools pheno ${V} $input_file -t $pheno_file - |
+ cyftools filter - - -a $TUMOR_MARKER ${V} -M |
+ cyftools annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 |
+ $roicmd
+ cyftools tls - - -b $BCELL_MARKER -i $IMMUNE_MARKER -m 300 -d 35 ${V} |
+ cyftools island - - -n 5000 -T | cyftools island - - -S -n 5000 | cyftools margin -d 100 - - |
+$distann
+cyftools radialdens ${V} - - -t ${T} -f ${RAD} | cyftools delaunay -l 20 - ${output_file}"
     echo "$cmd" | tr '\n' ' '
     echo ""
     eval "$cmd"

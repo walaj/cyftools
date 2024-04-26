@@ -1052,6 +1052,12 @@ int CleanProcessor::ProcessLine(Cell& cell) {
   
 }
 
+
+static inline bool roikey(const Polygon& poly, const std::string& keyword) {
+    return poly.Text.find(keyword) != std::string::npos ||
+           poly.Name.find(keyword) != std::string::npos;
+}
+
 int ROIProcessor::ProcessLine(Cell& cell) {
 
   // Loop the table and check if the cell is in the ROI
@@ -1063,15 +1069,14 @@ int ROIProcessor::ProcessLine(Cell& cell) {
     // if point is in this polygon, add the polygon id number to the roi
     if (polygon.PointIn(cell.x,cell.y)) {
       
-      if (polygon.Text.find("blacklist") != std::string::npos || polygon.Name.find("blacklist") != std::string::npos ||
-	  polygon.Text.find("rtifact") != std::string::npos || polygon.Name.find("rtifact") != std::string::npos) {
+      if (roikey(polygon, "lacklist") || roikey(polygon, "rtifact")) {
 	print_line = false;
-      } else if (polygon.Text.find("normal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) {
+      } else if (roikey(polygon, "ormal")) {
 	CLEAR_FLAG(cell.cflag, TUMOR_FLAG);
 	CLEAR_FLAG(cell.cflag, MARGIN_FLAG);	
 	CLEAR_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);
 	print_line = true;
-      } else if (polygon.Text.find("tumor") != std::string::npos || polygon.Name.find("tumor") != std::string::npos) {
+      } else if (roikey(polygon, "umor")) {
 	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);
 	print_line = true;
       } else if (polygon.Text.find("cd3panck_error") != std::string::npos || polygon.Name.find("cd3panck_error") != std::string::npos) {
@@ -1081,6 +1086,29 @@ int ROIProcessor::ProcessLine(Cell& cell) {
       } else {
 	print_line = true;
       }
+
+      // secondary annotations for PCa
+      if (roikey(polygon, "3+3")) {
+	SET_FLAG(cell.cflag, GLEASON_GRADE_GROUP_1);
+	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);	
+      } else if (roikey(polygon, "3+4")) {
+	SET_FLAG(cell.cflag, GLEASON_GRADE_GROUP_2);
+	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);	
+      } else if (roikey(polygon, "4+3")) {
+	SET_FLAG(cell.cflag, GLEASON_GRADE_GROUP_3);
+	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);	
+      } else if (roikey(polygon, "4+4")) {
+	SET_FLAG(cell.cflag, GLEASON_GRADE_GROUP_4);
+	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);	
+      } else if (roikey(polygon, "5+4") || roikey(polygon, "4+5") || roikey(polygon, "5+5")) {
+	SET_FLAG(cell.cflag, GLEASON_GRADE_GROUP_5);
+	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);	
+      } else if (roikey(polygon, "eural") || roikey(polygon, "PNI") || roikey(polygon, "pni")) {
+	SET_FLAG(cell.cflag, PERINEURAL_INVASION);
+      } else if (roikey(polygon, "SV") || roikey(polygon, "eminal")) {
+	SET_FLAG(cell.cflag, SEMINAL_VESICLES);
+      }
+      
       
       // uncomment below if want to prevent over-writing existing
       // break;
@@ -1283,6 +1311,33 @@ int OffsetProcessor::ProcessHeader(CellHeader& header) {
   
 }
 
+int FlipProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+
+  // adds tag to hold the command input in the header to keep track of what was done 
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  
+  this->SetupOutputStream(); 
+  
+  m_header.SortTags();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+  
+  return HEADER_NO_ACTION;
+  
+}
+
+int FlipProcessor::ProcessLine(Cell& cell) {
+
+  // write the flip logic
+  cell.x = 2 * m_x - cell.x;
+  cell.y = 2 * m_y - cell.y;  
+
+  return WRITE_CELL;
+}
 
 
 int ViewProcessor::ProcessLine(Cell& cell) {
