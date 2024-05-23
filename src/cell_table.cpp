@@ -27,6 +27,12 @@ bool CellTable::HasColumn(const std::string& col) const {
   return m_table.find(col) != m_table.end();
 }
 
+static inline bool roikey(const Polygon& poly, const std::string& keyword) {
+    return poly.Text.find(keyword) != std::string::npos ||
+           poly.Name.find(keyword) != std::string::npos;
+}
+
+
 CellTable::CellTable(size_t num_cells) {
 
   // make the ID
@@ -954,7 +960,7 @@ int CellTable::PlotPNG(const std::string& file,
   std::mt19937 gen(rd()); 
   std::uniform_int_distribution<> dis(0,1);
 
-  float micron_per_pixel = 0.325f;
+  float micron_per_pixel = 1; //0.325f;
   const float radius_size = 6.0f * scale_factor;
   const float ALPHA_VAL = 0.7f; // alpha for cell circles
   constexpr float TWO_PI = 2.0 * M_PI;
@@ -1041,17 +1047,11 @@ int CellTable::PlotPNG(const std::string& file,
   // read in the roi file
   if (!roifile.empty()) {
     std::vector<Polygon> rois = read_polygons_from_file(roifile);
-    
+
+    // loop and draw rois
     for (const auto& polygon : rois) {
 
-      if (polygon.Text.find("tumor") == std::string::npos && polygon.Name.find("tumor") == std::string::npos &&
-	  polygon.Text.find("normal") == std::string::npos && polygon.Name.find("normal") == std::string::npos &&
-	  polygon.Text.find("blacklist") == std::string::npos && polygon.Name.find("blacklist") == std::string::npos &&
-	  polygon.Text.find("rtifact") == std::string::npos && polygon.Name.find("rtifact") == std::string::npos) {
-	std::cerr << "unknown roi name: " << polygon.Text << " -- " << polygon.Name << std::endl;
-	continue;
-      }
-      
+      // skip empty rois
       if (polygon.size() == 0)
 	continue;
       
@@ -1076,17 +1076,17 @@ int CellTable::PlotPNG(const std::string& file,
 
       const float alphaval = 0.2;
       // Set the source color for fill and line (red with high alpha for transparency)
-      if (polygon.Text.find("tumor") != std::string::npos || polygon.Name.find("tumor") != std::string::npos)
-	cairo_set_source_rgba(crp, 1, 0, 0, alphaval); // Red with alpha = alphaval
-      else if (polygon.Text.find("normal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) 
-	cairo_set_source_rgba(crp, 1, 1, 0, alphaval); // Yelslow with alpha = alphaval
-      else if (polygon.Text.find("eminal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) 
-	cairo_set_source_rgba(crp, 0, 1, 0, alphaval); // Grexen with alpha = alphaval
-      else if (polygon.Text.find("blacklist") != std::string::npos || polygon.Name.find("blacklist") != std::string::npos ||
-	       polygon.Text.find("rtifact") != std::string::npos || polygon.Name.find("rtifact") != std::string::npos)
-	cairo_set_source_rgba(crp, 0.5, 0.5, 0.5, alphaval); // Gray with alpha = 0.5	
+      if (roikey(polygon, "umor") || roikey(polygon,"+3") || roikey(polygon, "+4") || roikey(polygon, "+5"))
+	cairo_set_source_rgba(crp, 1, 0, 0, alphaval); // Red
+      else if (roikey(polygon, "ormal"))
+	cairo_set_source_rgba(crp, 1, 1, 0, alphaval); // Yellow 
+      else if (roikey(polygon, "eminal"))
+	cairo_set_source_rgba(crp, 0, 1, 0, alphaval); // Green
+      else if (roikey(polygon, "lacklist") || roikey(polygon, "artifact"))
+	cairo_set_source_rgba(crp, 0, 0, 0, alphaval); // Black
       else
-	assert(false);
+	cairo_set_source_rgba(crp, 0.5, 0.5, 0.5, alphaval); // Gray
+
       
       // Fill the polygon
       cairo_fill_preserve(crp);
@@ -1571,7 +1571,8 @@ void CellTable::setCmd(const std::string& cmd) {
   
   m_cmd = cmd;
   m_header.addTag(Tag(Tag::PG_TAG, "", cmd));
-  
+
+  m_header.SortTags();
 }
 
 

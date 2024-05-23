@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 #SBATCH -c 4                               # Request four cores
 #SBATCH -t 0-8:00                         # Runtime in D-HH:MM format
@@ -80,47 +80,73 @@ else
     exit 1
 fi
 
-# ## set the offsets
-# declare -A xoffsetlut=(
-#     [LSP12601]=0
-#     [LSP12603]=0
-#     [LSP12605]=0
-#     [LSP12607]=0
-#     [LSP12609]=0
-#     [LSP12611]=0
-#     [LSP12613]=0
-#     [LSP12615]=0    
-# )
-# declare -A yoffsetlut=(
-#     [LSP12601]=-275
-#     [LSP12603]=-275
-#     [LSP12605]=-275
-#     [LSP12607]=-275
-#     [LSP12609]=-275
-#     [LSP12611]=-275
-#     [LSP12613]=-275    
-# )
+declare -A maglut=(
+    [LSP10388]=1.015625
+    [LSP10353]=1.015625
+    [LSP10375]=1.015625
+    [LSP10364]=1.015625
+    )
 
-# # Extract the offset from the string
-# if [[ $input_file =~ (LSP[0-9]+) ]]; then
-#     PATTERN=${BASH_REMATCH[1]}
-#     echo "Extracted pattern: $PATTERN"
+declare -A ymaxlut=(
+    [LSP12601]=8818
+    [LSP12603]=9482
+    [LSP12605]=8129
+    [LSP12607]=8142
+    [LSP12609]=8146
+    [LSP12611]=8140
+    [LSP12613]=8135
+    [LSP12615]=4750
+    [LSP12617]=7459
+    [LSP12619]=7457
+    [LSP12621]=5832
+    [LSP12623]=5427
+    [LSP12625]=9216
+    [LSP12627]=6784
+    [LSP12629]=6789
+    [LSP12631]=5434
+    [LSP12633]=8816
+    [LSP12635]=6106
+    [LSP12637]=7457
+    [LSP12639]=9485
+    [LSP12641]=6781
+    [LSP12643]=8811
+    [LSP12645]=7465
+    [LSP12647]=8132
+    [LSP12649]=7459
+    [LSP12651]=9485
+    [LSP12653]=5429
+    [LSP12655]=8817
+    [LSP12657]=6784
+)    
 
-#     # Lookup the pattern in the LUT
-#     if [[ -n "${lut[$PATTERN]}" ]]; then
-#         xoffset=${xoffsetlut[$PATTERN]}
-#         yoffset=${yoffsetlut[$PATTERN]}	
-#         echo "Found in LUT: $X"
-#     else
-#         # Pattern not found in LUT, default X to zero
-#         xoffset=0
-# 	yoffset=0
-#         echo "Pattern not found in LUT. Defaulting X to $X"
-#     fi
-# else
-#     echo "Warning: No pattern found in the string."
-#     # Handle the case where no pattern is found as needed
-# fi
+# Make the flip command 
+if [[ $input_file =~ (LSP[0-9]+) ]]; then
+    PATTERN=${BASH_REMATCH[1]}
+
+    # Lookup the pattern in the LUT
+    if [[ -n "${ymaxlut[$PATTERN]}" ]]; then
+        ymax=${ymaxlut[$PATTERN]}
+	flipcmd="cyftools flip - - -y 0 -Y $ymax |"
+        echo "Found in LUT: $ymax"
+    fi
+else
+    echo "Warning: No LSP pattern found in the string."
+fi
+
+# Make the magnify command
+if [[ $input_file =~ (LSP[0-9]+) ]]; then
+    PATTERN=${BASH_REMATCH[1]}
+    
+    # Lookup the pattern in the LUT
+    if [[ -n "${maglut[$PATTERN]}" ]]; then
+        mag=${maglut[$PATTERN]}
+	magcmd="cyftools magnify - - -f $mag |"
+        echo "Found in magnify LUT: $mag"
+    fi
+else
+    echo "Warning: No LSP pattern found in the string."
+fi
+
 
 ## set the roi file
 if [[ -f "$roi_file" ]]; then
@@ -132,33 +158,20 @@ fi
 if [[ ! -f "$input_file" ]]; then
     parallel_echo "Error in chain.sh: File '$input_file' does not exist."
     exit 1
-elif [[ "$input_file" == *"LSP10388"* || "$input_file" == *"LSP10353"* || "$input_file" == *"LSP10375"* || "$input_file" == *"LSP10364"* ]]; then
-    # Your slightly different command here
-    parallel_echo "Running the rescale version for LSP10388, LSP10353, LSP10375, or LSP10364"
-    cmd="cyftools magnify $input_file -f 1.015625 - | cyftools pheno ${V} - -t $pheno_file - |
- cyftools filter - - -a $TUMOR_MARKER ${V} -M |
- cyftools annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 |
- $roicmd
- cyftools filter - - -a $TCELL_MARKER ${V} -M |
- cyftools annotate - - -f 0.50 -k 25 -d 100000 -t ${T} ${V} -F 16 | 
- cyftools island - - -n 5000 -T | cyftools island - - -S -n 5000 |
- cyftools margin -d 100 - - |
- $distann
- cyftools radialdens ${V} - - -t ${T} -f ${RAD} |
- cyftools delaunay -l 20 - ${output_file}"
-    echo "$cmd" | tr '\n' ' '
-    echo ""    
-    eval "$cmd"
 else
     parallel_echo "...running: cyftools chain on ${base}"
-    cmd="cyftools pheno ${V} $input_file -t $pheno_file - |
- cyftools filter - - -a $TUMOR_MARKER ${V} -M |
- cyftools annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 |
- $roicmd
- cyftools tls - - -b $BCELL_MARKER -i $IMMUNE_MARKER -m 300 -d 35 ${V} |
- cyftools island - - -n 5000 -T | cyftools island - - -S -n 5000 | cyftools margin -d 100 - - |
+    cmd="cyftools check $input_file - |
+$magcmd
+cyftools pheno ${V} - -t $pheno_file - |
+cyftools filter - - -a $TUMOR_MARKER ${V} -M |
+cyftools annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 |
+$flipcmd
+$roicmd
+cyftools tls - - -b $BCELL_MARKER -i $IMMUNE_MARKER -m 300 -d 35 ${V} |
+cyftools island - - -n 5000 -T | cyftools island - - -S -n 5000 | cyftools margin -d 100 - - |
 $distann
 cyftools radialdens ${V} - - -t ${T} -f ${RAD} | cyftools delaunay -l 20 - ${output_file}"
+    
     echo "$cmd" | tr '\n' ' '
     echo ""
     eval "$cmd"

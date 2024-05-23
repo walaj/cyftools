@@ -1052,7 +1052,6 @@ int CleanProcessor::ProcessLine(Cell& cell) {
   
 }
 
-
 static inline bool roikey(const Polygon& poly, const std::string& keyword) {
     return poly.Text.find(keyword) != std::string::npos ||
            poly.Name.find(keyword) != std::string::npos;
@@ -1311,6 +1310,24 @@ int OffsetProcessor::ProcessHeader(CellHeader& header) {
   
 }
 
+int CheckProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+  
+  return HEADER_NO_ACTION;
+
+}
+
+int CheckProcessor::ProcessLine(Cell& cell) {
+  return WRITE_CELL;
+}
+
 int FlipProcessor::ProcessHeader(CellHeader& header) {
 
   m_header = header;
@@ -1333,8 +1350,10 @@ int FlipProcessor::ProcessHeader(CellHeader& header) {
 int FlipProcessor::ProcessLine(Cell& cell) {
 
   // write the flip logic
-  cell.x = 2 * m_x - cell.x;
-  cell.y = 2 * m_y - cell.y;  
+  if (m_x != -100000)
+    cell.x = 2 * m_x - cell.x + m_xmax;
+  if (m_y != -100000)  
+    cell.y = 2 * m_y - cell.y + m_ymax;  
 
   return WRITE_CELL;
 }
@@ -1514,7 +1533,7 @@ int DebugProcessor::ProcessLine(Cell& cell) {
 
 int BuildProcessor::ProcessHeader(CellHeader& header) {
   m_header = header; // store but don't print
-
+  
   return CellProcessor::SAVE_HEADER;
 }
 

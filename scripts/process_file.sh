@@ -13,7 +13,11 @@ source ${HOME}/git/cyftools/scripts/config.sh
 #matlab -nodisplay -r "run('/home/jaw34/git/cysift/matlab/jerry.m'); exit;"
 
 #HOMEBASE=${PROJ_DATA}/orion/orion_1_74
+#ROIBASE=rois
+
 HOMEBASE=${PROJ_DATA}/prostate
+ROIBASE=roisgu
+
 parallel_echo "...getting file list from $HOMEBASE"
 for infile in $HOMEBASE/rawcsv/*.csv; do
 
@@ -55,10 +59,9 @@ for infile in $HOMEBASE/rawcsv/*.csv; do
 	#~/git/cyftools/scripts/cerealed.sh "$HOMEBASE/header/${base}.header.csv" "$HOMEBASE/clean/${base}.cyf" 2>/dev/null
 
 	#check_file_exists "$HOMEBASE/clean/${base}.cyf"
-	~/git/cyftools/scripts/chain.sh "$HOMEBASE/clean/${base}.cyf" "$HOMEBASE/chain/${base}.p.cyf" "$HOMEBASE/phenotype/${base}.phenotype.csv" "${HOMEBASE}/rois/${base}.roi.csv"
-
+	~/git/cyftools/scripts/chain.sh "$HOMEBASE/clean/${base}.cyf" "$HOMEBASE/chain_flip/${base}.p.cyf" "$HOMEBASE/phenotype/${base}.phenotype.csv" "${HOMEBASE}/${ROIBASE}/${base}.roi.csv"
+	exit 1
 	#check_file_exists "${HOMEBASE}/chain/${base}.p.cyf"
 	#sbatch ~/git/cyftools/scripts/margin_noisland.sh "${HOMEBASE}/chain/${base}.p.cyf" "${HOMEBASE}/margin_noisland/${base}.p.cyf"
-	
     fi
 done

@@ -44,20 +44,47 @@ PhenoMap phenoread(const std::string& filename) {
     return data;
   }
 
+  bool crevasse = false;// if crevasse format, handle differently
+  
   // read and load the phenotype file
   std::string line;
+  size_t linenum = 0;
   while (std::getline(file, line)) {
+
+    // check if crevasse format
+    if (line.find("Gate") != std::string::npos && linenum == 0) {
+      crevasse = true;
+      continue;
+    }
+
     std::istringstream lineStream(line);
-        std::string key;
-        float value1, value2;
-	
-        if (std::getline(lineStream, key, ',')) {
-	  lineStream >> value1;
-	  if (lineStream.get() == ',') {
-                lineStream >> value2;
-                data[key] = std::make_pair(value1, value2);
-	  }
-        }
+    std::string key;
+    float value1, value2;
+
+    // jeremiah format
+    if (!crevasse) {
+      if (std::getline(lineStream, key, ',')) {
+	lineStream >> value1;
+	if (lineStream.get() == ',') {
+	  lineStream >> value2;
+	  data[key] = std::make_pair(value1, value2);
+	}
+      }
+    }
+    // crevasse format
+    else {
+      std::string token;
+      std::getline(lineStream, token, ','); // discard first token
+      std::getline(lineStream, token, ','); // read second token
+      key = token.substr(1, token.length() - 2); // Remove the quotes
+      std::getline(lineStream, token, ','); // read third token
+      value1 = std::stof(token);
+      value1 = std::exp(value1); // crevasse stores as log2
+      value2 = 100000000;
+      data[key] = std::make_pair(value1, value2);      
+    } 
+      
+    linenum++;
   }
   
   file.close();

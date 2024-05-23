@@ -67,17 +67,19 @@ static const char *RUN_USAGE_MESSAGE =
 "  count       - Count cells\n"
 "  head        - Returns first lines of a file\n"
 " --- Low-level processing ---\n"
-"  convert      - Create a .cyf format file from a CSV\n"    
+"  convert     - Create a .cyf format file from a CSV\n"    
 "  cut         - Select only given markers and metas\n"
 "  reheader    - Change the header\n"
 "  clean       - Remove classes of data (e.g. all meta)\n"
 "  cat         - Concatenate multiple files\n"
 "  sort        - Sort the cells\n"
 "  subsample   - Subsample cells randomly\n"
-"  magnify     - Rescale the x and y coordinates\n"  
 "  sampleselect- Select a particular sample from a multi-sample file\n"
+"  check       - Simply read and stream without any other operations, format check and start pipelines\n"
+" --- Spatial transformations ---\n"  
 "  offset      - Offset the x-y positions of the cells\n"
-"  flip        - Flip x and/or y positions\n"  
+"  flip        - Flip x and/or y positions\n"
+"  magnify     - Rescale the x and y coordinates\n"    
 " --- Marker ops ---\n"  
 "  pheno       - Phenotype cells (set the phenotype flags)\n"
 "  filter      - Mark cellsfor later processing (filtering etc)\n"  
@@ -118,6 +120,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  synth       - Various approaches for creating synthetic data\n"  
 "\n";
 
+static int checkfunc(int argc, char** argv);
 static int flipfunc(int argc, char** argv);
 static int offsetfunc(int argc, char** argv);
 static int forprintfunc(int argc, char** argv);
@@ -211,6 +214,8 @@ int main(int argc, char **argv) {
     val = flagsetfunc(argc, argv);
   } else if (opt::module == "ldacreate") {
     val = ldacreatefunc(argc, argv);
+  } else if (opt::module == "check") {
+    val = checkfunc(argc, argv);
   } else if (opt::module == "markcheck") {
     val = markcheckfunc(argc, argv);
   } else if (opt::module == "island") {
@@ -324,8 +329,9 @@ static void build_table() {
   BuildProcessor buildp;
   buildp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   table.StreamTable(buildp, opt::infile);
-  
-  //table.setCmd(cmd_input);
+
+  // have to set the PG tag here, because BuildProcessor is a reader only
+  table.setCmd(cmd_input);
 
   // check we were able to read the table
   if (table.CellCount() == 0) {
@@ -368,19 +374,82 @@ static int magnifyfunc(int argc, char** argv) {
   return 0;
 }
 
-static int flipfunc(int argc, char** argv) {
+static int checkfunc(int argc, char** argv) {
 
-  // parse the command line options
-  int xflip = 0;
-  int yflip = 0;
-  const char* shortopts = "vx:y:"; // : means theres and argument. No colon = flag
+  const char* shortopts = "v"; 
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
       std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
-    case 'x' : arg >> xflip; break;
-    case 'y' : arg >> yflip; break;      
+    case 'v' : opt::verbose = true;
     default: die = true;
     }
+  }
+  
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE = 
+      "Usage: cyftools check <input.cyf> <output.cyf file>\n"
+      "  Simply read and stream cyf. Useful to validate and to start pipelines that have variable first \"real\" module\n"
+      "\n"
+      "Arguments:\n"
+      "  <input.cyf>           Input file path or '-' to stream from stdin.\n"
+      "  <output.cyf file>     Output .cyf file path or '-' to stream as a cyf-formatted stream to stdout.\n"
+      "\n"
+      "Options:\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cyftools check input.cyf - | cyftools othercmd\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // anything that is as "stream" function wher ethere is no dependency between cells, gets a "Processor" objects
+  CheckProcessor checkp;
+  checkp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+
+  // run the processor and return if it fails
+  if (!table.StreamTable(checkp, opt::infile)) {
+    return 1;
+  }
+
+  return 0;
+
+}
+
+static int flipfunc(int argc, char** argv) {
+
+  // parse the command line options
+  int DEFAULT=-100000;
+  int xflip = DEFAULT;
+  int yflip = DEFAULT;
+  int xmax = DEFAULT;
+  int ymax = DEFAULT;
+  const char* shortopts = "vx:y:X:Y:"; // : means theres and argument. No colon = flag
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+      std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true;
+    case 'x' : arg >> xflip; break;
+    case 'y' : arg >> yflip; break;
+    case 'X' : arg >> xmax; break;
+    case 'Y' : arg >> ymax; break;      
+    default: die = true;
+    }
+  }
+
+  if (xflip == DEFAULT && yflip == DEFAULT) {
+    std::cerr << "********************************" << std::endl;
+    std::cerr << " cyftools flip - need to specify a flip axis (x and or y)" << std::endl;
+    std::cerr << "********************************" << std::endl;
+    die = true;
+  }
+
+  if ( (xflip != DEFAULT && xmax == DEFAULT) || (yflip != DEFAULT && ymax == DEFAULT)) {
+    std::cerr << "********************************" << std::endl;
+    std::cerr << " cyftools flip - need to specify an X or Y size if flipping on that axis" << std::endl;
+    std::cerr << "********************************" << std::endl;
+    die = true;
   }
   
   if (die || in_out_process(argc, argv)) {
@@ -395,11 +464,13 @@ static int flipfunc(int argc, char** argv) {
       "\n"
       "Options:\n"
       "  -x                        Position of a X-flip line\n"
-      "  -y                        Position of a Y-flip line\n"      
+      "  -y                        Position of a Y-flip line\n"
+      "  -X                        X dimension\n"
+      "  -Y                        Y dimension\n"
       "  -v, --verbose             Increase output to stderr.\n"
       "\n"
       "Example:\n"
-      "  cyftools flip input.cyf cleaned_output.cyf -x 100 -y 100\n";
+      "  cyftools flip input.cyf cleaned_output.cyf -x 100 -X 14032\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -407,7 +478,7 @@ static int flipfunc(int argc, char** argv) {
   // anything that is as "stream" function wher ethere is no dependency between cells, gets a "Processor" objects
   FlipProcessor flipp;
   flipp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  flipp.SetParams(xflip, yflip); 
+  flipp.SetParams(xflip, yflip, xmax, ymax); 
   
   // run the processor and return if it fails
   if (!table.StreamTable(flipp, opt::infile)) {
@@ -434,10 +505,16 @@ static int forprintfunc(int argc, char** argv) {
   if (xargs) {
     std::cout << "find . -name \"*.cyf\" " <<
       "| xargs -I{} -P 4 bash -c " <<
-      "'filename=$(basename {}); " <<
-      "base_name=$(echo $filename | cut -d \".\" -f 1); " <<
-      "echo \"...working on $base_name\"; " <<
-      "cyftools cmd {} ${base_name}.cyf;'" << std::endl;
+      "'./script.sh {}'" << std::endl;
+    std::cout << std::endl;
+    std::cout <<
+      "#!/bin/bash" << std::endl <<
+      "### place this as a script.sh" << std::endl <<
+      "### remember you will have to chmod+x script.sh" << std::endl << 
+      "filename=$(basename $1)" << std::endl <<
+      "base_name=$(echo $filename | cut -d \".\" -f 1)" << std::endl <<
+      "echo \"...working on $base_name\"" << std::endl <<
+      "cyftools cmd $1 ${base_name}.cyf" << std::endl;
   } else {
     std::cout << "for file in *.cyf; do" <<
       " filename=$(basename $file); " << 
@@ -1570,7 +1647,7 @@ static int plotpngfunc(int argc, char** argv) {
     case 'f' : arg >> scale_factor; break;
     case 'r' : arg >> roifile; break;
     case 't' : arg >> title; break;
-    case 'm' : arg >> module; break;
+      //case 'm' : arg >> module; break;
     case 'p' : arg >> palette; break;
     default: die = true;
     }
@@ -1585,15 +1662,17 @@ static int plotpngfunc(int argc, char** argv) {
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE = 
-      "Usage: cyftools png <input.cyf> <output_png> -m module\n"
+      "Usage: cyftools png <input.cyf> <output_png> -p palette\n"
       "  Plot the input as a PNG file.\n"
       "\n"
       "Arguments:\n"
       "  <input.cyf>               Input file path or '-' to stream from stdin.\n"
       "  <output_png>              Output PNG file path.\n"
-      "  -m <string>               Module (tumor, prostate, jhuorion, margin, orion, prostateimmune, pdl1, orionimmune)\n"
-      "  -p <file>                 File containing a palette which is: cflag value, pflag value, R, G, B, alpha, label. Colors are in order.\n"
+      "  -p <file>                 File containing a palette which is: cflag value, pflag value, R, G, B, alpha, label\n."
+      "                            Lines are in order, so that cell that meets two criteria gets the one with lower line number.\n"
       "                            Example line: 0,1024,255,0,0,1,Tcell\n"
+      "                            NB: A label of \"nolabel\" will exclude that label from the legend\n"
+      "                            NB: Should include a pflag=0,cflag=0 line at end to label cells not belonging to above (e.g. gray)\n"
       "\n"
       "Options:\n"
       "  -r <roifile>              Plot rois\n"
@@ -2240,7 +2319,8 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "radialdens" || opt::module == "margin" ||
 	 opt::module == "scramble" || opt::module == "scatter" ||
 	 opt::module == "hallucinate" || opt::module == "summary" ||
-	 opt::module == "magnify" || opt::module == "flip" || 
+	 opt::module == "magnify" || opt::module == "flip" ||
+	 opt::module == "check" || 
 	 opt::module == "island" || opt::module == "rescale" || 
 	 opt::module == "jaccard" || opt::module == "cellcount" ||
 	 opt::module == "synth" || 
@@ -2309,7 +2389,6 @@ static int roifunc(int argc, char** argv) {
       v.y *= micron_per_pixel;
     }
   }
-    
 
   if (opt::verbose)
     for (const auto& c : rois)

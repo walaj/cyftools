@@ -649,7 +649,6 @@ class ROIProcessor : public CellProcessor {
   bool m_label;
 
   bool m_blacklist_remove = false;
-
 };
 
 class ViewProcessor : public CellProcessor { 
@@ -767,13 +766,27 @@ private:
   
 };
 
+class CheckProcessor : public CellProcessor {
+  
+  int ProcessHeader(CellHeader& header) override;
+  
+  int ProcessLine(Cell& cell) override;
+  
+private:
+  
+};
+
 class FlipProcessor : public CellProcessor {
   
 public:
   
-  void SetParams(float x, float y) {
+  void SetParams(float x, float y,
+		 float xmax, float ymax) {
     m_x = x;
     m_y = y;
+    m_xmax = xmax;
+    m_ymax = ymax;
+    
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -784,6 +797,8 @@ private:
   
   float m_x = 0;
   float m_y = 0;
+  float m_xmax = 0;
+  float m_ymax = 0;
   
 };
 
