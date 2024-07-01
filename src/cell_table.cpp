@@ -1512,11 +1512,10 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file) {
 	if (ind == 0 && s != "CellID") {
 	  std::cerr << "Error: cyftools convert -- saw header in csv as starting with C but its not CellID, double check?" << std::endl;
 	  assert(false);
-	} else if (ind == 1 && s != "Hoechst") {
-	  std::cerr << "Warning: cyftools conveort -- usually assume mcmicro header is CellID,Hoechst,... but see here that 2nd elem is " << s << std::endl;
+	} else if (ind == 1 && !(s != "Hoechst" || s != "Hoechst1")) {
+	  std::cerr << "Warning: cyftools convert -- usually assume mcmicro header is CellID,Hoechst(1),... but see here that 2nd elem is " << s << std::endl;
 	  std::cerr << "         OK to proceed, but will assume " << s << " is first marker." << std::endl;
 	} 
-	
 	ind++;
       }
 

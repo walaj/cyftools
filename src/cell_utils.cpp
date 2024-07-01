@@ -44,7 +44,12 @@ PhenoMap phenoread(const std::string& filename) {
     return data;
   }
 
+  bool jeremiah = true;
   bool crevasse = false;// if crevasse format, handle differently
+  bool onetable = false;// if one table format, handle differently
+
+  // if one table format, store the marker names and order
+  std::vector<std::string> onetable_header;
   
   // read and load the phenotype file
   std::string line;
@@ -57,12 +62,22 @@ PhenoMap phenoread(const std::string& filename) {
       continue;
     }
 
+    else if (line.find("Sample") != std::string::npos && linenum == 0) {
+      onetable = true;
+      onetable_header = tokenize_comma_delimited(line);
+      continue;
+    }
+
+    else {
+      jeremiah = true;
+    }
+
     std::istringstream lineStream(line);
     std::string key;
     float value1, value2;
 
     // jeremiah format
-    if (!crevasse) {
+    if (jeremiah) {
       if (std::getline(lineStream, key, ',')) {
 	lineStream >> value1;
 	if (lineStream.get() == ',') {
@@ -71,8 +86,13 @@ PhenoMap phenoread(const std::string& filename) {
 	}
       }
     }
+    // one table format
+    //else if (onetable) {
+    //  if (std::
+    //}
+    
     // crevasse format
-    else {
+    else if (crevasse) {
       std::string token;
       std::getline(lineStream, token, ','); // discard first token
       std::getline(lineStream, token, ','); // read second token
@@ -555,11 +575,11 @@ std::string clean_marker_string(const std::string& input) {
     result.erase(std::remove(result.begin(), result.end(), '-'), result.end());
     
     // Find the position of the last underscore
-    size_t underscorePos = result.rfind('_');
+    /*    size_t underscorePos = result.rfind('_');
     if (underscorePos != std::string::npos) {
-        // Remove everything from the last underscore to the end
-        result.erase(underscorePos);
+      // Remove everything from the last underscore to the end
+      result.erase(underscorePos);
     }
-    
+    */
     return result;
 }

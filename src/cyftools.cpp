@@ -3181,6 +3181,11 @@ static int radialdensfunc(int argc, char** argv) {
     }
   }
 
+  if (label.empty() && file.empty()) {
+    std::cerr << "Error: Must specify file with -f or individual params with -l etc" << std::endl;
+    die = true;
+  }
+  
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
@@ -3394,13 +3399,13 @@ int debugfunc(int argc, char** argv) {
 
 static int convertfunc(int argc, char** argv) {
   const char* shortopts = "s:v";
-  bool mcmicro = false;
+  //bool mcmicro = false;
   uint32_t sampleid = static_cast<uint32_t>(-1);
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 's' : arg >> sampleid; break;
-    case 'c' : mcmicro = true; break;
+      //case 'c' : mcmicro = true; break;
     case 'v' : opt::verbose = true; break;
     default: die = true;
     }
