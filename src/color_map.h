@@ -2,11 +2,8 @@
 
 #include <vector>
 #include <string>
-<<<<<<< HEAD
-=======
 #include <iostream>
 #include "cysift.h"
->>>>>>> 723463a3f1330c7129d221ed0a9589a94f517db7
 
 // 255 based colors
 struct Color {
