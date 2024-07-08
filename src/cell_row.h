@@ -39,7 +39,8 @@ class Cell {
   void PrintWithHeader(int round,
 		       bool tabprint,
 		       bool header_print,
-		       const CellHeader& header) const;
+		       const CellHeader& header,
+          	       bool no_print_cellid_etc) const;
 
   void PrintForCrevasse(const CellHeader& header) const;
 

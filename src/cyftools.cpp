@@ -65,7 +65,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  info        - Display detailed information\n"
 "  summary     - Display brief information\n"    
 "  count       - Count cells\n"
-"  head        - Returns first lines of a file\n"
+  //"  head        - Returns first lines of a file\n"
 " --- Low-level processing ---\n"
 "  convert     - Create a .cyf format file from a CSV\n"    
 "  cut         - Select only given markers and metas\n"
@@ -284,8 +284,8 @@ int main(int argc, char **argv) {
     val = sampleselectfunc(argc, argv);
   } else if (opt::module == "convolve") {
     val = convolvefunc(argc, argv);
-  } else if (opt::module == "head") {
-    val = headfunc(argc, argv);
+    //  } else if (opt::module == "head") {
+    //  val = headfunc(argc, argv);
   } else if (opt::module == "sort") {
     val = sortfunc(argc, argv);
   } else if (opt::module == "delaunay") {
@@ -2311,7 +2311,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "sort" || opt::module == "divide" || 
 	 opt::module == "pearson" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
-	 opt::module == "delaunay" || opt::module == "head" || 
+	 opt::module == "delaunay" ||  
 	 opt::module == "mean" || opt::module == "ldacreate" ||
 	 opt::module == "ldarun" || opt::module == "png" ||
 	 opt::module == "tls" || opt::module == "dist" ||
@@ -2407,11 +2407,12 @@ static int roifunc(int argc, char** argv) {
 
 static int viewfunc(int argc, char** argv) {
   
-  const char* shortopts = "vn:hHRAtCx:";
+  const char* shortopts = "vn:hHRAtCx:X:";
   int precision = 2;
   bool rheader = false;  // view as csv with csv header
   bool adjacent = false; // view as name:value
   bool crevasse = false; // view as output for crevasse
+  bool strict_cut = false; // only print the cut field
   bool tabprint = false; // view as tab-delimited and columns justified
   std::string cut; // list of markers, csv separated, to cut on
   
@@ -2421,6 +2422,7 @@ static int viewfunc(int argc, char** argv) {
     case 'v' : opt::verbose = true; break;
     case 'n' : arg >> precision; break;
     case 'C' : crevasse = true; break;
+    case 'X' : arg >> cut; strict_cut = true; break;
     case 'x' : arg >> cut; break;
     case 't' : tabprint = true; break;
     case 'A' : adjacent = true; break;
@@ -2451,6 +2453,7 @@ static int viewfunc(int argc, char** argv) {
       "  -C                         Print as CellID,x,y,...markers... for Crevasse\n"
       "  -t                         Print tab-delimited and const space\n"
       "  -x <fields>                Comma-separated list of fields to trim output to.\n"
+      "  -X <fields>                Like -x, but ONLY output those columns, no CellID, etc\n"
       "  -n <decimals>              Number of decimals to keep. Default is -1 (no change).\n"
       "  -H                         View only the header.\n"
       "  -h                         Output with the header.\n"
@@ -2476,7 +2479,7 @@ static int viewfunc(int argc, char** argv) {
   
   ViewProcessor viewp;
   viewp.SetParams(opt::header, opt::header_only, rheader, adjacent, crevasse,
-		  precision, tokens, tabprint);
+		  precision, tokens, tabprint, strict_cut);
 
   table.StreamTable(viewp, opt::infile);
   

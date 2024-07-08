@@ -649,6 +649,8 @@ class ROIProcessor : public CellProcessor {
   bool m_label;
 
   bool m_blacklist_remove = false;
+
+  bool m_roi_region = false; // set true if any polygon/roi is a region
 };
 
 class ViewProcessor : public CellProcessor { 
@@ -662,7 +664,8 @@ class ViewProcessor : public CellProcessor {
 		 bool crevasse,
 		 int round,
 		 const std::unordered_set<std::string>& include,
-		 bool tabprint
+		 bool tabprint,
+		 bool strict_cut
 		 ) {
     
     m_print_header = print_header;
@@ -673,6 +676,7 @@ class ViewProcessor : public CellProcessor {
     m_csv_header = rheader;
     m_adjacent = adjacent;
     m_tabprint = tabprint;
+    m_strict_cut = strict_cut;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -693,6 +697,8 @@ class ViewProcessor : public CellProcessor {
   
   bool m_print_header;
 
+  bool m_strict_cut = false; // skip the CellID etc
+  
   // number of integers to round output to
   int m_round;
 
