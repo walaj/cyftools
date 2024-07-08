@@ -1,5 +1,5 @@
 %folder="/n/scratch3/users/j/jaw34/projects/orion/orion_1_74/rawcsv"
-folder="~/projects/orion/cycif/rawcsv"
+folder="~/projects/jhu/cycif/rawcsv_jerry"
 
 % load Orion 1-40
 %load("/home/jaw34/projects/orion/mat/matlab-Orion_CRC_allbacthes-20220602.mat")
@@ -22,7 +22,20 @@ folder="~/projects/orion/cycif/rawcsv"
 %    writetable(eval(tablename), fullfile(folder, sprintf('%s.csv',tablename)));
 %end
 %clear all
-    
+
+% load JHU cycif
+load("/home/jaw34/projects/jhu/cycif/matlab-JHU_CyCIF-20240607.mat")
+%for i = 1:40
+%  tablename = sprintf('dataC%02d', i)
+%  if exist(tablename, 'var')
+%      writetable(eval(tablename), fullfile(folder,sprintf('%s.csv',tablename)));
+%  else
+%      fprintf('%s does not exist\n', tablename);
+%  end
+%end
+%clear all
+
+
 % load CyCIF Immune
 load ("/home/jaw34/projects/orion/mat/matlab-CRC_Immune_MC-20210826.mat");
 vars = who('dataTNPCRC_*');

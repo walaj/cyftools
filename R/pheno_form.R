@@ -2,6 +2,12 @@ library(data.table)
 
 options(scipen = 999)
 
+# Check if any substrings are in the target string
+contains_any <- function(substrings, target_string) {
+  results <- sapply(substrings, function(sub) grepl(sub, target_string, fixed = TRUE))
+  any(results)
+}
+
 # get command line arguments
 args <- commandArgs(trailingOnly = TRUE)
 
@@ -24,6 +30,8 @@ if (!dir.exists(output_directory) || !file.access(output_directory, 2) == 0) {
 # read input file
 dt <- data.table::fread(args[1])
 
+jhu_cycif <- c("LSP19083", "LSP19118", "LSP19193", "LSP19233", "LSP19273", "LSP19329", "LSP19378", "LSP20006", "LSP20051", "LSP20071", "LSP20091", "LSP20126", "LSP20146", "LSP19088", "LSP19158", "LSP19203", "LSP19238", "LSP19298", "LSP19339", "LSP19383", "LSP20041", "LSP20056", "LSP20081", "LSP20096", "LSP20136", "LSP20171", "LSP19093", "LSP19163", "LSP19228", "LSP19243", "LSP19324", "LSP19358", "LSP20001", "LSP20046", "LSP20066", "LSP20086", "LSP20121", "LSP20141")
+
 # get column namesv
 cols <- colnames(dt)
 
@@ -37,6 +45,9 @@ if (grepl("immune",args[1])) {
 } else if (grepl("LSP126", args[1])) { # prostate
     cat("...pheno_form.R: prostate\n")
     marker_cols <- c("AMCARp","HMWCKp","SMAp","CD20p","CD68p","CD163p","CD4p","CD3dp","CD8ap","FOXP3p","PD1p","CD57p","CD11cp","CD15p","HLADRp","CD103p","CD31p","pTBK1p","HLAAp","CD44p","CD206p")
+} else if (contain_any(jhu_cycif, args[1]))
+    cat("...pheno_form.R: jhu cycif\n")
+    marker_cols <- c("panCKp","pAKTp","LINE1p","pERKp","pS6_240p","SMAp","Cateninp","CDX2p","gH2axp","pS6_235p","PCNAp","MLH1p","HER2p","Ki67p","H3K27me3p","TROP2p","CD44p","pNDRG1p","pRBp","p27p")
 } else {
     cat("...pheno_form.R: cycif orion\n")    
     marker_cols <- grep("p$", cols, value = TRUE)

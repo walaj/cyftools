@@ -47,7 +47,7 @@ ifeq ($(wildcard $(BREWHOME)),)  # If dir does not exist, probably on HMS server
             $(warning ******************************************************************)
 
     OMP = -I$(MYHOME)/software/openmpi-4.1.5/include
-    OMPL= -L$(MYHOME)/software/openmpi-4.1.5/lib -lmpi
+    OMPL= -L$(MYHOME)/software/openmpi-4.1.5/lib -lmpi -Wl,-rpath=$(MYHOME)/software/openmpi-4.1.5/lib/
 
     CAIRO=-DHAVE_CAIRO
     CAIROLIB = -lcairo

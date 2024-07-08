@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include <cstring>
+#include <string>
 
 // 255 based colors
 struct Color {
