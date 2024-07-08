@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Omero Colorizer</title>
+<script>
+
+function parseURL() {
+    const inputUrl = document.getElementById('inputUrl').value;
+    try {
+        const url = new URL(inputUrl);
+        const hashParams = url.hash.substring(1);
+        const paramsArray = hashParams.split('&');
+        const channelData = paramsArray.filter(param => /^c\d+=/.test(param));
+        const resultArea = document.getElementById('results');
+        resultArea.innerHTML = '';
+
+        channelData.forEach((data, index) => {
+            const [channel, value] = data.split('=');
+            const visibility = value[0];
+            const color = value.substring(1, 7);
+            const windowLevels = value.substring(7).split('-');
+            const lowWindow = parseInt(windowLevels[0], 16);
+            const highWindow = parseInt(windowLevels[1], 16);
+
+            const r = parseInt(color.substring(0, 2), 16);
+            const g = parseInt(color.substring(2, 4), 16);
+            const b = parseInt(color.substring(4, 6), 16);
+
+            const channelInfo = document.createElement('div');
+            const channelLabel = document.createElement('span');
+            channelLabel.id = `label${index}`;
+            channelLabel.innerHTML = `<strong>Channel ${channel.substring(1)}</strong>`;
+            channelLabel.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+            channelInfo.appendChild(channelLabel);
+
+            channelInfo.innerHTML += `<br>Visibility: <input type='text' id='vis${index}' value='${visibility}' size='1'> ` +
+                                     `R: <input type='text' id='r${index}' value='${r}' size='3'> ` +
+                                     `G: <input type='text' id='g${index}' value='${g}' size='3'> ` +
+                                     `B: <input type='text' id='b${index}' value='${b}' size='3'> ` +
+                                     `Window Low: <input type='text' id='low${index}' value='${lowWindow}' size='5'> ` +
+                                     `Window High: <input type='text' id='high${index}' value='${highWindow}' size='5'><br><br>`;
+            resultArea.appendChild(channelInfo);
+
+            // Reattach robust event listeners for RGB changes
+            const rInput = document.getElementById(`r${index}`);
+            const gInput = document.getElementById(`g${index}`);
+            const bInput = document.getElementById(`b${index}`);
+
+            [rInput, gInput, bInput].forEach(input => {
+                input.addEventListener('change', () => {
+                    // Validate and correct RGB input before applying
+                    const newR = Math.min(255, Math.max(0, parseInt(rInput.value) || 0));
+                    const newG = Math.min(255, Math.max(0, parseInt(gInput.value) || 0));
+                    const newB = Math.min(255, Math.max(0, parseInt(bInput.value) || 0));
+
+                    rInput.value = newR; // Update input values to corrected values
+                    gInput.value = newG;
+                    bInput.value = newB;
+
+                    document.getElementById(`label${index}`).style.backgroundColor = `rgb(${newR}, ${newG}, ${newB})`;
+                });
+            });
+        });
+    } catch (error) {
+        console.error("Error parsing URL:", error.message);
+        document.getElementById('results').innerHTML = `Error parsing URL: ${error.message}`;
+    }
+}
+
+function updateURL() {
+    const channelData = document.querySelectorAll('#results div');
+    let allInputsValid = true;
+
+    // Validate each channel's visibility input first
+    channelData.forEach((channelDiv, index) => {
+        const visInput = document.getElementById(`vis${index}`);
+        if (!visInput || (visInput.value !== '1' && visInput.value !== '0')) {
+            alert(`Visibility must be 0 or 1 for Channel ${index}`);
+            allInputsValid = false; // Stop further processing if any input is invalid
+            return; // Early return to prevent further execution
+        }
+    });
+
+    if (allInputsValid) {
+        const inputUrl = document.getElementById('inputUrl').value;
+        try {
+            const url = new URL(inputUrl);
+            const hashParts = url.hash.split('?');
+            const basePart = hashParts[0]; // The initial part before '?'
+            const existingParams = new URLSearchParams(hashParts[1] || '');
+
+            channelData.forEach((channelDiv, index) => {
+                const visInput = document.getElementById(`vis${index}`);
+                const rInput = document.getElementById(`r${index}`);
+                const gInput = document.getElementById(`g${index}`);
+                const bInput = document.getElementById(`b${index}`);
+                const lowInput = document.getElementById(`low${index}`);
+                const highInput = document.getElementById(`high${index}`);
+
+                if (visInput && rInput && gInput && bInput && lowInput && highInput) {
+                    const rHex = parseInt(rInput.value).toString(16).toUpperCase().padStart(2, '0');
+                    const gHex = parseInt(gInput.value).toString(16).toUpperCase().padStart(2, '0');
+                    const bHex = parseInt(bInput.value).toString(16).toUpperCase().padStart(2, '0');
+                    const lowHex = parseInt(lowInput.value).toString(16).toUpperCase();
+                    const highHex = parseInt(highInput.value).toString(16).toUpperCase();
+
+                    existingParams.set(`c${index}`, `${visInput.value}${rHex}${gHex}${bHex}${lowHex}-${highHex}`);
+                } else {
+                    console.error(`Missing input elements for channel ${index}`);
+                }
+            });
+
+            // Add or update 'cg' parameter without encoding it
+            existingParams.set('cg', '0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0');  // Update as needed
+
+            // Ensure 'r=color' is always present
+            if (!existingParams.has('r')) {
+                existingParams.set('r', 'color');
+            }
+
+            url.hash = `${basePart}?${existingParams.toString()}`;
+            document.getElementById('outputUrl').value = url.href;  // Display the updated URL
+            console.log("Updated URL:", url.href);  // Optionally log the updated URL to the console
+        } catch (error) {
+            console.error("Error updating URL:", error.message);
+            document.getElementById('results').innerHTML = `Error updating URL: ${error.message}`;
+        }
+    }
+}
+
+function generateBookmarkletCode() {
+    const channelData = document.querySelectorAll('#results div');
+    let bookmarkletParams = [];
+
+    channelData.forEach((channelDiv, index) => {
+        const visInput = document.getElementById(`vis${index}`);
+        const rInput = document.getElementById(`r${index}`);
+        const gInput = document.getElementById(`g${index}`);
+        const bInput = document.getElementById(`b${index}`);
+        const lowInput = document.getElementById(`low${index}`);
+        const highInput = document.getElementById(`high${index}`);
+
+        const rHex = parseInt(rInput.value).toString(16).toUpperCase().padStart(2, '0');
+        const gHex = parseInt(gInput.value).toString(16).toUpperCase().padStart(2, '0');
+        const bHex = parseInt(bInput.value).toString(16).toUpperCase().padStart(2, '0');
+        const lowHex = parseInt(lowInput.value).toString(16).toUpperCase();  // Not padded
+        const highHex = parseInt(highInput.value).toString(16).toUpperCase();  // Not padded
+
+        // Correctly formatting the JavaScript function call
+        bookmarkletParams.push(`params.set('c${index}', '${visInput.value}${rHex}${gHex}${bHex}${lowHex}-${highHex}');`);
+    });
+
+    let bookmarkletCode = `
+javascript:(function() {
+    var url = new URL(window.location.href);
+    var base = url.hash.indexOf('?') > 0 ? url.hash.substring(0, url.hash.indexOf('?') + 1) : url.hash + '?';
+    var params = new URLSearchParams(url.hash.substring(url.hash.indexOf('?') + 1));
+    ${bookmarkletParams.join('\n    ')}
+    if (!params.has('r')) {
+        params.set('r', 'color');
+    }
+    url.hash = base + params.toString();
+    window.location.href = url.href;
+})();`;
+
+    document.getElementById('bookmarkletOutput').value = bookmarkletCode;
+}
+
+
+
+
+
+</script>
+</head>
+<body>
+<h1>Channel Parser</h1>
+<input type="text" id="inputUrl" style="width: 80%;" placeholder="Enter the URL here">
+<button onclick="parseURL()">Parse URL</button>
+<br><br>
+<input type="text" id="outputUrl" style="width: 80%;" placeholder="Updated URL will appear here">
+<button onclick="updateURL()">Output</button>
+<div id="results" style="font-family: monospace;"></div>
+
+<button onclick="generateBookmarkletCode()">Generate Bookmarklet</button>
+<input type="text" id="bookmarkletOutput" style="width: 100%;" placeholder="Your Bookmarklet Code Will Appear Here">
+
+</body>
+</html>
+

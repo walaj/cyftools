@@ -44,20 +44,67 @@ PhenoMap phenoread(const std::string& filename) {
     return data;
   }
 
+  bool jeremiah = true;
+  bool crevasse = false;// if crevasse format, handle differently
+  bool onetable = false;// if one table format, handle differently
+
+  // if one table format, store the marker names and order
+  std::vector<std::string> onetable_header;
+  
   // read and load the phenotype file
   std::string line;
+  size_t linenum = 0;
   while (std::getline(file, line)) {
+
+    // check if crevasse format
+    if (line.find("Gate") != std::string::npos && linenum == 0) {
+      crevasse = true;
+      continue;
+    }
+
+    else if (line.find("Sample") != std::string::npos && linenum == 0) {
+      onetable = true;
+      onetable_header = tokenize_comma_delimited(line);
+      continue;
+    }
+
+    else {
+      jeremiah = true;
+    }
+
     std::istringstream lineStream(line);
-        std::string key;
-        float value1, value2;
-	
-        if (std::getline(lineStream, key, ',')) {
-	  lineStream >> value1;
-	  if (lineStream.get() == ',') {
-                lineStream >> value2;
-                data[key] = std::make_pair(value1, value2);
-	  }
-        }
+    std::string key;
+    float value1, value2;
+
+    // jeremiah format
+    if (jeremiah) {
+      if (std::getline(lineStream, key, ',')) {
+	lineStream >> value1;
+	if (lineStream.get() == ',') {
+	  lineStream >> value2;
+	  data[key] = std::make_pair(value1, value2);
+	}
+      }
+    }
+    // one table format
+    //else if (onetable) {
+    //  if (std::
+    //}
+    
+    // crevasse format
+    else if (crevasse) {
+      std::string token;
+      std::getline(lineStream, token, ','); // discard first token
+      std::getline(lineStream, token, ','); // read second token
+      key = token.substr(1, token.length() - 2); // Remove the quotes
+      std::getline(lineStream, token, ','); // read third token
+      value1 = std::stof(token);
+      value1 = std::exp(value1); // crevasse stores as log2
+      value2 = 100000000;
+      data[key] = std::make_pair(value1, value2);      
+    } 
+      
+    linenum++;
   }
   
   file.close();
@@ -260,7 +307,8 @@ std::pair<std::string, std::string> colon_parse(const std::string& str) {
 
 
 void draw_scale_bar(cairo_t* cr, double x, double y, double bar_width, double bar_height, const std::string& text) {
-  
+
+#ifdef HAVE_CAIRO
     // Set color to white for the bar
     cairo_set_source_rgb(cr, 1.0, 1.0, 1.0); // White color
     cairo_set_line_width(cr, bar_height); // Set bar height as line width
@@ -285,10 +333,13 @@ void draw_scale_bar(cairo_t* cr, double x, double y, double bar_width, double ba
     cairo_move_to(cr, text_x, text_y);
     cairo_show_text(cr, text.c_str());
     cairo_stroke(cr); // Apply the drawing
+#else
+    std::cerr << "Warning - unable to draw scale bar, need to link Cairo library" << std::endl;
+#endif    
 }
 
 
-void add_legend_cairo(cairo_t* crp, int font_size,
+/*void add_legend_cairo(cairo_t* crp, int font_size,
 		      int legend_width, int legend_height,
 		      int legend_x, int legend_y,
 		      const ColorLabelMap& cm) {
@@ -321,9 +372,12 @@ void add_legend_cairo(cairo_t* crp, int font_size,
 #endif  
   
 }
+*/
+
 void add_legend_cairo_top(cairo_t* crp, int font_size,
                       int legend_height,
-                      int width, const ColorLabelMap& cm) {
+                      int width,
+			  const ColorLabelVec& cm) {
 #ifdef HAVE_CAIRO
   
   // Black background for legend area
@@ -337,7 +391,9 @@ void add_legend_cairo_top(cairo_t* crp, int font_size,
   cairo_text_extents_t extents;
   cairo_set_font_size(crp, font_size); // Adjust font size to your needs  
   for (const auto& entry : cm) {
-    std::string label = entry.second + space; // Add spaces between labels
+    if (entry.label == "nolabel") // keyword to skip the label
+      continue;
+    std::string label = entry.label + space; // Add spaces between labels
     cairo_text_extents(crp, label.c_str(), &extents);
     total_width += extents.x_advance; // Use x_advance for accurate spacing
   }
@@ -353,8 +409,11 @@ void add_legend_cairo_top(cairo_t* crp, int font_size,
   
   // Draw the labels
   for (const auto& entry : cm) {
-    Color c = entry.first;
-    std::string label = entry.second;
+    if (entry.label == "nolabel") // keyword to skip the label
+      continue;
+
+    Color c = entry.c;
+    std::string label = entry.label;
     
     // Set color for text
     cairo_set_source_rgb(crp, c.redf(), c.greenf(), c.bluef());
@@ -428,45 +487,55 @@ bool compare(const JPoint& p1, const JPoint& p2, const JPoint& p0) {
 }
 
 std::vector<JPoint> convexHull(std::vector<JPoint>& points) {
-    // Step 1: Find the bottommost point
-    std::swap(points[0], *std::min_element(points.begin(), points.end(), compareYThenX));
-    JPoint p0 = points[0];
 
-    // Step 2: Sort points based on polar angle with p0
-    std::sort(points.begin() + 1, points.end(), [p0](const JPoint& a, const JPoint& b) { return compare(a, b, p0); });
+  // returning since can't compute so small
+  if (points.size() < 3)
+    return std::vector<JPoint>();
+  
+  //std::cerr << "finding bottomost point" << std::endl;
+  // Step 1: Find the bottommost point
+  std::swap(points[0], *std::min_element(points.begin(), points.end(), compareYThenX));
+  JPoint p0 = points[0];
 
-    // Step 3: Remove points that are collinear with p0
-    int m = 1; // Initialize size of modified array
-    for (int i = 1; i < points.size(); ++i) {
-        while (i < points.size() - 1 && orientation(p0, points[i], points[i+1]) == 0) i++;
-        points[m++] = points[i];
-    }
+  //std::cerr << "sorting polar" << std::endl;
+  // Step 2: Sort points based on polar angle with p0
+  std::sort(points.begin() + 1, points.end(), [p0](const JPoint& a, const JPoint& b) { return compare(a, b, p0); });
 
-    // Convex hull is not possible if there are less than 3 unique points
-    if (m < 3) return std::vector<JPoint>();
-
-    // Step 4: Create an empty stack and push first three points to it
-    std::stack<JPoint> S;
-    S.push(points[0]);
-    S.push(points[1]);
-    S.push(points[2]);
-
-    // Step 5: Process remaining points
-    for (int i = 3; i < m; i++) {
-        while (S.size() > 1 && orientation(nextToTop(S), S.top(), points[i]) != 2) S.pop();
-        S.push(points[i]);
-    }
-
-    std::vector<JPoint> hull;
-    
-    // Now stack has the output points, print contents of stack
-    while (!S.empty()) {
-        JPoint p = S.top();
-	hull.push_back(p);
-        //std::cout << "(" << p.x << ", " << p.y << ")" << std::endl;
-        S.pop();
-    }
-    return hull;
+  //std::cerr << "removing colinear points" << std::endl;
+  // Step 3: Remove points that are collinear with p0
+  int m = 1; // Initialize size of modified array
+  for (int i = 1; i < points.size(); ++i) {
+    while (i < points.size() - 1 && orientation(p0, points[i], points[i+1]) == 0) i++;
+    points[m++] = points[i];
+  }
+  
+  // Convex hull is not possible if there are less than 3 unique points
+  if (m < 3) return std::vector<JPoint>();
+  
+  // Step 4: Create an empty stack and push first three points to it
+  std::stack<JPoint> S;
+  S.push(points[0]);
+  S.push(points[1]);
+  S.push(points[2]);
+  
+  // Step 5: Process remaining points
+  //std::cerr << "processing remaining points" << std::endl;
+  for (int i = 3; i < m; i++) {
+    while (S.size() > 1 && orientation(nextToTop(S), S.top(), points[i]) != 2) S.pop();
+    S.push(points[i]);
+  }
+  
+  std::vector<JPoint> hull;
+  
+  // Now stack has the output points, print contents of stack
+  //std::cerr << "emptying stack" << std::endl;
+  while (!S.empty()) {
+    JPoint p = S.top();
+    hull.push_back(p);
+    //std::cout << "(" << p.x << ", " << p.y << ")" << std::endl;
+    S.pop();
+  }
+  return hull;
 }
 
 
@@ -506,11 +575,11 @@ std::string clean_marker_string(const std::string& input) {
     result.erase(std::remove(result.begin(), result.end(), '-'), result.end());
     
     // Find the position of the last underscore
-    size_t underscorePos = result.rfind('_');
+    /*    size_t underscorePos = result.rfind('_');
     if (underscorePos != std::string::npos) {
-        // Remove everything from the last underscore to the end
-        result.erase(underscorePos);
+      // Remove everything from the last underscore to the end
+      result.erase(underscorePos);
     }
-    
+    */
     return result;
 }

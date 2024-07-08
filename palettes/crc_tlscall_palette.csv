@@ -1,0 +1,16 @@
+## cflag,pflag,r,g,b,a,label
+## NB: The first line to trigger will get the color.
+##     If a cell belongs to two lines (e.g. CD3 and CD4)
+##     and you want to prioritize one (CD4), then place it first.
+##     This then is the way to specify a NOT (e.g. CD3+ NOT CD4+)
+##     would be a cell that didn't get the CD4+ color, but then on later
+##     line does get the CD3+ color. 
+32,1024,255,0,255,0.3,CD20
+32,4096,255,255,0,0.3,CD3
+32,32768,255,255,0,0.3,PD1
+32,8192,0,255,0,0.3,CD163
+0,1024,192,64,192,0.3,nolabel
+0,4096,192,192,0,0.3,nolabel
+0,32768,192,192,0,0.3,nolabel
+0,8192,0,192,0,0.3,nolabel
+0,0,128,128,128,0.2,Other

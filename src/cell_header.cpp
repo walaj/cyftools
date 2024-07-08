@@ -72,7 +72,6 @@ void CellHeader::SortTags() {
       return a.type < b.type;
     return a.i < b.i;
   });
-
 }
 
 void CellHeader::Cut(const std::unordered_set<size_t> to_remove) {
@@ -123,10 +122,20 @@ void CellHeader::addTag(const Tag& tag) {
   if ( (tag.type == Tag::CA_TAG || tag.type == Tag::MA_TAG) && tag.i == -1 )
     thistag.i = GetDataTags().size();
 
+  // check if tag already in header
   for (const auto& t : GetAllTags()) {
     if (t.id == tag.id && tag.type == t.type && t.type != Tag::PG_TAG) {
       std::cerr << "Warning: Tag " << t.id << " already in header" << std::endl;
       return;
+    }
+  }
+
+  // find what the new tag id should be
+  // this is just the highest existing for that tag type, + 1
+  int new_tag_i = 0; 
+  for (const auto& t : GetAllTags()) {
+    if (thistag.type == t.type) {
+      new_tag_i = t.i;
     }
   }
   
@@ -134,15 +143,19 @@ void CellHeader::addTag(const Tag& tag) {
   // float values in the column
   tags.push_back(thistag);
 
+  tags.back().i = new_tag_i + 1;
+  
   // if it's a program tag, update the counter for temporal sorting
-  if (tag.type == Tag::PG_TAG) {
-    tags.back().i = GetProgramTags().size() - 1;
-  } else if (tag.type == Tag::MA_TAG) {
-    tags.back().i = GetMarkerTags().size() - 1;
-  } else if (tag.type == Tag::CA_TAG) {
-    tags.back().i = GetMetaTags().size() -1;
-  }
+  //if (tag.type == Tag::PG_TAG) {
+  //  tags.back().i = GetProgramTags().size() - 1;
+  //} else if (tag.type == Tag::MA_TAG) {
+  //  tags.back().i = GetMarkerTags().size() - 1;
+  //} else if (tag.type == Tag::CA_TAG) {
+  //  tags.back().i = GetMetaTags().size() -1;
+  //}
 
+  // make sure tags are sorted
+  SortTags();
 }
 
 std::vector<Tag> CellHeader::GetMarkerTags() const {

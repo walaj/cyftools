@@ -75,7 +75,8 @@ public:
 	      float scale_factor,
 	      const std::string& module,
 	      const std::string& roifile,
-	      const std::string& title	      
+	      const std::string& title,
+	      ColorLabelVec palette
 	      ) const;
 
   //////
@@ -135,6 +136,8 @@ public:
 		  int flag_to, bool invert_to);
   
   void MoranI(const std::vector<cy_uint>& flags);
+
+  void Distances(const std::string& id);
 
   //////
   // Clustering ops
@@ -286,13 +289,16 @@ public:
 	  std::vector<int>& component_label,
 	  int currentLabel,
 	  const std::vector<std::vector<size_t>>& neighbors) const;
-
+  
+#ifdef HAVE_KNNCOLLE
   knncolle::VpTree<knncolle::distances::Euclidean, int, float> build_vp_tree() const {
     static const std::vector<bool> empty_vector;
     return build_vp_tree(empty_vector);
   }
   
   knncolle::VpTree<knncolle::distances::Euclidean, int, float> build_vp_tree(const std::vector<bool>& ix) const;
+#endif
+
   
 #endif    
 };

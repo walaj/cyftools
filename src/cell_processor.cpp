@@ -53,21 +53,37 @@ int FilterProcessor::ProcessHeader(CellHeader& header) {
 int AverageProcessor::ProcessHeader(CellHeader& header) {
 
   m_header = header;
+
+  // check that group by is in the header
+  if (!m_group_by.empty()) {
+    size_t i = 0;
+    for (const auto& tag : m_header.GetDataTags()) {
+      if (tag.id == m_group_by) {
+	m_group_by_id = i;
+	continue;
+      }
+      i++;
+    }
+    if (m_group_by_id < 0) {
+      std::cerr << "Error: cyftools mean - group by of " << m_group_by << " not found in data header" << std::endl;
+      assert(false);
+    }
+  }
   
   // which column (if any) stores tls-id
-  size_t i = 0;
+  /*size_t i = 0;
   for (const auto& tag : m_header.GetDataTags()) {
     if (tag.id == "tls_id") {
       m_tls_column = i;
       break;
     }
     i++;
-  }
+    }*/
   
   // initialize sums to zero
-  sums.resize(m_header.GetDataTags().size());
-  if (sums.size())
-    assert(sums.at(0) == 0);
+  //sums.resize(m_header.GetDataTags().size());
+  //if (sums.size())
+  //  assert(sums.at(0) == 0);
   
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
 
@@ -86,36 +102,34 @@ int AverageProcessor::ProcessHeader(CellHeader& header) {
 int AverageProcessor::ProcessLine(Cell& cell) {
 
   for (size_t i = 0; i < cell.cols.size(); i++) {
-    sums[i] += cell.cols.at(i);
+    
+    // get the group-by key, unless no group then all are ZERO key
+    int key = m_group_by_id < 0 ? 0 : cell.cols.at(m_group_by_id);
+
+    // add the data point
+    allgroups[key].Add(i, cell.cols.at(i));
   }
-  n++;
 
   // if tls is a column, add ID to set
-  if (m_tls_column > 0)
-    m_tls_set.insert(cell.cols.at(m_tls_column));
+  //if (m_tls_column > 0)
+  //  m_tls_set.insert(cell.cols.at(m_tls_column));
   
   // don't emit anything in StreamTable
   return CellProcessor::NO_WRITE_CELL;
 }
 
-void AverageProcessor::EmitCell() const {
+void AverageProcessor::EmitCells() const {
 
-  Cell cell;
-
-  std::vector<float> means(sums.size());
-  if (n > 0) {
-    for (size_t i = 0; i < means.size(); i++) {
-      means[i] = sums.at(i) / n;
-    }
+  // loop each group and emit the cell with the means
+  for (const auto& d : allgroups) {
+    OutputLine(d.second.EmitCell());
   }
-
-  cell.cols = means;
-
+  
   // for tls id column, we want the number of unique TLS
-  cell.cols[m_tls_column] = m_tls_set.size();
+  //cell.cols[m_tls_column] = m_tls_set.size();
   
   // write the one cell
-  OutputLine(cell);
+  //OutputLine(cell);
 }
 
 int CellCountProcessor::ProcessHeader(CellHeader& header) {
@@ -157,14 +171,13 @@ int CellCountProcessor::ProcessLine(Cell& cell) {
   for (size_t i = 0; i < m_num_marker_tags; i++) {
     CellFlag f(cell.pflag);
     cy_uint to_test = static_cast<cy_uint>(std::pow(2, i));
+    assert(to_test > 0);
     if (f.testAndOr(to_test, 0))
       m_counts[i]++;
   }
 
   // additional flags
   for (size_t i = m_num_marker_tags; i < (m_num_marker_tags + m_additional_flags.size()); i++) {
-    //if (cell.id==33)
-    //std::cerr << " i " << i << " m_additiona  "<< m_additional_flags[i-m_num_marker_tags] << std::endl;
     if (m_additional_flags[i-m_num_marker_tags] == 0) {
       m_counts[i] += (cell.pflag == 0);
     } else if (IS_FLAG_SET(cell.pflag, m_additional_flags[i - m_num_marker_tags])) {
@@ -186,7 +199,7 @@ void CellCountProcessor::EmitCell() const {
   // add the count data
   for (size_t i = 0; i < m_counts.size(); i++)
     cell.cols.push_back(m_counts.at(i));
-
+  
   // zero the hard data since they are meaningless
   cell.x = 0;
   cell.y = 0;  
@@ -442,6 +455,9 @@ int FilterProcessor::ProcessLine(Cell& cell) {
   write_cell = write_cell && flag_write_cell;
 
   bool m_trim = !(m_mark1 || m_mark2);
+
+  //  std::cerr << " m_mark1 " << m_mark1 << " m_mark2 " << m_mark2 << " mtrim " << m_trim << " write_cell " << write_cell << " cflag " <<
+  //  cell.cflag << std::endl;
   
   // trim is set but cell passes
   if (m_trim && write_cell) {
@@ -458,12 +474,14 @@ int FilterProcessor::ProcessLine(Cell& cell) {
   } else if (m_mark2 && write_cell) {
     SET_FLAG(cell.cflag, BUILD_GRAPH_FLAG);
     return CellProcessor::WRITE_CELL;
-    // cell fails, but trimming is off (no marks set)
+  // cell fails, but mode is mark not trim
   } else if (!m_trim && !write_cell) {
-    CLEAR_FLAG(cell.cflag, MARK_FLAG);
-    CLEAR_FLAG(cell.cflag, BUILD_GRAPH_FLAG);    
+    if (m_mark1)
+      CLEAR_FLAG(cell.cflag, MARK_FLAG);
+    if (m_mark2)
+      CLEAR_FLAG(cell.cflag, BUILD_GRAPH_FLAG);
     return CellProcessor::WRITE_CELL;
-    // should never get here
+  // should never get here
   } else {
     assert(false);
   }
@@ -545,8 +563,8 @@ int CountProcessor::ProcessHeader(CellHeader& header) {
 
 int CountProcessor::ProcessLine(Cell& cell) {
   
-  if (IS_FLAG_SET(cell.cflag, m_c_and_flags) && IS_FLAG_SET(cell.pflag, m_p_and_flags) &&
-      ARE_FLAGS_OFF(cell.cflag, m_c_not_flags) && ARE_FLAGS_OFF(cell.pflag, m_p_not_flags))
+  //  if (IS_FLAG_SET(cell.cflag, m_c_and_flags) && IS_FLAG_SET(cell.pflag, m_p_and_flags) &&
+  //    ARE_FLAGS_OFF(cell.cflag, m_c_not_flags) && ARE_FLAGS_OFF(cell.pflag, m_p_not_flags))
     m_count++;
   
   return NO_WRITE_CELL; // do nothing
@@ -1034,6 +1052,11 @@ int CleanProcessor::ProcessLine(Cell& cell) {
   
 }
 
+static inline bool roikey(const Polygon& poly, const std::string& keyword) {
+    return poly.Text.find(keyword) != std::string::npos ||
+           poly.Name.find(keyword) != std::string::npos;
+}
+
 int ROIProcessor::ProcessLine(Cell& cell) {
 
   // Loop the table and check if the cell is in the ROI
@@ -1045,15 +1068,14 @@ int ROIProcessor::ProcessLine(Cell& cell) {
     // if point is in this polygon, add the polygon id number to the roi
     if (polygon.PointIn(cell.x,cell.y)) {
       
-      if (polygon.Text.find("blacklist") != std::string::npos || polygon.Name.find("blacklist") != std::string::npos ||
-	  polygon.Text.find("rtifact") != std::string::npos || polygon.Name.find("rtifact") != std::string::npos) {
+      if (roikey(polygon, "lacklist") || roikey(polygon, "rtifact")) {
 	print_line = false;
-      } else if (polygon.Text.find("normal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) {
+      } else if (roikey(polygon, "ormal")) {
 	CLEAR_FLAG(cell.cflag, TUMOR_FLAG);
 	CLEAR_FLAG(cell.cflag, MARGIN_FLAG);	
 	CLEAR_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);
 	print_line = true;
-      } else if (polygon.Text.find("tumor") != std::string::npos || polygon.Name.find("tumor") != std::string::npos) {
+      } else if (roikey(polygon, "umor")) {
 	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);
 	print_line = true;
       } else if (polygon.Text.find("cd3panck_error") != std::string::npos || polygon.Name.find("cd3panck_error") != std::string::npos) {
@@ -1063,6 +1085,29 @@ int ROIProcessor::ProcessLine(Cell& cell) {
       } else {
 	print_line = true;
       }
+
+      // secondary annotations for PCa
+      if (roikey(polygon, "3+3")) {
+	SET_FLAG(cell.cflag, GLEASON_GRADE_GROUP_1);
+	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);	
+      } else if (roikey(polygon, "3+4")) {
+	SET_FLAG(cell.cflag, GLEASON_GRADE_GROUP_2);
+	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);	
+      } else if (roikey(polygon, "4+3")) {
+	SET_FLAG(cell.cflag, GLEASON_GRADE_GROUP_3);
+	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);	
+      } else if (roikey(polygon, "4+4")) {
+	SET_FLAG(cell.cflag, GLEASON_GRADE_GROUP_4);
+	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);	
+      } else if (roikey(polygon, "5+4") || roikey(polygon, "4+5") || roikey(polygon, "5+5")) {
+	SET_FLAG(cell.cflag, GLEASON_GRADE_GROUP_5);
+	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);	
+      } else if (roikey(polygon, "eural") || roikey(polygon, "PNI") || roikey(polygon, "pni")) {
+	SET_FLAG(cell.cflag, PERINEURAL_INVASION);
+      } else if (roikey(polygon, "SV") || roikey(polygon, "eminal")) {
+	SET_FLAG(cell.cflag, SEMINAL_VESICLES);
+      }
+      
       
       // uncomment below if want to prevent over-writing existing
       // break;
@@ -1239,6 +1284,81 @@ int ViewProcessor::ProcessHeader(CellHeader& header) {
   
 }
 
+int OffsetProcessor::ProcessLine(Cell& cell) {
+  
+  cell.x = cell.x + m_x;
+  cell.y = cell.y + m_y;
+
+  return WRITE_CELL;
+}
+
+int OffsetProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+  
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  
+  this->SetupOutputStream(); 
+  
+    m_header.SortTags();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+  
+  return HEADER_NO_ACTION;
+  
+}
+
+int CheckProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+
+  this->SetupOutputStream();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+  
+  return HEADER_NO_ACTION;
+
+}
+
+int CheckProcessor::ProcessLine(Cell& cell) {
+  return WRITE_CELL;
+}
+
+int FlipProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+
+  // adds tag to hold the command input in the header to keep track of what was done 
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  
+  this->SetupOutputStream(); 
+  
+  m_header.SortTags();
+  
+  // output the header
+  assert(m_archive);
+  (*m_archive)(m_header);
+  
+  return HEADER_NO_ACTION;
+  
+}
+
+int FlipProcessor::ProcessLine(Cell& cell) {
+
+  // write the flip logic
+  if (m_x != -100000)
+    cell.x = 2 * m_x - cell.x + m_xmax;
+  if (m_y != -100000)  
+    cell.y = 2 * m_y - cell.y + m_ymax;  
+
+  return WRITE_CELL;
+}
+
+
 int ViewProcessor::ProcessLine(Cell& cell) {
 
   // classic view, no cut
@@ -1247,8 +1367,9 @@ int ViewProcessor::ProcessLine(Cell& cell) {
       cell.PrintForCrevasse(m_header);
       return NO_WRITE_CELL;
     }
-      
-    m_adjacent ? cell.PrintWithHeader(m_round, m_header) : cell.Print(m_round);
+    
+    cell.PrintWithHeader(m_round, m_tabprint, m_adjacent, m_header);
+
     return NO_WRITE_CELL; // don't output, since already printing it
   }
   
@@ -1265,7 +1386,7 @@ int ViewProcessor::ProcessLine(Cell& cell) {
   }
   cell.cols = cols_new;
   
-  m_adjacent ? cell.PrintWithHeader(m_round, m_header) : cell.Print(m_round);
+  cell.PrintWithHeader(m_round, m_tabprint, m_adjacent, m_header);
     
   return NO_WRITE_CELL; // don't output, since already printing it
 }
@@ -1412,7 +1533,7 @@ int DebugProcessor::ProcessLine(Cell& cell) {
 
 int BuildProcessor::ProcessHeader(CellHeader& header) {
   m_header = header; // store but don't print
-
+  
   return CellProcessor::SAVE_HEADER;
 }
 

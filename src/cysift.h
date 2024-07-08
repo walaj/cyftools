@@ -4,6 +4,7 @@
 #include <vector>
 #include <sstream>
 #include <iostream>
+#include <cassert>
 
 #define TUMOR_FLAG 1
 #define MARK_FLAG 2
@@ -13,6 +14,14 @@
 #define TLS_FLAG 32
 #define MARGIN_MANUAL_FLAG 64
 #define BUILD_GRAPH_FLAG 128
+
+#define GLEASON_GRADE_GROUP_1 4096
+#define GLEASON_GRADE_GROUP_2 8192
+#define GLEASON_GRADE_GROUP_3 16384
+#define GLEASON_GRADE_GROUP_4 32768
+#define GLEASON_GRADE_GROUP_5 65536
+#define PERINEURAL_INVASION 131072
+#define SEMINAL_VESICLES 262144
 
 #define PROSTATE_AMCAR 4
 #define PROSTATE_HMWCK 8
@@ -34,11 +43,20 @@
 #define ORION_PD1 32768
 #define ORION_PANCK 131072
 
+#define ORIONJHU_CD3 2048
+#define ORIONJHU_CD20 64
+#define ORIONJHU_CD8 256
+#define ORIONJHU_CD163 32
+#define ORIONJHU_FOXP3 16385
+#define ORIONJHU_PANCK 65536
+#define ORIONJHU_PD1 8192
+
 // Macro to test if a flag is set
 // Data flag (cflag or pflag) is one, the flag to query is two
 // eg IS_FLAG_SET(cflag, TUMOR_FLAG)
 #define IS_FLAG_SET(flags, flag) (((flags) & (flag)) == (flag))
 
+// query flag by bit position (0 is OK)
 #define IS_FLAG_I_SET(flags, i) ((flags & (1ull << (i))) != 0)
 
 // Macro to test if any of the flags are set

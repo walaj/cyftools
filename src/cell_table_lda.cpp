@@ -166,9 +166,11 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
 
     // make the legend and color map
     ColorMap cm = getColorMap(m_ldamodel->getNumTopics());
-    ColorLabelMap clm;
+    ColorLabelVec clm;
+
+    // construct the color label vec
     for (size_t i = 0; i < Zr.rows(); i++) {
-      clm.push_back({cm[i], "Topic " + std::to_string(i+1)});
+      clm.push_back({0,0,cm[i], "Topic " + std::to_string(i+1)});
     }
 
     topic_highlight -= 1;
@@ -254,8 +256,12 @@ void CellTable::LDA_score_cells(const std::string& pdffile,
     int legend_padding = 20;
     int legend_x = width*scale_factor - legend_width - legend_padding;
     int legend_y = legend_padding;
-    add_legend_cairo(crp, font, legend_width, legend_height,
-		     legend_x, legend_y, clm);
+
+    // todo this need to be switched to colorlabelvec
+    add_legend_cairo_top(crp, font,
+			 legend_height,
+			 legend_width,
+			 clm);
     /*    
     for (int i = 0; i < 10; ++i) {
       

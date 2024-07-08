@@ -27,10 +27,10 @@
 // but still here in case useful later
 #define CELL_BUFFER_LIMIT 1
 
-#ifdef __clang__
-std::vector<Cell> cell_buffer;
-#pragma omp threadprivate(cell_buffer)
-#endif
+//#ifdef __clang__
+//std::vector<Cell> cell_buffer;
+//#pragma omp threadprivate(cell_buffer)
+//#endif
 
 void CellTable::UMAP(int num_neighbors) { 
 
@@ -86,8 +86,12 @@ void CellTable::UMAP(int num_neighbors) {
 
   umappp::NeighborList<float> nlist;
   nlist.resize(nobs);
-  
+
+#ifdef HAVE_OMP  
 #pragma omp parallel for num_threads(m_threads)
+#else
+  std::cerr << "OMP not included, no support for multithreading. Compile with to support" << std::endl;
+#endif  
   for (size_t i = 0; i < nobs; ++i) {
     if (i % 50000 == 0 && m_verbose)
       std::cerr << "...processing cell "
@@ -99,8 +103,10 @@ void CellTable::UMAP(int num_neighbors) {
 		<< std::endl;      
     
     JNeighbors neigh = searcher.find_nearest_neighbors(i, num_neighbors);
-    
+
+#ifdef HAVE_OMP  
 #pragma omp critical
+#endif  
     {
       nlist[i] = neigh;
     }
@@ -507,6 +513,16 @@ void CellTable::IslandFill(size_t n, int flag_from, bool invert_from,
   
   validate();
 
+  if (flag_from == 0) {
+    std::cerr << "Error - cyftools island - flag from is zero, needs to be non-zero" << std::endl;
+    return;
+  } 
+  
+  if (flag_to == 0) {
+    std::cerr << "Error - cyftools island - flag to is zero, needs to be non-zero" << std::endl;
+    return;
+  } 
+
   const size_t NUM_NEIGHBORS = 10;
   const float DIST_LIMIT = 100;
   
@@ -670,6 +686,7 @@ void CellTable::IslandFill(size_t n, int flag_from, bool invert_from,
   
 }
 
+#ifdef HAVE_KNNCOLLE
 knncolle::VpTree<knncolle::distances::Euclidean, int, float>
 CellTable::build_vp_tree(const std::vector<bool>& ix) const {
 
@@ -713,10 +730,88 @@ CellTable::build_vp_tree(const std::vector<bool>& ix) const {
    return searcher;
    
 }
+#endif
+
+void CellTable::Distances(const std::string& id) {
+
+#ifdef HAVE_KNNCOLLE
+  
+  validate();
+
+  int n = CellCount();
+  
+  // find which cells are "marked"
+  std::vector<bool> ix(n, false);
+  for (size_t i = 0; i <  n; i++) {
+    if (IS_FLAG_SET(m_cflag_ptr->at(i), MARK_FLAG))
+      ix[i] = true;
+  }
+
+  // clear the mark
+  ClearCFlag(MARK_FLAG);
+
+  // ensure there are some that are set
+  int marked_cells = std::count(ix.begin(), ix.end(), true);
+  if (marked_cells == 0) {
+    std::cerr << "Warning - cyftools distance on id " << id << " - No marked cells, did you run cyftools filter -M first?" << std::endl;
+    return;
+  }
+  if (m_verbose)
+    std::cerr << "...cyftools dist - Finding distance to " << marked_cells << " marked cells" << std::endl;
+   
+  // build the tree
+  knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher = build_vp_tree(ix);
+
+  // store the distances
+  auto dist_ptr = std::make_shared<FloatCol>();
+  dist_ptr->resize(n);
+  
+  // find the nearest neighbor
+  for (size_t i = 0; i < n; i++) {
+
+    if (i % 100000 == 0 && m_verbose) {
+      std::cerr << "...cyftools dist - getting dist for cell " << i << std::endl;
+    }
+
+    // if its already marked, dist 0 by definition
+    if (IS_FLAG_SET(m_cflag_ptr->at(i), MARK_FLAG)) {
+      dist_ptr->SetNumericElem(0, i);
+      continue;
+    }
+    
+    float x = m_x_ptr->at(i);
+    float y = m_y_ptr->at(i);
+    float point[2] = {x, y};
+    JNeighbors neigh = searcher.find_nearest_neighbors(point, 1);
+    assert(neigh.size() == 1);
+
+    // set the distance
+    dist_ptr->SetNumericElem(neigh.at(0).second, i);
+    
+  }
+  
+  // add the columm
+  Tag dtag(Tag::CA_TAG, "dist_" + id, "");
+  AddColumn(dtag, dist_ptr);
+  
+#else
+  std::cerr << "Warning - not able to calculate without a KNN tree implementation linked" << std::endl;
+#endif  
+}
 
 void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
 			int min_cluster_size, int dist_max) {
 
+  if (bcell_marker == 0) {
+    std::cerr << "Error - cyftools tls - bcell_marker is zero, needs to be non-zero" << std::endl;
+    return;
+  } 
+  if (immune_marker == 0) {
+    std::cerr << "Error - cyftools tls - immune_marker is zero, needs to be non-zero" << std::endl;
+    return;
+  } 
+
+  
   if (m_verbose)
     std::cerr << "...cyftools tls - bcell marker " << bcell_marker << " immune marker(s) " <<
       immune_marker << " min cluster size " << min_cluster_size << " dist max " << dist_max << std::endl;
@@ -814,15 +909,16 @@ void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
   ClearCFlag(MARK_FLAG + TLS_FLAG); // clear both flags
   
   // get the dbscan_cluster column
-   std::unordered_map<std::string, FloatColPtr>::iterator it = m_table.find("dbscan_cluster");
+  std::unordered_map<std::string, FloatColPtr>::iterator it = m_table.find("dbscan_cluster");
   assert(it != m_table.end());
   FloatColPtr db_cl_ptr = it->second;
-
+  
   // setup a new column for tls id
   FloatColPtr tls_id = std::make_shared<FloatCol>();
   tls_id->reserve(n);
-
+  
   // loop cells and transfer cluster number to TLS
+  if (m_verbose) { std::cerr << "...cyftools tls - transfering dbscan clusters to tls" << std::endl; }
   for (size_t i = 0; i < n; i++) {
     float dbcluster_num  = (*db_cl_ptr)[i];
     tls_id->PushElem(dbcluster_num);
@@ -836,12 +932,14 @@ void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
   std::set<float> unique_tls(tls_id->begin(), tls_id->end()); 
 
   // loop the clusters and make the convex hull
+  if (m_verbose) { std::cerr << "...cyftools tls - looping clusters and making convex hull" << std::endl; } 
   for (const auto& cl : unique_tls) {
     
     // cluster 0 is holder for not a cluster
     if (cl == 0)
       continue;
-    
+
+
     // fill polygon with the points in the TLS definition
     //    that will need to have hull around them
     std::vector<JPoint> polygon;
@@ -854,6 +952,9 @@ void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
     // get the convex hull
     std::vector<JPoint> convex_hull = convexHull(polygon);
 
+    if (polygon.empty())
+      continue;
+    
     // Make a polygon (roi) from the points
     Polygon tls_boundary_hull(convex_hull);
 
@@ -870,6 +971,7 @@ void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
 
   // Step 9
   // HIstogram the tls counts
+  if (m_verbose) { std::cerr << "...cyftools tls - histograming the tls counts " << std::endl; } 
   std::unordered_map<float, size_t> histo;
   for (const auto& t : *tls_id) 
     histo[t]++;
@@ -940,8 +1042,12 @@ void CellTable::AnnotateCall(int num_neighbors, float frac,
   //}
   
   knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher = build_vp_tree(ix);
-  
+
+#ifdef HAVE_OMP  
 #pragma omp parallel for num_threads(m_threads)
+#else
+  std::cerr << "OMP not included, no support for multithreading. Compile with to support" << std::endl;
+#endif  
   for (size_t i = 0; i < nobs; ++i) {
     
     // verbose printing
@@ -1015,6 +1121,16 @@ void CellTable::TumorMargin(float dist,
 
   validate();
 
+  if (tumor_flag == 0) {
+    std::cerr << "Error - cyftools annotate - tumor_flag is zero, needs to be non-zero" << std::endl;
+    return;
+  } 
+
+  if (margin_flag == 0) {
+    std::cerr << "Error - cyftools annotate - margin_flag is zero, needs to be non-zero" << std::endl;
+    return;
+  } 
+  
   // build the tree
   if (m_verbose)
     std::cerr << "...building the KDTree" << std::endl;
@@ -1041,7 +1157,11 @@ void CellTable::TumorMargin(float dist,
 
   size_t margin_count = 0;
   
+#ifdef HAVE_OMP  
 #pragma omp parallel for num_threads(m_threads) schedule(dynamic, 100)
+#else
+  std::cerr << "OMP not included, no support for multithreading. Compile with to support" << std::endl;
+#endif  
   for (size_t i = 0; i < num_cells; i++) {
     std::vector<float> cell_count;
     std::vector<size_t> total_cell_count;
@@ -1267,7 +1387,11 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   for (size_t i = 0; i < m_pflag_ptr->size(); i++) {
     CellFlag mflag(m_pflag_ptr->getData().at(i));
     for (size_t j = 0; j < inner.size(); j++) {
-      if ( (!logor[j] && !logand[j]) || mflag.testAndOr(logor[j], logand[j])) {
+      if (logor[j]  == std::numeric_limits<cy_uint>::max() ||
+	  logand[j] == std::numeric_limits<cy_uint>::max()) { // special for ALL cells
+	flag_result[j][i] = 1;
+      } 
+      else if ( (!logor[j] && !logand[j]) || mflag.testAndOr(logor[j], logand[j])) {
 	flag_result[j][i] = 1; 
       }
     }
@@ -1329,8 +1453,11 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
   // this will be inclusive of this point
 
   assert(ml_kdtree);
-  
+#ifdef HAVE_OMP  
 #pragma omp parallel for num_threads(m_threads) schedule(dynamic, 100)
+#else
+  std::cerr << "OMP not included, no support for multithreading. Compile with to support" << std::endl;
+#endif
   for (size_t i = 0; i < m_pflag_ptr->size(); i++) {
     std::vector<float> cell_count;
     std::vector<size_t> total_cell_count;  
@@ -1431,6 +1558,8 @@ void CellTable::Select(CellSelector select,
 		       bool or_toggle,
 		       float radius) {
 
+#ifdef HAVE_MLPACK
+
   // add a dummy to ensure that OutputTable recognizes that m_cells_to_write is non-empty
   m_cells_to_write.insert(-1);
   validate();
@@ -1494,7 +1623,11 @@ void CellTable::Select(CellSelector select,
   if (m_verbose)
     std::cerr << "...starting second loop to include cells within radius of include" << std::endl;
 
+#ifdef HAVE_OMP  
 #pragma omp parallel for num_threads(m_threads)
+#else
+  std::cerr << "OMP not included, no support for multithreading. Compile with to support" << std::endl;
+#endif  
   for (size_t i = 0; i < count; i++) {
 
     if (i % 100000 == 0 && m_verbose)
@@ -1523,7 +1656,6 @@ void CellTable::Select(CellSelector select,
 
     // this will be inclusive of this point
     ml_kdtree->Search(query, r, neighbors, distances);
-
     
     // loop the inds, and check if neighbors a good cell
     for (const auto& j : neighbors.at(0)) {
@@ -1534,6 +1666,9 @@ void CellTable::Select(CellSelector select,
       }
     }
   }
-
+#else
+  std::cerr << "Warning -- not able to do radial selection without compiling with mlpack" << std::endl;
+#endif
+  
   return;
 }

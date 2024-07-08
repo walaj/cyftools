@@ -1,6 +1,7 @@
 #include "cell_column.h"
 #include "cell_table.h"
 #include "cell_processor.h"
+#include "color_map.h"
 
 #include <unistd.h> // or #include <getopt.h> on Windows systems
 #include <getopt.h>
@@ -66,15 +67,19 @@ static const char *RUN_USAGE_MESSAGE =
 "  count       - Count cells\n"
 "  head        - Returns first lines of a file\n"
 " --- Low-level processing ---\n"
-"  convert      - Create a .cyf format file from a CSV\n"    
+"  convert     - Create a .cyf format file from a CSV\n"    
 "  cut         - Select only given markers and metas\n"
 "  reheader    - Change the header\n"
 "  clean       - Remove classes of data (e.g. all meta)\n"
 "  cat         - Concatenate multiple files\n"
 "  sort        - Sort the cells\n"
 "  subsample   - Subsample cells randomly\n"
-"  magnify     - Rescale the x and y coordinates\n"  
 "  sampleselect- Select a particular sample from a multi-sample file\n"
+"  check       - Simply read and stream without any other operations, format check and start pipelines\n"
+" --- Spatial transformations ---\n"  
+"  offset      - Offset the x-y positions of the cells\n"
+"  flip        - Flip x and/or y positions\n"
+"  magnify     - Rescale the x and y coordinates\n"    
 " --- Marker ops ---\n"  
 "  pheno       - Phenotype cells (set the phenotype flags)\n"
 "  filter      - Mark cellsfor later processing (filtering etc)\n"  
@@ -87,6 +92,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  log10       - Apply a base-10 logarithm transformation to the data\n"
 "  jaccard     - Calculate the Jaccard similarty coeffiecient for cell flags\n"
 "  pearson     - Calculate the Pearson correlation between marker intensities\n"
+"  dist        - Calculate cell-cell distances\n"  
 " --- Clustering ---\n"
 "  dbscan      - Cluster cells based on the DBSCAN method\n"
 "  tls         - Identify TLS structures\n"
@@ -114,6 +120,11 @@ static const char *RUN_USAGE_MESSAGE =
 "  synth       - Various approaches for creating synthetic data\n"  
 "\n";
 
+static int checkfunc(int argc, char** argv);
+static int flipfunc(int argc, char** argv);
+static int offsetfunc(int argc, char** argv);
+static int forprintfunc(int argc, char** argv);
+static int distfunc(int argc, char** argv);
 static int tlsfunc(int argc, char** argv);
 static int markcheckfunc(int argc, char** argv);
 static int magnifyfunc(int argc, char** argv);
@@ -203,6 +214,8 @@ int main(int argc, char **argv) {
     val = flagsetfunc(argc, argv);
   } else if (opt::module == "ldacreate") {
     val = ldacreatefunc(argc, argv);
+  } else if (opt::module == "check") {
+    val = checkfunc(argc, argv);
   } else if (opt::module == "markcheck") {
     val = markcheckfunc(argc, argv);
   } else if (opt::module == "island") {
@@ -219,12 +232,18 @@ int main(int argc, char **argv) {
     val = cellcountfunc(argc, argv);
   } else if (opt::module == "margin") {
     val = marginfunc(argc, argv);
+  } else if (opt::module == "for") {
+    val = forprintfunc(argc, argv);
+  } else if (opt::module == "dist") {
+    val = distfunc(argc, argv);
   } else if (opt::module == "subsample") {
     val = subsamplefunc(argc, argv);
   } else if (opt::module == "plot") {
     return(plotfunc(argc, argv));
   } else if (opt::module == "divide") {
     return (dividefunc(argc, argv));
+  } else if (opt::module == "offset") {
+    return (offsetfunc(argc, argv));
   } else if (opt::module == "roi") {
     val = roifunc(argc, argv);
   } else if (opt::module == "crop") {
@@ -259,6 +278,8 @@ int main(int argc, char **argv) {
     val = umapfunc(argc, argv);
   } else if (opt::module == "filter") {
     val = filterfunc(argc, argv);
+  } else if (opt::module == "flip") {
+    val = flipfunc(argc, argv);
   } else if (opt::module == "sampleselect") {
     val = sampleselectfunc(argc, argv);
   } else if (opt::module == "convolve") {
@@ -296,6 +317,7 @@ int main(int argc, char **argv) {
   return 0;
 }
 
+
 // build the table into memory
 static void build_table() {
 
@@ -307,8 +329,9 @@ static void build_table() {
   BuildProcessor buildp;
   buildp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   table.StreamTable(buildp, opt::infile);
-  
-  //table.setCmd(cmd_input);
+
+  // have to set the PG tag here, because BuildProcessor is a reader only
+  table.setCmd(cmd_input);
 
   // check we were able to read the table
   if (table.CellCount() == 0) {
@@ -351,6 +374,158 @@ static int magnifyfunc(int argc, char** argv) {
   return 0;
 }
 
+static int checkfunc(int argc, char** argv) {
+
+  const char* shortopts = "v"; 
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+      std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true;
+    default: die = true;
+    }
+  }
+  
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE = 
+      "Usage: cyftools check <input.cyf> <output.cyf file>\n"
+      "  Simply read and stream cyf. Useful to validate and to start pipelines that have variable first \"real\" module\n"
+      "\n"
+      "Arguments:\n"
+      "  <input.cyf>           Input file path or '-' to stream from stdin.\n"
+      "  <output.cyf file>     Output .cyf file path or '-' to stream as a cyf-formatted stream to stdout.\n"
+      "\n"
+      "Options:\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cyftools check input.cyf - | cyftools othercmd\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // anything that is as "stream" function wher ethere is no dependency between cells, gets a "Processor" objects
+  CheckProcessor checkp;
+  checkp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+
+  // run the processor and return if it fails
+  if (!table.StreamTable(checkp, opt::infile)) {
+    return 1;
+  }
+
+  return 0;
+
+}
+
+static int flipfunc(int argc, char** argv) {
+
+  // parse the command line options
+  int DEFAULT=-100000;
+  int xflip = DEFAULT;
+  int yflip = DEFAULT;
+  int xmax = DEFAULT;
+  int ymax = DEFAULT;
+  const char* shortopts = "vx:y:X:Y:"; // : means theres and argument. No colon = flag
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+      std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true;
+    case 'x' : arg >> xflip; break;
+    case 'y' : arg >> yflip; break;
+    case 'X' : arg >> xmax; break;
+    case 'Y' : arg >> ymax; break;      
+    default: die = true;
+    }
+  }
+
+  if (xflip == DEFAULT && yflip == DEFAULT) {
+    std::cerr << "********************************" << std::endl;
+    std::cerr << " cyftools flip - need to specify a flip axis (x and or y)" << std::endl;
+    std::cerr << "********************************" << std::endl;
+    die = true;
+  }
+
+  if ( (xflip != DEFAULT && xmax == DEFAULT) || (yflip != DEFAULT && ymax == DEFAULT)) {
+    std::cerr << "********************************" << std::endl;
+    std::cerr << " cyftools flip - need to specify an X or Y size if flipping on that axis" << std::endl;
+    std::cerr << "********************************" << std::endl;
+    die = true;
+  }
+  
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE = 
+      "Usage: cyftools flip <input.cyf> <output.cyf file> [options]\n"
+      "  Flip the x or y position (reflection operation)\n"
+      "\n"
+      "Arguments:\n"
+      "  <input.cyf>           Input file path or '-' to stream from stdin.\n"
+      "  <output.cyf file>          Output .cyf file path or '-' to stream as a cyf-formatted stream to stdout.\n"
+      "\n"
+      "Options:\n"
+      "  -x                        Position of a X-flip line\n"
+      "  -y                        Position of a Y-flip line\n"
+      "  -X                        X dimension\n"
+      "  -Y                        Y dimension\n"
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cyftools flip input.cyf cleaned_output.cyf -x 100 -X 14032\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // anything that is as "stream" function wher ethere is no dependency between cells, gets a "Processor" objects
+  FlipProcessor flipp;
+  flipp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  flipp.SetParams(xflip, yflip, xmax, ymax); 
+  
+  // run the processor and return if it fails
+  if (!table.StreamTable(flipp, opt::infile)) {
+    return 1;
+  }
+
+  return 0;
+
+}
+
+// hidden function for easy looping in bash
+static int forprintfunc(int argc, char** argv) {
+
+  bool xargs = false;
+  const char* shortopts = "xp";
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+      std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'x' : xargs=true; break;
+    default: die = true;
+    }
+  }
+
+  if (xargs) {
+    std::cout << "find . -name \"*.cyf\" " <<
+      "| xargs -I{} -P 4 bash -c " <<
+      "'./script.sh {}'" << std::endl;
+    std::cout << std::endl;
+    std::cout <<
+      "#!/bin/bash" << std::endl <<
+      "### place this as a script.sh" << std::endl <<
+      "### remember you will have to chmod+x script.sh" << std::endl << 
+      "filename=$(basename $1)" << std::endl <<
+      "base_name=$(echo $filename | cut -d \".\" -f 1)" << std::endl <<
+      "echo \"...working on $base_name\"" << std::endl <<
+      "cyftools cmd $1 ${base_name}.cyf" << std::endl;
+  } else {
+    std::cout << "for file in *.cyf; do" <<
+      " filename=$(basename $file); " << 
+      " base_name=$(echo $filename | cut -d \".\" -f 1); " <<
+      " echo \"...working on $base_name\"; " <<
+      "cyftools cmd $file ${base_name}.out.cyf; done" << std::endl;
+  }
+  
+  return 0;
+}
+
 // hidden function for debugging
 static int markcheckfunc(int argc, char** argv) {
 
@@ -370,6 +545,50 @@ static int markcheckfunc(int argc, char** argv) {
   return 0;
 
   
+}
+
+static int distfunc(int argc, char** argv) {
+
+  std::string id;
+  const char* shortopts = "vi:";
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'i' : arg >> id; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools dist <in.cyf> <out.cyf>\n"
+      "  Calculate the cell-to-cell distance, based on marked cells from cytools filter\n"
+      "    .cyf file: filepath or a '-' to stream to stdin\n"
+      "Requred Input:\n"
+      "     -i <string>               ID to mark the output column (will be dist_<id>)\n"
+      "Optional Options:\n"
+      "     -v, --verbose             Increase output to stderr.\n"
+      "Example:\n"
+      " cyftools filter -a 1024 -M <in> - | cyftools dist - <out>\n"
+      "\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // build the table into memory
+  build_table();
+
+  table.SetupOutputWriter(opt::outfile);
+
+  // get the distance
+  table.Distances(id);
+
+  // write it out
+  table.OutputTable();
+  
+  return 0;
 }
 
 static int tlsfunc(int argc, char** argv) {
@@ -396,7 +615,6 @@ static int tlsfunc(int argc, char** argv) {
     std::cerr << "Error: cyftools tls - need to specify -b (Bcell marker, as base-10 number) and immune-cell marker(s) (as base-10-number)" << std::endl;
     die = true;
   }
-    
   
   if (die || in_out_process(argc, argv)) {
     
@@ -1413,14 +1631,15 @@ static int ldarunfunc(int argc, char** argv) {
 }
 
 static int plotpngfunc(int argc, char** argv) {
-  const char* shortopts = "vf:m:r:t:";
+  const char* shortopts = "vf:m:r:t:p:";
   
 #ifdef HAVE_CAIRO
   
   float scale_factor = 0.25f;
   std::string roifile;
-  string colname;
+  std::string module;
   std::string title;
+  std::string palette;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
@@ -1428,39 +1647,95 @@ static int plotpngfunc(int argc, char** argv) {
     case 'f' : arg >> scale_factor; break;
     case 'r' : arg >> roifile; break;
     case 't' : arg >> title; break;
-    case 'm' : arg >> colname; break;      
+      //case 'm' : arg >> module; break;
+    case 'p' : arg >> palette; break;
     default: die = true;
     }
   }
 
+  if (module.empty() && palette.empty()) {
+    std::cerr << "ERROR: cyftools png -- need to input module with -m or palette with -p" << std::endl;
+    die = true;
+  }
+
+  
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE = 
-      "Usage: cyftools png <input.cyf> <output_png>\n"
+      "Usage: cyftools png <input.cyf> <output_png> -p palette\n"
       "  Plot the input as a PNG file.\n"
       "\n"
       "Arguments:\n"
-      "  <input.cyf>           Input file path or '-' to stream from stdin.\n"
+      "  <input.cyf>               Input file path or '-' to stream from stdin.\n"
       "  <output_png>              Output PNG file path.\n"
+      "  -p <file>                 File containing a palette which is: cflag value, pflag value, R, G, B, alpha, label\n."
+      "                            Lines are in order, so that cell that meets two criteria gets the one with lower line number.\n"
+      "                            Example line: 0,1024,255,0,0,1,Tcell\n"
+      "                            NB: A label of \"nolabel\" will exclude that label from the legend\n"
+      "                            NB: Should include a pflag=0,cflag=0 line at end to label cells not belonging to above (e.g. gray)\n"
       "\n"
       "Options:\n"
       "  -r <roifile>              Plot rois\n"
       "  -f <float>                Fractional scale factor. Default: 0.25. (1 means each pixel is 1 x-unit; smaller values result in a smaller image)\n"
-      "  -m <string>               Module (prostate, tumor, orion)\n"
       "  -t <string>               Title to display\n"
       "  -v, --verbose             Increase output to stderr.\n"
       "\n"
       "Example:\n"
-      "  cyftools png input.cyf output.png -f 0.5\n"
-      "  cyftools png - output.png -f 0.75 -v\n";
+      "  cyftools png input.cyf output.png -f 0.5 -m tls\n"
+      "  cyftools png - output.png -f 0.75 -v -m tumor\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
+  ColorLabelVec colors;
+  
+  // read the palette file
+  if (!palette.empty()) {
+    std::ifstream input_file(palette);
+    if (!input_file.is_open()) {
+      throw std::runtime_error("Failed to open file: " + palette);
+    }
+    std::string line;
+    std::regex pattern("^[-+]?[0-9]*\\.?[0-9]+,");
+
+    // loop the lines
+    while (std::getline(input_file, line)) {
+
+      // remove white space
+      //line.erase(std::remove_if(line.begin(), line.end(), ::isspace),line.end());
+
+      // skip empty and comment
+      if (line.empty()) continue;
+      if (line.at(0) == '#') continue;
+
+      // tokenize
+      std::vector<std::string> tokens = tokenize_comma_delimited(line);
+      if (tokens.size() != 7) {
+	std::cerr << "Error: cytools png -- palette line " << line << " does not have 7 elements (pflag, cflag,r,g,b,a,label)" << std::endl;
+	return 1;
+      }
+
+      // build the color
+      CellColor col;
+      col.cflag   = std::stoi(tokens[0]);
+      col.pflag   = std::stoi(tokens[1]);
+      col.c.red   = std::stoi(tokens[2]);
+      col.c.green = std::stoi(tokens[3]);
+      col.c.blue  = std::stoi(tokens[4]);
+      col.c.alpha = std::stof(tokens[5]);
+      col.label   = tokens[6];
+
+      colors.push_back(col);
+
+      if (opt::verbose)
+	std::cerr << ".... read " << col << std::endl;
+    }
+  }
+  
   // stream into memory
   build_table();
   
-  table.PlotPNG(opt::outfile, scale_factor, colname, roifile, title);
+  table.PlotPNG(opt::outfile, scale_factor, module, roifile, title, colors);
   
   return 0;
 
@@ -1471,6 +1746,63 @@ static int plotpngfunc(int argc, char** argv) {
   
 }
 
+ static int offsetfunc(int argc, char** argv) {
+
+   const char* shortopts = "vx:y:";
+   float x = 0;
+   float y = 0;
+
+  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'x' : arg >> x; break;
+    case 'y' : arg >> y; break;
+    default: die = true;
+    }
+  }
+
+  if (!x & !y && opt::verbose) {
+    std::cerr << "******************************" << std::endl;
+    std::cerr << "No offsets provided, see usage" << std::endl;
+    std::cerr << "******************************" << std::endl;    
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    
+    const char *USAGE_MESSAGE = 
+      "Usage: cyftools offset <input.cyf> <output.cyf file> [options]\n"
+      "  Offset (shift) the cells in x and y (to align with e.g. ROIs)\n"
+      "\n"
+      "Arguments:\n"
+      "  <input.cyf>           Input file path or '-' to stream from stdin.\n"
+      "  <output.cyf file>          Output .cyf file path or '-' to stream as a cyf-formatted stream to stdout.\n"
+      "\n"
+      "Options:\n"
+      "  -x                        X offset [0]\n"
+      "  -y                        Y offset [0]\n"      
+      "  -v, --verbose             Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cyftools offset input.cyf cleaned_output.cyf -x 100 -y 100\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  OffsetProcessor offp;
+  offp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  offp.SetParams(x, y); 
+  
+  // process 
+  if (!table.StreamTable(offp, opt::infile)) {
+    return 1;
+  }
+
+  return 0;
+
+  
+ }
+ 
 static int cleanfunc(int argc, char** argv) {
 
   const char* shortopts = "vmMPCcp";
@@ -1534,6 +1866,8 @@ static int cleanfunc(int argc, char** argv) {
   
 }
 
+
+ 
 static int catfunc(int argc, char** argv) {
 
   const char* shortopts = "v";
@@ -1754,11 +2088,13 @@ static int cutfunc(int argc, char** argv) {
 
 static int meanfunc(int argc, char** argv) {
 
-  const char* shortopts = "v";  
+  std::string group_by;
+  const char* shortopts = "vb:";  
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
+    case 'b' : arg >> group_by; break;
     default: die = true;
     }
   }
@@ -1776,10 +2112,10 @@ static int meanfunc(int argc, char** argv) {
       "\n"
       "Options:\n"
       "  -v, --verbose             Increase output to stderr.\n"
+      "  -b <string>               Column name to group means by, so each unique elem of groupby column is own \"meta\" cell\n"
       "\n"
       "Example:\n"
-      "  cyftools mean input.cyf output_mean.cyf\n"
-      "  cyftools mean input.cyf - -v\n";
+      "  cyftools mean input.cyf output_mean.cyf -b tls_id\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -1788,13 +2124,14 @@ static int meanfunc(int argc, char** argv) {
   table.setVerbose(opt::verbose);
 
   AverageProcessor avgp;
-  avgp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);  
+  avgp.SetParams(group_by);
+  avgp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
 
   if (table.StreamTable(avgp, opt::infile))
     return 1; // non-zero status on StreamTable
 
   // write the one line with the averages
-  avgp.EmitCell();
+  avgp.EmitCells();
   
   return 0;
 
@@ -1977,11 +2314,13 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "delaunay" || opt::module == "head" || 
 	 opt::module == "mean" || opt::module == "ldacreate" ||
 	 opt::module == "ldarun" || opt::module == "png" ||
-	 opt::module == "tls" || 
+	 opt::module == "tls" || opt::module == "dist" ||
+	 opt::module == "for" || opt::module == "offset" || 
 	 opt::module == "radialdens" || opt::module == "margin" ||
 	 opt::module == "scramble" || opt::module == "scatter" ||
 	 opt::module == "hallucinate" || opt::module == "summary" ||
-	 opt::module == "magnify" ||
+	 opt::module == "magnify" || opt::module == "flip" ||
+	 opt::module == "check" || 
 	 opt::module == "island" || opt::module == "rescale" || 
 	 opt::module == "jaccard" || opt::module == "cellcount" ||
 	 opt::module == "synth" || 
@@ -2050,7 +2389,6 @@ static int roifunc(int argc, char** argv) {
       v.y *= micron_per_pixel;
     }
   }
-    
 
   if (opt::verbose)
     for (const auto& c : rois)
@@ -2069,11 +2407,12 @@ static int roifunc(int argc, char** argv) {
 
 static int viewfunc(int argc, char** argv) {
   
-  const char* shortopts = "vn:hHRACx:";
+  const char* shortopts = "vn:hHRAtCx:";
   int precision = 2;
   bool rheader = false;  // view as csv with csv header
   bool adjacent = false; // view as name:value
   bool crevasse = false; // view as output for crevasse
+  bool tabprint = false; // view as tab-delimited and columns justified
   std::string cut; // list of markers, csv separated, to cut on
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -2083,6 +2422,7 @@ static int viewfunc(int argc, char** argv) {
     case 'n' : arg >> precision; break;
     case 'C' : crevasse = true; break;
     case 'x' : arg >> cut; break;
+    case 't' : tabprint = true; break;
     case 'A' : adjacent = true; break;
     case 'R' : rheader = true; break;
     case 'h' : opt::header = true; break;
@@ -2108,7 +2448,8 @@ static int viewfunc(int argc, char** argv) {
       "Optional Options:\n"
       "  -R                         Print (with header) in csv format\n"
       "  -A                         Print as name:value format for viewing\n"
-      "  -C                         Print as CellID,x,y,...markers... for Crevasse\n" 
+      "  -C                         Print as CellID,x,y,...markers... for Crevasse\n"
+      "  -t                         Print tab-delimited and const space\n"
       "  -x <fields>                Comma-separated list of fields to trim output to.\n"
       "  -n <decimals>              Number of decimals to keep. Default is -1 (no change).\n"
       "  -H                         View only the header.\n"
@@ -2135,7 +2476,7 @@ static int viewfunc(int argc, char** argv) {
   
   ViewProcessor viewp;
   viewp.SetParams(opt::header, opt::header_only, rheader, adjacent, crevasse,
-		  precision, tokens);
+		  precision, tokens, tabprint);
 
   table.StreamTable(viewp, opt::infile);
   
@@ -2798,6 +3139,19 @@ static int phenofunc(int argc, char** argv) {
   return 0;
 }
 
+static void assign_uint64_t_from_int(std::istream& stream, uint64_t& variable) {
+    int temp;
+    if (stream >> temp) {
+        if (temp < 0) {
+            variable = std::numeric_limits<uint64_t>::max();
+        } else {
+            variable = static_cast<uint64_t>(temp);
+        }
+    } else {
+        std::cerr << "Invalid input for uint64_t assignment" << std::endl;
+    }
+}
+ 
 static int radialdensfunc(int argc, char** argv) {
   const char* shortopts = "vR:r:o:a:l:f:jJt:";
   cy_uint inner = 0;
@@ -2818,8 +3172,8 @@ static int radialdensfunc(int argc, char** argv) {
     case 't' : arg >> opt::threads; break;
     case 'r' : arg >> inner; break;
     case 'R' : arg >> outer; break;
-    case 'o' : arg >> logor; break;
-    case 'a' : arg >> logand; break;
+    case 'o' : assign_uint64_t_from_int(arg, logor); break;
+    case 'a' : assign_uint64_t_from_int(arg, logand); break;      
     case 'j' : normalize_local = true; break;
     case 'J' : normalize_global = true; break;
     case 'l' : arg >> label; break;
@@ -2827,6 +3181,11 @@ static int radialdensfunc(int argc, char** argv) {
     }
   }
 
+  if (label.empty() && file.empty()) {
+    std::cerr << "Error: Must specify file with -f or individual params with -l etc" << std::endl;
+    die = true;
+  }
+  
   if (die || in_out_process(argc, argv)) {
     
     const char *USAGE_MESSAGE =
@@ -3040,13 +3399,13 @@ int debugfunc(int argc, char** argv) {
 
 static int convertfunc(int argc, char** argv) {
   const char* shortopts = "s:v";
-  bool mcmicro = false;
+  //bool mcmicro = false;
   uint32_t sampleid = static_cast<uint32_t>(-1);
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 's' : arg >> sampleid; break;
-    case 'c' : mcmicro = true; break;
+      //case 'c' : mcmicro = true; break;
     case 'v' : opt::verbose = true; break;
     default: die = true;
     }
@@ -3203,19 +3562,12 @@ static int sortfunc(int argc, char** argv) {
 
 
 static int countfunc(int argc, char** argv) {
-  const char* shortopts = "va:A:N:";
-  cy_uint p_and_flags = 0;
-  cy_uint c_and_flags = 0;
-  cy_uint p_not_flags = 0;
-  cy_uint c_not_flags = 0;  
+  
+  const char* shortopts = "v";
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'a' : arg >> p_and_flags; break;
-    case 'A' : arg >> c_and_flags; break;
-    case 'n' : arg >> p_not_flags; break;
-    case 'N' : arg >> c_not_flags; break;      
     default: die = true;
     }
   }
@@ -3227,17 +3579,12 @@ static int countfunc(int argc, char** argv) {
       "  Output the number of cells in a file\n"
       "    .cyf file: filepath or a '-' to stream to stdin\n"
       "    -v, --verbose         Increase output to stderr\n"
-      "    -a                    Phenotype logical AND\n"
-      "    -A                    Cell logical AND\n"
-      "    -n                    Phenotype logical NOT\n"
-      "    -N                    Cell logical NOT\n"
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
   CountProcessor countp;
-  countp.SetParams(p_and_flags, c_and_flags,p_not_flags, c_not_flags);
   countp.SetCommonParams(opt::outfile, cmd_input, opt::verbose); // really shouldn't need any of these
 
   if (table.StreamTable(countp, opt::infile)) 

@@ -1,7 +1,7 @@
 #CC = /opt/homebrew/Cellar/gcc/12.2.0/bin/g++-12
 CC=g++
 
-MYHOME=/home/jaw34
+HMSHOME=/home/jaw34
 BREWHOME=/opt/homebrew/opt
 USE64BIT=-DUSE_64_BIT
 
@@ -16,7 +16,6 @@ CEREAL = -I../external/cereal/include ## header only
 ## Could theoretically have KNN only if want KNN graphs but not umap
 UMAP =  -I../external/umappp/include -I../external/CppIrlba/include -DHAVE_UMAPPP -DKNNCOLLE_NO_KMKNN -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
 KNN = -I../external/knncolle/include -DHAVE_KNNCOLLE
-#EIGEN = -I../external/eigen -DHAVE_EIGEN -Wno-deprecated-declarations
 
 ## Very optional header-only libraries for alternative neighor finding algorithms (e.g. in UMAP, etc)
 KMEANS = -I../external/CppKmeans/include -DHAVE_KMEANS
@@ -46,19 +45,24 @@ ifeq ($(wildcard $(BREWHOME)),)  # If dir does not exist, probably on HMS server
             $(warning    module load cairo boost)
             $(warning ******************************************************************)
 
+<<<<<<< HEAD
     OMP = -I$(MYHOME)/software/openmpi-4.1.5/include
     OMPL= -L$(MYHOME)/software/openmpi-4.1.5/lib -lmpi -Wl,-rpath=$(MYHOME)/software/openmpi-4.1.5/lib/
+=======
+    OMP = -I$(HMSHOME)/software/openmpi-4.1.5/include -DHAVE_OMP
+    OMPL= -L$(HMSHOME)/software/openmpi-4.1.5/lib -lmpi
+>>>>>>> 723463a3f1330c7129d221ed0a9589a94f517db7
 
     CAIRO=-DHAVE_CAIRO
     CAIROLIB = -lcairo
     GMPLIB = -lgmp
-    EIGEN=-I$(MYHOME)/software/eigen-3.4.0/ -DHAVE_EIGEN
-    CGAL=-I$(MYHOME)/software/CGAL-5.5.2/include -DHAVE_CGAL
-    MLPACK = -I$(MYHOME)/software/armadillo-12.6.2/include \
-             -I$(MYHOME)/software/mlpack-4.2.0/include \
-	     -I$(MYHOME)/software/ensmallen-2.19.1/include \
+    EIGEN=-I$(HMSHOME)/software/eigen-3.4.0/ -DHAVE_EIGEN
+    CGAL=-I$(HMSHOME)/software/CGAL-5.5.2/include -DHAVE_CGAL
+    MLPACK = -I$(HMSHOME)/software/armadillo-12.6.2/include \
+             -I$(HMSHOME)/software/mlpack-4.2.0/include \
+	     -I$(HMSHOME)/software/ensmallen-2.19.1/include \
              -DHAVE_MLPACK
-    MLPACKLIB = -L$(MYHOME)/software/armadillo-12.6.2/lib64 -larmadillo -Wl,-rpath=$(MYHOME)/software/armadillo-12.6.2/lib64
+    MLPACKLIB = -L$(HMSHOME)/software/armadillo-12.6.2/lib64 -larmadillo -Wl,-rpath=$(HMSHOME)/software/armadillo-12.6.2/lib64
 
 ####### MAC SPECIFIC #######
 else
@@ -121,7 +125,7 @@ else
     ## Optional libaries for OMP multithreading support
     OMP_INCDIR=$(BREWHOME)/libomp/include
     ifneq ($(wildcard $(OMP_INCDIR)/*),) 
-        OMP = -I$(OMP_INCDIR)
+        OMP = -I$(OMP_INCDIR) -DHAVE_OMP
         OMPL= -L$(BREWHOME)/libomp/lib -lomp
     else
         $(warning ******************************************************************)

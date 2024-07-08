@@ -2,6 +2,11 @@
 
 #include <vector>
 #include <string>
+<<<<<<< HEAD
+=======
+#include <iostream>
+#include "cysift.h"
+>>>>>>> 723463a3f1330c7129d221ed0a9589a94f517db7
 
 // 255 based colors
 struct Color {
@@ -13,12 +18,32 @@ struct Color {
   float redf()   const { return static_cast<float>(red)   / 255.0f; }
   float greenf() const { return static_cast<float>(green) / 255.0f; }
   float bluef()  const { return static_cast<float>(blue)  / 255.0f; }
-  float alphaf()  const { return alpha; }    
+  float alphaf()  const { return alpha; }
+
+  friend std::ostream& operator<<(std::ostream& os, const Color& obj);
+  
 };
 
-using ColorLabelPair = std::pair<Color, std::string>;
-typedef std::vector<ColorLabelPair> ColorLabelMap;
+struct CellColor {
+
+  cy_uint pflag;
+  cy_uint cflag;
+
+  Color c;
+
+  std::string label;
+
+  friend std::ostream& operator<<(std::ostream& os, const CellColor& obj);
+  
+};
+
+
+
+//using ColorLabelPair = std::pair<Color, std::string>;
+typedef std::vector<CellColor> ColorLabelVec;
 typedef std::vector<Color> ColorMap;
+
+Color select_color(cy_uint cflag, cy_uint pflag, const ColorLabelVec& palette);
 
 extern ColorMap color_map4;
 extern ColorMap color_map8;
@@ -49,4 +74,4 @@ extern Color color_dark_blue;
 // Pick the appropriate colormap 
 const ColorMap& getColorMap(int size);
 
-ColorLabelMap ColorLabelMapForModule(const std::string& module);
+ColorLabelVec ColorLabelVecForModule(const std::string& module);

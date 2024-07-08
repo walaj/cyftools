@@ -30,15 +30,15 @@ class Tag {
   std::string PrintType() const {
     std::string typen;
     switch(type) {
-    case MA_TAG: typen = "Marker tag type"; break;
-    case CA_TAG: typen = "Meta tag type"; break;
-    case GA_TAG: typen = "Graph tag type"; break;
-    case PG_TAG: typen = "Program tag type"; break;
+    case MA_TAG: typen = "MA"; break;
+    case CA_TAG: typen = "CA"; break;
+    case GA_TAG: typen = "GA"; break;
+    case PG_TAG: typen = "PG"; break;
     default: typen = "UNKNOWN TAG TYPE"; 
     }
     return (typen);
   }
-  
+
   Tag(uint8_t type, const std::string& mid, const std::string& mdata, int mi) :
     type(type), id(mid), data(mdata), i(mi) {}
   

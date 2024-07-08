@@ -2,7 +2,6 @@ library(data.table)
 
 options(scipen = 999)
 
-# Check if any substrings are in the target string
 contains_any <- function(substrings, target_string) {
   results <- sapply(substrings, function(sub) grepl(sub, target_string, fixed = TRUE))
   any(results)
@@ -35,7 +34,12 @@ jhu_cycif <- c("LSP19083", "LSP19118", "LSP19193", "LSP19233", "LSP19273", "LSP1
 # get column namesv
 cols <- colnames(dt)
 
-                                        # find the columns that match the pattern "AF\d+"
+##
+jhu_cycif <- c("LSP19083", "LSP19118", "LSP19193", "LSP19233", "LSP19273", "LSP19329", "LSP19378", "LSP20006", "LSP20051", "LSP20071", "LSP20091", "LSP20126", "LSP20146",                                                                    
+               "LSP19088", "LSP19158", "LSP19203", "LSP19238", "LSP19298", "LSP19339", "LSP19383", "LSP20041", "LSP20056", "LSP20081", "LSP20096", "LSP20136", "LSP20171",                                                                    
+               "LSP19093", "LSP19163", "LSP19228", "LSP19243", "LSP19324", "LSP19358", "LSP20001", "LSP20046", "LSP20066", "LSP20086", "LSP20121", "LSP20141") 
+
+## link the file name to the project
 if (grepl("immune",args[1])) {
     marker_cols <- c("panCKp","PDPNp","Desminp","Ki67p","CD11bp","CD11cp","CD14p","CD15p","CD16p","CD163p","CD20p","CD24p","CD4p","CD44p","CD45p","CD57p","CD68p","CD8ap","FOXP3p","GranzymeBp","HLA_Ap","HLA_DRp","LAG3p","p_TBK1p","PD_1p","PD_L1p","pSRCp","pSTAT1p","pTyrp","STINGp","pRBp")
     cat("...pheno_form.R: cycif crc immune\n")        
@@ -69,7 +73,7 @@ result <- lapply(marker_cols, function(marker) {
 
 # convert the result to a data frame and write to output file
 result_df <- data.table::rbindlist(result)
-result_df[, marker := gsub("_","-",marker)]
+result_df[, marker := gsub("-","_",marker)]
 write.table(result_df, args[2], row.names = FALSE,
             quote = FALSE, col.names = FALSE, sep = ",")
 

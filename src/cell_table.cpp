@@ -27,6 +27,12 @@ bool CellTable::HasColumn(const std::string& col) const {
   return m_table.find(col) != m_table.end();
 }
 
+static inline bool roikey(const Polygon& poly, const std::string& keyword) {
+    return poly.Text.find(keyword) != std::string::npos ||
+           poly.Name.find(keyword) != std::string::npos;
+}
+
+
 CellTable::CellTable(size_t num_cells) {
 
   // make the ID
@@ -421,7 +427,11 @@ void CellTable::Convolve(TiffWriter* otif, int boxwidth, float microns_per_pixel
 
   // perform the convolution
   int bw2 = boxwidth / 2;
+#ifdef HAVE_OMP  
 #pragma omp parallel for num_threads(m_threads)
+#else
+  std::cerr << "OMP not included, no support for multithreading. Compile with to support" << std::endl;
+#endif  
   for (int i = 0; i < xwidth; i++) {
     if (m_verbose && i % 10000 == 0)
       std::cerr << "...convolving on image row " << AddCommas(i) << " of " << AddCommas(xwidth) << std::endl;
@@ -938,7 +948,8 @@ int CellTable::PlotPNG(const std::string& file,
 		       float scale_factor,
 		       const std::string& module,
 		       const std::string& roifile,
-		       const std::string& title
+		       const std::string& title,
+		       ColorLabelVec palette
 		       ) const {
   
 #ifdef HAVE_CAIRO
@@ -949,8 +960,8 @@ int CellTable::PlotPNG(const std::string& file,
   std::mt19937 gen(rd()); 
   std::uniform_int_distribution<> dis(0,1);
 
-  float micron_per_pixel = 0.650f;
-  const float radius_size = 5.0f * scale_factor;
+  float micron_per_pixel = 1; //0.325f;
+  const float radius_size = 6.0f * scale_factor;
   const float ALPHA_VAL = 0.7f; // alpha for cell circles
   constexpr float TWO_PI = 2.0 * M_PI;
   
@@ -959,7 +970,7 @@ int CellTable::PlotPNG(const std::string& file,
   const int original_height = m_y_ptr->Max();    
 
   // Additional height to accommodate the legend at the top
-  const int legend_total_height = 400; // Adjust as needed
+  const int legend_total_height = original_height * 0.05; // Adjust as needed
 
   // New dimensions with extra space for the legend
   const int width = original_width;
@@ -979,9 +990,17 @@ int CellTable::PlotPNG(const std::string& file,
   cairo_rectangle(crp, 0, legend_total_height*scale_factor, width*scale_factor, height*scale_factor);
   cairo_fill(crp);
 
+  // get a pre-selected module if the map is zero
+  if (palette.empty()) {
+    palette = ColorLabelVecForModule(module);
+  } 
+
+  if (m_verbose)
+    for (const auto& pp : palette)
+      std::cerr << pp << std::endl;
   
   // defined below in color_map.cpp
-  ColorLabelMap cm = ColorLabelMapForModule(module);
+  //ColorLabelMap cm = ColorLabelMapForModule(module);
 
   // loop and draw
   size_t count = 0;
@@ -1000,165 +1019,46 @@ int CellTable::PlotPNG(const std::string& file,
     CellFlag pflag(pf);
     CellFlag cflag(cf);
 
-    // default color
-    Color c = color_gray;
-
-    // Color by tumor / stromal call
-    if (module == "tumor") {
-      if (IS_FLAG_SET(cf, TUMOR_FLAG)  && !IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = cm[0].first;
-      else if (!IS_FLAG_SET(cf, TUMOR_FLAG) && IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = cm[1].first;
-      else if (IS_FLAG_SET(cf, TUMOR_FLAG) && IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = cm[2].first;
-      else if (!IS_FLAG_SET(cf, TUMOR_FLAG)  && !IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = cm[3].first;
-    }
-    
-    else if (module == "tls") {
-      if (IS_FLAG_SET(cf, PROSTATE_AMCAR))
-      	c= color_gray;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD20))
-	c= color_purple;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD8))
-	c= color_red;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD4))
-	c= color_cyan;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD3))
-	c= color_deep_pink;
-      else if (IS_FLAG_SET(cf, TLS_FLAG))
-	c= color_dark_blue;
-      else
-	c = color_gray;
-    }
-    else if (module == "margin") {
-      if (IS_FLAG_SET(cf, MARGIN_FLAG) && !IS_FLAG_SET(cf, MARGIN_MANUAL_FLAG))
-	c = cm[0].first;
-      else if (!IS_FLAG_SET(cf,MARGIN_FLAG) && IS_FLAG_SET(cf, MARGIN_MANUAL_FLAG))
-	c = cm[1].first;
-      else if (IS_FLAG_SET(cf, MARGIN_FLAG) && IS_FLAG_SET(cf, MARGIN_MANUAL_FLAG))
-	c = cm[2].first;
-    }
-    else if (module == "artifact") {
-      if (IS_FLAG_SET(pf, ORION_CD3) && IS_FLAG_SET(pf, ORION_PANCK))
-	c = color_red;
-    }
-    else if (module == "prostate") {
-      micron_per_pixel=0.650f;
-      if (IS_FLAG_SET(pf, PROSTATE_CD3) && IS_FLAG_SET(pf, PROSTATE_PD1))
-	c = color_red;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD3) && !IS_FLAG_SET(pf, PROSTATE_PD1))
-	c = color_light_red;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD20)) 
-	c = color_purple;
-      else if (IS_FLAG_SET(pf, PROSTATE_AMCAR)) 
-	c = color_dark_green;
-      else
-	c = color_gray;
-      
-      //overrite
-      if (IS_FLAG_SET(cf, TUMOR_MANUAL_FLAG))
-	c = color_deep_pink;
-      
-    }
-    else if (module == "prostateimmune") {
-      micron_per_pixel=0.650f;      
-      if (IS_FLAG_SET(pf, PROSTATE_CD3))
-	c = color_light_red;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD8))
-	c = color_yellow;
-      else if (IS_FLAG_SET(pf, PROSTATE_CD20)) 
-	c = color_deep_pink;
-      else if (IS_FLAG_SET(pf, PROSTATE_FOXP3)) 
-	c = color_dark_green;
-      else
-	c = color_gray;
-      
-      // override colors
-      if (IS_FLAG_SET(cf, TLS_FLAG))
-	c = color_purple;
-      
-    }
-    else if (module == "pdl1") {
-      if (IS_FLAG_SET(pf, ORION_PANCK)) {
-	c = IS_FLAG_SET(pf, ORION_PDL1) ? color_red : color_light_red;
-      } else if (IS_FLAG_SET(pf, ORION_CD163)) {
-	c = IS_FLAG_SET(pf, ORION_PDL1) ? color_dark_green : color_light_green;
-      } else {
-	c = color_gray_90;
-      }
-    }
-    else if (module == "orion") {
-      if (IS_FLAG_SET(pf, ORION_PD1+ORION_CD3))  // T-cell - PD-1+ 
-	c = color_red;
-      else if (IS_FLAG_SET(pf, ORION_PD1) && !IS_FLAG_SET(pf, ORION_PD1)) // T-cell - PD-1-
-	c = color_light_red;
-      else if (IS_FLAG_SET(pf, ORION_CD20))
-	c = color_purple;
-      else if (IS_FLAG_SET(pf, ORION_PANCK + ORION_PDL1))  // PD-L1 POS tumor cell
-	c = color_dark_green;
-      else if (IS_FLAG_SET(pf, ORION_PANCK) && !IS_FLAG_SET(pf, ORION_PDL1)) // PD-L1 NEG tumor cell
-	c = color_light_green;
-      else if (IS_FLAG_SET(pf, ORION_PDL1)) // PD-L1 any cell
-	c = color_cyan;
-      else
-	c = color_gray;
-      
-      // overwrite
-      if (IS_FLAG_SET(pf, ORION_FOXP3)) // foxp3
-	c = color_deep_pink;
-      
-    } else if (module == "orionimmune") {
-      if      (IS_FLAG_SET(pf, ORION_CD3 + ORION_CD4)) 
-	c = color_light_red;
-      else if (IS_FLAG_SET(pf, ORION_CD3 + ORION_CD8))
-	c = color_light_red;
-      else if (IS_FLAG_SET(pf, ORION_CD3) && !IS_FLAG_SET(pf, ORION_CD4) && !IS_FLAG_SET(pf, ORION_CD8))
-	c = color_purple;
-      else if (IS_FLAG_SET(pf,ORION_CD4) && !IS_FLAG_SET(pf,ORION_CD3)) // CD4+CD3-
-	c = color_dark_green;
-      else if (IS_FLAG_SET(pf,ORION_CD8) && !IS_FLAG_SET(pf,ORION_CD3)) //CD8+CD3-
-	c = color_dark_blue;
-    } else {
-      std::cerr << "ERROR: UNKNOWN MODULE. Must be one of: orion, prostate, tcell, tumor" << std::endl;
-      assert(false);
-    }
+    // select the color for this cell from the palette
+    Color c = select_color(cf, pf, palette);
     
     cairo_set_source_rgba(crp, c.redf(), c.greenf(), c.bluef(), ALPHA_VAL);
     cairo_arc(crp, x*scale_factor, y*scale_factor, radius_size, 0, TWO_PI);
     cairo_fill(crp); 
 
-    // red radius
-    /*    if (pflag.testAndOr(147456,0) && j % 100000 == 0) { //dis(gen) < 0.00002)  {
-      cairo_set_source_rgb(crp, 1, 0, 0);
-      cairo_set_line_width(crp, 4);
-      cairo_arc(crp, x*scale_factor, y*scale_factor, 200.0f/0.325f*scale_factor, 0, 2*M_PI);
-      cairo_stroke(crp);
-      }*/
   }
 
+  // red radius
+  if (false)
+  for (size_t j = 0; j < CellCount(); j++) { // loop the cells
+    const float x = m_x_ptr->at(j);
+    const float y = m_y_ptr->at(j) + legend_total_height;
+    if (j % 10000 == 0) { 
+      cairo_set_source_rgb(crp, 1, 0, 0);
+      cairo_set_line_width(crp, 16);
+      cairo_arc(crp, x*scale_factor, y*scale_factor, 50.0f/0.325f*scale_factor, 0, 2*M_PI);
+      cairo_stroke(crp);
+    }
+  }
+
+  
   ////////
   // ROI
   // read in the roi file
   if (!roifile.empty()) {
     std::vector<Polygon> rois = read_polygons_from_file(roifile);
-    
+
+    // loop and draw rois
     for (const auto& polygon : rois) {
 
-      if (polygon.Text.find("tumor") == std::string::npos && polygon.Name.find("tumor") == std::string::npos &&
-	  polygon.Text.find("normal") == std::string::npos && polygon.Name.find("normal") == std::string::npos &&
-	  polygon.Text.find("blacklist") == std::string::npos && polygon.Name.find("blacklist") == std::string::npos &&
-	  polygon.Text.find("rtifact") == std::string::npos && polygon.Name.find("rtifact") == std::string::npos) {
-	std::cerr << "unknown roi name: " << polygon.Text << " -- " << polygon.Name << std::endl;
-	continue;
-      }
-      
+      // skip empty rois
       if (polygon.size() == 0)
 	continue;
       
       // Move to the first vertex
       auto firstVertex = *polygon.begin();
-      cairo_move_to(crp, firstVertex.x*scale_factor*micron_per_pixel, (firstVertex.y+legend_total_height)*scale_factor*micron_per_pixel);
+      cairo_move_to(crp, firstVertex.x*scale_factor*micron_per_pixel,
+    (firstVertex.y*micron_per_pixel+legend_total_height)*scale_factor);
       
       // Draw lines to each subsequent vertex
       for (const auto& v : polygon) {
@@ -1168,7 +1068,7 @@ int CellTable::PlotPNG(const std::string& file,
 	//cairo_arc(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel, 10, 0, TWO_PI);
 	//cairo_fill(crp);
 	
-	cairo_line_to(crp, v.x*scale_factor*micron_per_pixel, (v.y+legend_total_height)*scale_factor*micron_per_pixel);
+	cairo_line_to(crp, v.x*scale_factor*micron_per_pixel, (v.y*micron_per_pixel+legend_total_height)*scale_factor);
       }
       
       // Close the polygon
@@ -1176,15 +1076,17 @@ int CellTable::PlotPNG(const std::string& file,
 
       const float alphaval = 0.2;
       // Set the source color for fill and line (red with high alpha for transparency)
-      if (polygon.Text.find("tumor") != std::string::npos || polygon.Name.find("tumor") != std::string::npos)
-	cairo_set_source_rgba(crp, 1, 0, 0, alphaval); // Green with alpha = alphaval
-      else if (polygon.Text.find("normal") != std::string::npos || polygon.Name.find("normal") != std::string::npos) 
-	cairo_set_source_rgba(crp, 1, 1, 0, alphaval); // Yellow with alpha = alphaval
-      else if (polygon.Text.find("blacklist") != std::string::npos || polygon.Name.find("blacklist") != std::string::npos ||
-	       polygon.Text.find("rtifact") != std::string::npos || polygon.Name.find("rtifact") != std::string::npos)
-	cairo_set_source_rgba(crp, 0.5, 0.5, 0.5, alphaval); // Gray with alpha = 0.5	
+      if (roikey(polygon, "umor") || roikey(polygon,"+3") || roikey(polygon, "+4") || roikey(polygon, "+5"))
+	cairo_set_source_rgba(crp, 1, 0, 0, alphaval); // Red
+      else if (roikey(polygon, "ormal"))
+	cairo_set_source_rgba(crp, 1, 1, 0, alphaval); // Yellow 
+      else if (roikey(polygon, "eminal"))
+	cairo_set_source_rgba(crp, 0, 1, 0, alphaval); // Green
+      else if (roikey(polygon, "lacklist") || roikey(polygon, "artifact"))
+	cairo_set_source_rgba(crp, 0, 0, 0, alphaval); // Black
       else
-	assert(false);
+	cairo_set_source_rgba(crp, 0.5, 0.5, 0.5, alphaval); // Gray
+
       
       // Fill the polygon
       cairo_fill_preserve(crp);
@@ -1213,7 +1115,7 @@ int CellTable::PlotPNG(const std::string& file,
     for (const auto& cl : unique_clusters) {
       
       // cluster 0 is holder for not a cluster
-      if (cl == 0)
+      if (cl == 0 || true) // debug - true means dont' plot
 	continue;
 
       // fill polygon with the points that will need to have hull around them
@@ -1234,7 +1136,7 @@ int CellTable::PlotPNG(const std::string& file,
     // draw the hulls
     ///////
     cairo_set_source_rgb(crp, 1.0, 0.0, 0.0);
-    cairo_set_line_width(crp, 20.0*scale_factor); // Set the line width to 5.0
+    cairo_set_line_width(crp, 60.0*scale_factor); // Set the line width to 5.0
     // loop through invidual hulls
     for (auto& hullm : hull_map) {
       auto& hull = hullm.second;
@@ -1263,7 +1165,7 @@ int CellTable::PlotPNG(const std::string& file,
   add_legend_cairo_top(crp, font_size,
 		       legend_total_height*scale_factor,
 		       width*scale_factor,
-		       cm); 
+		       palette); 
 
   // this is where the y is for bottom of text
   float y_base = legend_total_height*scale_factor/2 + font_size/2;
@@ -1299,6 +1201,9 @@ int CellTable::PlotPNG(const std::string& file,
 }
 
 size_t CellTable::CountCFlag(int flag) const {
+
+  assert(flag > 0);
+  
   size_t count = 0;
   const size_t n = CellCount();
   for (int i = 0; i < n; i++)
@@ -1317,6 +1222,9 @@ void CellTable::ClearCFlag(int flag) {
 
 void CellTable::CopyCFlag(cy_uint flag_from, cy_uint flag_to) {
 
+  assert(flag_from > 0);
+  assert(flag_to > 0);
+  
   const size_t n = CellCount();
 
   for (size_t i = 0; i < n; i++) {
@@ -1604,11 +1512,10 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file) {
 	if (ind == 0 && s != "CellID") {
 	  std::cerr << "Error: cyftools convert -- saw header in csv as starting with C but its not CellID, double check?" << std::endl;
 	  assert(false);
-	} else if (ind == 1 && s != "Hoechst") {
-	  std::cerr << "Warning: cyftools conveort -- usually assume mcmicro header is CellID,Hoechst,... but see here that 2nd elem is " << s << std::endl;
+	} else if (ind == 1 && !(s != "Hoechst" || s != "Hoechst1")) {
+	  std::cerr << "Warning: cyftools convert -- usually assume mcmicro header is CellID,Hoechst(1),... but see here that 2nd elem is " << s << std::endl;
 	  std::cerr << "         OK to proceed, but will assume " << s << " is first marker." << std::endl;
 	} 
-	
 	ind++;
       }
 
@@ -1663,7 +1570,8 @@ void CellTable::setCmd(const std::string& cmd) {
   
   m_cmd = cmd;
   m_header.addTag(Tag(Tag::PG_TAG, "", cmd));
-  
+
+  m_header.SortTags();
 }
 
 
