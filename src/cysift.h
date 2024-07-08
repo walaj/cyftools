@@ -95,7 +95,7 @@ struct RadialSelector {
     int_data.resize(6);
     for (int i = 0; i < 6; i++) {
       try {
-	int_data[i] = std::stoi(tokens[i]);
+	int_data[i] = std::stoll(tokens[i]);
       } catch (const std::invalid_argument &e) {
 	throw std::runtime_error("The first 6 tokens must be integers.");
       }

@@ -757,7 +757,7 @@ void CellTable::Distances(const std::string& id) {
     return;
   }
   if (m_verbose)
-    std::cerr << "...cyftools dist - Finding distance to " << marked_cells << " marked cells" << std::endl;
+    std::cerr << "...cyftools dist - Finding distance to " << marked_cells << " marked cells and storing in label " << id << std::endl;
    
   // build the tree
   knncolle::VpTree<knncolle::distances::Euclidean, int, float> searcher = build_vp_tree(ix);
