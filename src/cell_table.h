@@ -58,7 +58,7 @@ public:
   //////
   void BuildTable(const std::string& file);
 
-  void StreamTableCSV(CerealProcessor& proc, const std::string& file);
+  void StreamTableCSV(CerealProcessor& proc, const std::string& file, const std::string& metac);
 
   int StreamTable(CellProcessor& proc, const std::string& file);
   
