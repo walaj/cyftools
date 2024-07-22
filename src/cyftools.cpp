@@ -3401,15 +3401,18 @@ int debugfunc(int argc, char** argv) {
 }
 
 static int convertfunc(int argc, char** argv) {
-  const char* shortopts = "s:v";
+  const char* shortopts = "s:vm:";
   //bool mcmicro = false;
   uint32_t sampleid = static_cast<uint32_t>(-1);
+  std::string metacols;
+
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 's' : arg >> sampleid; break;
       //case 'c' : mcmicro = true; break;
     case 'v' : opt::verbose = true; break;
+    case 'm' : arg >> metacols; break;
     default: die = true;
     }
   }
@@ -3417,6 +3420,10 @@ static int convertfunc(int argc, char** argv) {
   if (sampleid == static_cast<uint32_t>(-1)) {
     die = true;
   }
+
+  if (metacols.empty()) {
+        die = true;
+    }
   
   if (die || in_out_process(argc, argv)) {
     
@@ -3434,6 +3441,7 @@ static int convertfunc(int argc, char** argv) {
       "Optional Options:\n"
       "  -v, --verbose             Increase output to stderr.\n"
       "  -h,                       Optionally, supply the header text file here, rather than as appended to csv\n"
+      "  -m,                       List metadata headers as a comma-delimited string (i.e. 'Area,Size,LDA')"
       "\n"
       "Example:\n"
       "  cyftools convert input.csv output.cyf\n"
@@ -3445,7 +3453,7 @@ static int convertfunc(int argc, char** argv) {
   CerealProcessor cerp;
   cerp.SetParams(opt::outfile, cmd_input, sampleid);
 
-  table.StreamTableCSV(cerp, opt::infile);
+  table.StreamTableCSV(cerp, opt::infile, metacols);
 
   return 0;
 }
