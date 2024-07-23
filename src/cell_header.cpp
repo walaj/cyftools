@@ -134,9 +134,8 @@ void CellHeader::addTag(const Tag& tag) {
   // this is just the highest existing + 1
   int new_tag_i = 0; 
   for (const auto& t : GetAllTags()) {
-    //if (thistag.type == t.type) {
+    if (t.i > new_tag_i)
       new_tag_i = t.i;
-      //}
   }
   
   // add tags to data_tags that store
