@@ -157,6 +157,13 @@ void CellHeader::addTag(const Tag& tag) {
   SortTags();
 }
 
+std::ostream& operator<<(std::ostream& os, const CellHeader& h) {
+  for (const auto& tag : h.tags) {
+    os << tag << std::endl;
+  }
+  return os;
+}
+
 std::vector<Tag> CellHeader::GetMarkerTags() const {
 
   // return only tags that hold marker data
@@ -195,8 +202,6 @@ void CellHeader::Print() const {
   for (const auto& tag : tags) {
     std::cout << tag << std::endl;
   }
-  //  for (const auto& tag : info_tags)
-  //  std::cout << tag << std::endl;
   
 }
 

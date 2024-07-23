@@ -1519,8 +1519,12 @@ int CerealProcessor::ProcessHeader(CellHeader& header) {
 
 int CerealProcessor::ProcessLine(const std::string& line) {
 
-  Cell row(line, m_x_index, m_y_index, m_start, m_end,
-	   m_header, m_cellid, m_sampleid);
+  Cell row(line, m_x_index, m_y_index,
+	   //m_start,
+	   //m_end,
+	   m_header,
+	   m_cellid,
+	   m_sampleid);
   m_cellid++;
 
   // serialize it
@@ -1529,7 +1533,7 @@ int CerealProcessor::ProcessLine(const std::string& line) {
   // serializing here, so don't need to write in the cell_table call
   // minor, but NO_WRITE_CELL is in CellProcessor abstract class, of which CerealProcessor is uniquely not a child  
   return 0; 
-  
+ 
 }
 
 int DebugProcessor::ProcessHeader(CellHeader& header) {

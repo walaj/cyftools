@@ -236,21 +236,20 @@ void Cell::PrintWithHeader(int round,
 Cell::Cell(const std::string& row,
 	   int x_index,// which column is X and Y
 	   int y_index,
-	   int start_index, // which columns start and end marker data
-	   int end_index,
+	   //int start_index, // which columns start and end marker data
+	   //int end_index,
 	   const CellHeader& header,
 	   uint32_t cellid,
 	   uint32_t sampleid) {
   
-  const std::vector<std::string> tokens = tokenize_comma_delimited(row);  
+  const StringVec tokens = tokenize_comma_delimited<StringVec>(row);  
   
   if (tokens.size() < 3) {
-    throw std::runtime_error("CSV file should have at least three columns: id, x, y");
+    throw std::runtime_error("Error: CSV file should have at least three columns: id, x, y");
   }
 
   // check that we are in bounds
-  if (x_index >= tokens.size() || y_index >= tokens.size() ||
-      start_index >= tokens.size()) {
+  if (x_index >= tokens.size() || y_index >= tokens.size()) {
     std::cerr << "Error: cyftools convert - Not enough tokens for the header, line " << row << std::endl;
     assert(false);
   }
@@ -287,13 +286,16 @@ Cell::Cell(const std::string& row,
       }*/
 
     // skip non-marker data and x and y
-    if (i < start_index || i > end_index || i == x_index || i == y_index) {
+    /*   if (i < start_index || i > end_index || i == x_index || i == y_index) {
       i++;
       continue;
-    }
+      }*/
 
     cols.push_back(std::strtof(tokens.at(i).c_str(), nullptr));
     i++;
+    
+    if (i > num_cols + 3) // plus three to account for cellid, x, y
+      throw std::runtime_error("Error: number of tokens in csv line is greater than number of header data lines " + std::to_string(num_cols));
   }
 
   // let user know if they are short on data

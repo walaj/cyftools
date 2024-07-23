@@ -1421,21 +1421,14 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
   int start_index = 0; // start and end indicies for markers
   int end_index = 0;
   
-  // indices for metas
-  int meta_start = 0;
-  int meta_end = 0;
-
-  
   // csv reader
   std::unique_ptr<io::LineReader> reader;
 
   // Initialize the reader depending on the input string
   if (file == "-") {
-    // Read from stdin
-    reader = std::make_unique<io::LineReader>("", stdin);
+    reader = std::make_unique<io::LineReader>("", stdin); 
   } else {
-    // Read from file
-    reader = std::make_unique<io::LineReader>(file);
+    reader = std::make_unique<io::LineReader>(file);  // Read from file
   }
 
   // get read to read file
@@ -1445,92 +1438,74 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
   char* next_line_ptr;
 
   // read in meta columns in header
-  std::vector<std::string> meta_items = tokenize_comma_delimited(metac);
+  StringSet meta_items = tokenize_comma_delimited<StringSet>(metac);
+  meta_items.insert({"Area", "MajorAxisLength", "MinorAxisLength",
+      "Eccentricity", "Solidity", "Extent", "Orientation"});
 
   // for verbose
   size_t count = 0;
+
+  // to make sure table not ragged
+  size_t num_cols = 0;
   
   // Read and process the lines
   while ((next_line_ptr = reader->next_line()) != nullptr) {
-
+    
     // get the line. Skip if empty
     line = std::string(next_line_ptr);
     if (line.size() == 0) {
       break;
     }
     
-    // If the line starts with '@', parse it as a Tag and add it to m_header
-    if (line[0] == '@') {
+    // // If the line starts with '@', parse it as a Tag and add it to m_header
+    // if (line[0] == '@') {
       
-      // make sure there are no header lines in the middle of file
-      if (header_read)
-	throw std::runtime_error("Misformed file: header lines should all be at top of file");
+    //   // make sure there are no header lines in the middle of file
+    //   if (header_read)
+    // 	throw std::runtime_error("Misformed file: header lines should all be at top of file");
 
-      // assumng "jeremiah" format of X,Y,markers...
-      proc.SetXInd(0);
-      proc.SetYInd(1);
-      proc.SetStartIndex(2);
-      proc.SetEndIndex(1000000); // just go to end of line they're all markers
+    //   // assumng "jeremiah" format of X,Y,markers...
+    //   proc.SetXInd(0);
+    //   proc.SetYInd(1);
+    //   proc.SetStartIndex(2);
+    //   proc.SetEndIndex(1000000); // just go to end of line they're all markers
       
-      // add the tag to the header
-      Tag tag(line);
-      m_header.addTag(tag);
+    //   // add the tag to the header
+    //   Tag tag(line);
+    //   m_header.addTag(tag);
 
-    }
+    // }
 
     // line starts with CellID (assuming...)
-    else if (line[0] == 'C') {
-
+    if (line[0] == 'C') {
+      
       // make sure there are no header lines in the middle of file
       if (header_read)
 	throw std::runtime_error("Misformed file: header lines should all be at top of file");
-
-      std::vector<std::string> header_lines = tokenize_comma_delimited(line);
-
+      
+      StringVec header_lines = tokenize_comma_delimited<StringVec>(line);
+      
       size_t ind = 0;
       for (const auto& s : header_lines) {
-
-        
-        // tag metadata
-        for (const auto& m: meta_items) {
-          if (s == m) {
-            std::string s2 = clean_marker_string(s);
-            Tag tag(Tag::CA_TAG, s2, "");
-            m_header.addTag(tag);
-            // if first meta we've seen, then set start
-	          if (meta_start == 0) {
-	            meta_start = ind;
-	            }
-          }
-          
-	else if (is_mcmicro_meta(s)) {
-          if (s == "X_centroid") 
-           x_index = ind;
-          else if (s == "Y_centroid")
-          y_index = ind; 
-	  
-	  // if we're already past markers
-        if (start_index > 0 && end_index == 0)
-	        end_index = ind; // this is the last index seen
-	      }
-  
-  else { // this is a marker, add the tag
-
-	  // clean out the ARgo etc
-	  std::string s2 = clean_marker_string(s);
-	  
-	  Tag tag(Tag::MA_TAG, s2, "");
-	  m_header.addTag(tag);
-	  // if first marker we've seen, then set start
-	  if (start_index == 0) {
-	    start_index = ind;
-	  }
+	num_cols++;
+	// if keyword for X, Y 
+	if (s == "X_centroid" || s == "X") {
+	  x_index = ind;
 	}
-          
-        }
-
+	else if (s == "Y_centroid" || s == "Y") {
+	  y_index = ind;
+	}
+	// this is a meta/marker, add the tag
+	else { 
+	  
+	  // clean out the hyphens etc
+	  std::string s2 = clean_marker_string(s);
+	  uint8_t tag_type = (meta_items.find(s) != meta_items.end()) ? Tag::CA_TAG : Tag::MA_TAG;
+	  Tag tag(tag_type, s2, "");
+	  m_header.addTag(tag);
+	  
+	}
 	
-
 	// just a sanity check here
 	if (ind == 0 && s != "CellID") {
 	  std::cerr << "Error: cyftools convert -- saw header in csv as starting with C but its not CellID, double check?" << std::endl;
@@ -1541,16 +1516,8 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
 	} 
 	ind++;
       }
-  /* // indexing meta/marker
-  if (start_index > 0 && end_index == 0) {
-        end_index = ind; // set to last index seen if end_index was not set
-	}
-	if (meta_start == 0 && end_index > 0) {
-        meta_start = end_index + 1; // set meta_start to the index after the last marker
-	}
-  */
 
-      // we know X_centroid isn't at 0 slow, because we got into here with 'C' as first letter
+      // we know X_centroid isn't at 0, because we got into here with 'C' as first letter
       // so what happened is that it never found X_centroid
       if (x_index == 0) {
 	std::cerr << "Error: cyftools convert -- X_centroid not found" << std::endl;
@@ -1562,18 +1529,14 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
       }
       
       // some more sanity check
-      assert(start_index > 0);
-      assert(end_index > 0);
+      //assert(start_index > 0);
+      //assert(end_index > 0);
       
       proc.SetXInd(x_index);
       proc.SetYInd(y_index);
-      proc.SetStartIndex(start_index); // assuming that 0 is CellID
-      proc.SetEndIndex(end_index);
-
-    }
-
-
-    else {
+      
+      // non-header line
+    } else {
       
       // Label that the header has already been read
       if (!header_read) {
@@ -1585,6 +1548,12 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
 	  return;
       }
 
+      // ragged line check
+      StringVec tmp = tokenize_comma_delimited<StringVec>(line);
+      if (tmp.size() != num_cols) {
+	throw std::runtime_error("Error: Num tokens is " + std::to_string(tmp.size()) + " expecting " + std::to_string(num_cols) + " based on header, for line: " + line);
+      }
+      
       // process lines
       proc.ProcessLine(line);
 

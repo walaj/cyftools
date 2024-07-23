@@ -26,7 +26,7 @@ namespace opt {
   static std::string infile;
   static std::string outfile;
   static std::string module;
-  static std::vector<std::string> infile_vec;
+  static StringVec infile_vec;
  
   static bool header = false;
   static bool header_only = false;
@@ -727,7 +727,7 @@ static int reheaderfunc(int argc, char** argv) {
 
   const char* shortopts = "vr:";
   
-  std::vector<std::string> rename;
+  StringVec rename;
   std::string str;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -1520,7 +1520,7 @@ static int ldacreatefunc(int argc, char** argv) {
   build_table();
 
   // error check the markers
-  std::vector<std::string> markers;
+  StringVec markers;
   for (const auto& s : tokens) {
 
     if (!table.HasColumn(s)) {
@@ -1709,7 +1709,7 @@ static int plotpngfunc(int argc, char** argv) {
       if (line.at(0) == '#') continue;
 
       // tokenize
-      std::vector<std::string> tokens = tokenize_comma_delimited(line);
+      StringVec tokens = tokenize_comma_delimited<StringVec>(line);
       if (tokens.size() != 7) {
 	std::cerr << "Error: cytools png -- palette line " << line << " does not have 7 elements (pflag, cflag,r,g,b,a,label)" << std::endl;
 	return 1;
@@ -2921,7 +2921,7 @@ static int spatialfunc(int argc, char** argv) {
    // SelectOp = pair<enum of comparators, float value>
    SelectOpVec num_vec;
    SelectOpMap criteria;
-   std::vector<std::string> field_vec;
+   StringVec field_vec;
 
    // short hand for selecting multiple flags as OR
    // (-s or -S), better than enumerating every flag with -a -o construct
@@ -3251,7 +3251,7 @@ static int radialdensfunc(int argc, char** argv) {
   std::vector<cy_uint> logandV(rsv.size());
   std::vector<int>     normalize_localV(rsv.size());
   std::vector<int>     normalize_globalV(rsv.size());  
-  std::vector<std::string> labelV(rsv.size());
+  StringVec labelV(rsv.size());
   if (rsv.empty()) {
     innerV = {inner};
     outerV = {outer};
@@ -3290,7 +3290,7 @@ static int radialdensfunc(int argc, char** argv) {
     return 0;*/
 }
 
-static void cyftools_cat(const std::vector<std::string>& inputFiles, const std::string& outputFile) {
+static void cyftools_cat(const StringVec& inputFiles, const std::string& outputFile) {
     std::ofstream os(outputFile, std::ios::binary);
     cereal::PortableBinaryOutputArchive oarchive(os);
 
@@ -3402,7 +3402,6 @@ int debugfunc(int argc, char** argv) {
 
 static int convertfunc(int argc, char** argv) {
   const char* shortopts = "s:vm:";
-  //bool mcmicro = false;
   uint32_t sampleid = static_cast<uint32_t>(-1);
   std::string metacols;
 
@@ -3410,7 +3409,6 @@ static int convertfunc(int argc, char** argv) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 's' : arg >> sampleid; break;
-      //case 'c' : mcmicro = true; break;
     case 'v' : opt::verbose = true; break;
     case 'm' : arg >> metacols; break;
     default: die = true;
@@ -3420,10 +3418,6 @@ static int convertfunc(int argc, char** argv) {
   if (sampleid == static_cast<uint32_t>(-1)) {
     die = true;
   }
-
-  if (metacols.empty()) {
-        die = true;
-    }
   
   if (die || in_out_process(argc, argv)) {
     

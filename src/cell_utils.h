@@ -8,6 +8,10 @@
 #include <iostream>
 #include "color_map.h"
 #include <stack>
+#include <unordered_set>
+
+using StringVec = std::vector<std::string>;
+using StringSet = std::unordered_set<std::string>;
 
 // forward declare
 struct _cairo;
@@ -123,8 +127,6 @@ void column_to_row_major(std::vector<float>& data, int nobs, int ndim);
 
 PhenoMap phenoread(const std::string& filename);
 
-std::vector<std::string> tokenize_comma_delimited(const std::string& str);
-
 float euclidean_distance(float x1, float y1, float x2, float y2);
 
 bool check_readable(const std::string& filename);
@@ -135,11 +137,40 @@ std::pair<std::string, std::string> colon_parse(const std::string& str);
 
 bool is_mcmicro_meta(const std::string& str);
 
-std::string clean_marker_string(const std::string& input);
-
 #ifdef HAVE_HDF5
 void write_hdf5_dataframe_attributes(H5::Group& group);
 #endif
 
 enum class ColumnType;
 std::string columnTypeToString(ColumnType type);
+
+std::string clean_marker_string(const std::string& input);
+
+// Helper function to insert elements into the container
+template <typename Container>
+void insert_into_container(Container& container, const std::string& token) {
+    if constexpr (std::is_same_v<Container, std::vector<std::string>>) {
+        container.push_back(token);
+    } else {
+        container.insert(token);
+    }
+}
+
+// Templated tokenize function
+template <typename Container>
+Container tokenize_comma_delimited(const std::string& str) {
+    Container tokens;
+    size_t start = 0;
+    size_t end = str.find(',');
+
+    while (end != std::string::npos) {
+      insert_into_container(tokens, str.substr(start, end - start));
+        start = end + 1;
+        end = str.find(',', start);
+    }
+    
+    // Add the last token
+    insert_into_container(tokens, str.substr(start));
+    
+    return tokens;
+}

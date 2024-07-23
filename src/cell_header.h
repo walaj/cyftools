@@ -140,6 +140,8 @@ class CellHeader {
       ar(tags);
     }
 
+  friend std::ostream& operator<<(std::ostream& os, const CellHeader& h);
+
 private:
   std::vector<Tag> tags;
 
