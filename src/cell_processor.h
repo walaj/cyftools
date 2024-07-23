@@ -864,11 +864,8 @@ class CerealProcessor : public LineProcessor {
   // which are the columns for X and Y
   void SetXInd(int x) { m_x_index = x; }
   void SetYInd(int y) { m_y_index = y; }
+  void SetIDInd(int i) { m_id_index = i; }
 
-  // which are the start and end columns for markers
-  void SetStartIndex(int start) { m_start = start; }
-  void SetEndIndex(int end) { m_end = end; }
-  
   int ProcessHeader(CellHeader& header) override;
 
   int ProcessLine(const std::string& line) override;
@@ -884,10 +881,9 @@ private:
   std::string m_filename;
 
   // index tracking
-  int m_x_index = 0;
-  int m_y_index = 1;  // assume starts with x and y
-  int m_start = 0;
-  int m_end = 0;  
+  int m_x_index = -1;
+  int m_y_index = -1; 
+  int m_id_index = -1; 
   
   CellHeader m_header;
   

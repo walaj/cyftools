@@ -15,10 +15,9 @@ class Cell {
   Cell() : id(0), pflag(0), cflag(0), x(0), y(0) {}
 
   Cell(const std::string& row,
+       int id_index, 
        int x_index,// which column is X and Y
        int y_index,
-       //int start_index, // which columns start and end marker data
-       //int end_index,
        const CellHeader& header,
        uint32_t cellid,
        uint32_t sampleid);

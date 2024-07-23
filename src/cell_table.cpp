@@ -1413,14 +1413,11 @@ int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
   
 void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, const std::string& metac) {
 
-  // Assume x and y indiceis are the first and second
-  int x_index = 0;
-  int y_index = 1;
+  // key indices
+  int id_index = -1;
+  int x_index = -1;
+  int y_index = -1;
 
-  // assume starts at 2 and ends and end of file
-  int start_index = 0; // start and end indicies for markers
-  int end_index = 0;
-  
   // csv reader
   std::unique_ptr<io::LineReader> reader;
 
@@ -1457,27 +1454,8 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
       break;
     }
     
-    // // If the line starts with '@', parse it as a Tag and add it to m_header
-    // if (line[0] == '@') {
-      
-    //   // make sure there are no header lines in the middle of file
-    //   if (header_read)
-    // 	throw std::runtime_error("Misformed file: header lines should all be at top of file");
-
-    //   // assumng "jeremiah" format of X,Y,markers...
-    //   proc.SetXInd(0);
-    //   proc.SetYInd(1);
-    //   proc.SetStartIndex(2);
-    //   proc.SetEndIndex(1000000); // just go to end of line they're all markers
-      
-    //   // add the tag to the header
-    //   Tag tag(line);
-    //   m_header.addTag(tag);
-
-    // }
-
-    // line starts with CellID (assuming...)
-    if (line[0] == 'C') {
+    // line is the header line (starts with non-numeric)
+    if (std::isalpha(static_cast<unsigned char>(line.at(0)))) {
       
       // make sure there are no header lines in the middle of file
       if (header_read)
@@ -1487,6 +1465,7 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
       
       size_t ind = 0;
       for (const auto& s : header_lines) {
+	
 	num_cols++;
 	// if keyword for X, Y 
 	if (s == "X_centroid" || s == "X") {
@@ -1494,6 +1473,9 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
 	}
 	else if (s == "Y_centroid" || s == "Y") {
 	  y_index = ind;
+	}
+	else if (s == "CellID") {
+	  id_index = ind;
 	}
 	// this is a meta/marker, add the tag
 	else { 
@@ -1507,52 +1489,47 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
 	}
 	
 	// just a sanity check here
-	if (ind == 0 && s != "CellID") {
+	/*if (ind == 0 && s != "CellID") {
 	  std::cerr << "Error: cyftools convert -- saw header in csv as starting with C but its not CellID, double check?" << std::endl;
 	  assert(false);
 	} else if (ind == 1 && !(s != "Hoechst" || s != "Hoechst1")) {
 	  std::cerr << "Warning: cyftools convert -- usually assume mcmicro header is CellID,Hoechst(1),... but see here that 2nd elem is " << s << std::endl;
 	  std::cerr << "         OK to proceed, but will assume " << s << " is first marker." << std::endl;
-	} 
+	  } */
 	ind++;
       }
 
       // we know X_centroid isn't at 0, because we got into here with 'C' as first letter
       // so what happened is that it never found X_centroid
-      if (x_index == 0) {
+      if (x_index < 0) {
 	std::cerr << "Error: cyftools convert -- X_centroid not found" << std::endl;
 	assert(false);
       }
-      if (y_index == 0) {
+      if (y_index < 0) {
 	std::cerr << "Error: cyftools convert -- Y_centroid not found" << std::endl;
 	assert(false);
       }
-      
-      // some more sanity check
-      //assert(start_index > 0);
-      //assert(end_index > 0);
+      if (id_index < 0) {
+	std::cerr << "Warning: cyftools convert -- CellID not found - will just create" << std::endl;
+      }
       
       proc.SetXInd(x_index);
       proc.SetYInd(y_index);
+      proc.SetIDInd(id_index);
       
-      // non-header line
+    // non-header line (data)
     } else {
       
       // Label that the header has already been read
+      // process the header
       if (!header_read) {
 	header_read = true;
 	
-	// process the header
 	// if it gives non-zero output, it means stop there
 	if (proc.ProcessHeader(m_header))
 	  return;
       }
-
-      // ragged line check
-      StringVec tmp = tokenize_comma_delimited<StringVec>(line);
-      if (tmp.size() != num_cols) {
-	throw std::runtime_error("Error: Num tokens is " + std::to_string(tmp.size()) + " expecting " + std::to_string(num_cols) + " based on header, for line: " + line);
-      }
+      
       
       // process lines
       proc.ProcessLine(line);
@@ -1573,8 +1550,6 @@ void CellTable::setCmd(const std::string& cmd) {
 
   m_header.SortTags();
 }
-
-
  
  void CellTable::validate() const {
    

@@ -234,10 +234,9 @@ void Cell::PrintWithHeader(int round,
 }
 
 Cell::Cell(const std::string& row,
+	   int id_index, // which column is cell id (< 0 means use "cellid" below)
 	   int x_index,// which column is X and Y
 	   int y_index,
-	   //int start_index, // which columns start and end marker data
-	   //int end_index,
 	   const CellHeader& header,
 	   uint32_t cellid,
 	   uint32_t sampleid) {
@@ -247,7 +246,7 @@ Cell::Cell(const std::string& row,
   if (tokens.size() < 3) {
     throw std::runtime_error("Error: CSV file should have at least three columns: id, x, y");
   }
-
+  
   // check that we are in bounds
   if (x_index >= tokens.size() || y_index >= tokens.size()) {
     std::cerr << "Error: cyftools convert - Not enough tokens for the header, line " << row << std::endl;
@@ -259,17 +258,33 @@ Cell::Cell(const std::string& row,
   id = 0;
   x = 0;
   y = 0;
+
+  assert(id_index < tokens.size());
+  assert(x_index < tokens.size());
+  assert(y_index < tokens.size());  
   
+  // get the ID from the file and over-write incremental cellid
+  if (id_index >= 0) {
+    cellid = std::stol(tokens.at(id_index));
+  }
+    
   this->set_sample_id(sampleid);
   this->set_cell_id(cellid);
   
-  // 1st and 2nd entry is x,y position
+  // set x and y values
   x = std::strtof(tokens.at(x_index).c_str(), nullptr);
   y = std::strtof(tokens.at(y_index).c_str(), nullptr);
 
-  // stop with as many columns as are in the header
-  size_t num_cols = header.GetDataTags().size();
+  // check the number of data tokens we should have in line
+  size_t num_cols = header.GetDataTags().size() + (id_index >= 0 ? 3 : 2); //+2 for X, Y, +1 if CellID
 
+  // ragged line check or incorrect header check
+  if (tokens.size() != num_cols) { 
+    throw std::runtime_error("Error: Num tokens is " +
+			     std::to_string(tokens.size()) + " expecting " +
+			     std::to_string(num_cols) + " based on header, for line: " + row);
+  }
+  
   // assume rest of the tags are column data
   size_t i = 0;
   while (i < tokens.size()) {
@@ -291,14 +306,16 @@ Cell::Cell(const std::string& row,
       continue;
       }*/
 
-    cols.push_back(std::strtof(tokens.at(i).c_str(), nullptr));
+    // skip i = id_index which is cellid, otherwise add
+    if (i == id_index || i == x_index || i == y_index)
+      ;
+    else
+      cols.push_back(std::strtof(tokens.at(i).c_str(), nullptr));
     i++;
-    
-    if (i > num_cols + 3) // plus three to account for cellid, x, y
-      throw std::runtime_error("Error: number of tokens in csv line is greater than number of header data lines " + std::to_string(num_cols));
   }
 
   // let user know if they are short on data
+  // shouldn't actually get here, should error before
   if (i < num_cols)
     std::cerr << "warning: only read in the available columns " << i << " but header specified " << num_cols << std::endl;
   

@@ -1518,13 +1518,16 @@ int CerealProcessor::ProcessHeader(CellHeader& header) {
 }
 
 int CerealProcessor::ProcessLine(const std::string& line) {
-
-  Cell row(line, m_x_index, m_y_index,
-	   //m_start,
-	   //m_end,
+  
+  Cell row(line,
+	   m_id_index,
+	   m_x_index,
+	   m_y_index,
 	   m_header,
 	   m_cellid,
 	   m_sampleid);
+
+  // used here only if m_id_index < 0
   m_cellid++;
 
   // serialize it

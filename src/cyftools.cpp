@@ -3402,7 +3402,7 @@ int debugfunc(int argc, char** argv) {
 
 static int convertfunc(int argc, char** argv) {
   const char* shortopts = "s:vm:";
-  uint32_t sampleid = static_cast<uint32_t>(-1);
+  uint32_t sampleid = 0; //static_cast<uint32_t>(-1);
   std::string metacols;
 
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -3415,9 +3415,9 @@ static int convertfunc(int argc, char** argv) {
     }
   }
 
-  if (sampleid == static_cast<uint32_t>(-1)) {
+  /*if (sampleid == static_cast<uint32_t>(-1)) {
     die = true;
-  }
+    }*/
   
   if (die || in_out_process(argc, argv)) {
     
