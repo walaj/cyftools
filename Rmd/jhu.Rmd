@@ -1,0 +1,330 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(tidyr)  # For gather()
+library(tidyverse)
+library(ggplot2)
+library(ggbeeswarm)
+library(ggpubr)
+library(parallel)
+library(survival)
+library(forestplot)
+library(survminer)
+library(googlesheets4)
+source("~/git/cysift/R/helpers.R")
+source("~/Dropbox/Sorger/projects/orion/R/orion_helpers.R")
+
+generate_random_string <- function(string_length = 8) {
+  characters <- c(letters, LETTERS, 0:9)  # alphanumeric characters
+  random_string <- paste0(sample(characters, string_length, replace = TRUE), collapse = "")
+  return(random_string)
+}
+
+jhu_colors=c("Pre"="#1b9e77","Post"="#7570b3")
+
+save_jpdf <- function(g, filename, width=10, height=10) {
+  filepath <- paste0("~/Dropbox/Sorger/projects/jhu/figs_raw/", filename)
+  
+  pdf(filepath, useDingbats = FALSE, width, height)
+  print(g)
+  dev.off()
+}
+
+####
+# LSP19082 - Bad seg, useuless
+
+
+```
+
+```{r clinical-data, include=FALSE}
+crr <- as.data.table(googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d/11u_32_pz23GbmVU_5oE_Vpo81QPy42qWf-3YY0EN4CA/edit#gid=287337760", sheet="Comprehensive"))
+setnames(crr, "cycif_slide", "Slide_ID")
+crr <- crr[!is.na(Slide_ID)]
+crr[, orion_run := NULL]
+stopifnot(all(!duplicated(crr$Slide_ID)))
+```
+
+```{r quick-read, include=FALSE}
+files <- list.files(path = "~/Dropbox/Sorger/projects/jhu/cyfroi/", full.names = TRUE)
+files <- files[grepl("cyf$", files)]
+
+dtt <- mclapply(files, function(f) {
+  
+  # if no cells in this margin, just return null
+  if (system(paste("cyftools count",f), intern=TRUE)=="0") {
+    cat("no cells meeting filter criteria for ", basename(f),"\n")
+    return(data.table())
+  }
+    # read the means for that margin
+  dt <- fread(cmd=paste("cyftools view -R", f))
+  # set the slide and margin labels
+  dt[, Slide_ID := sub("^(LSP[0-9]+).*", "\\1", basename(f))]
+  return(dt)
+}, mc.cores=8)
+
+dtt <- rbindlist(dtt)
+rr <- rr[!is.na(Slide_ID)]
+
+dtt <- merge(dtt, rr, by="Slide_ID", all.x=TRUE)
+
+
+
+mean_dt <- dtt[, lapply(.SD, mean), by=Slide_ID, .SDcols=c("CD20","CD163","")]
+### plot simply
+dtt.m <- melt(dtt, measure.vars=c("CD4"))
+g <- ggplot(dtt, aes(x=biopsy_prepost, y=CD8a)) + 
+  facet_wrap(vars(patient_disease), scales="free") + 
+  geom_boxplot(outliers = FALSE) + theme_jwmin()
+
+dtt[, patient_disease := factor(patient_disease, levels=c("PD","SD","PR"))]
+g <- ggplot(dtt[biopsy_prepost=="Post"], aes(x=patient_disease, y=CD8a)) + 
+  geom_boxplot(outliers=FALSE) + theme_jwmin()
+
+
+wilcox.test(dtt[biopsy_prepost=="Post" & patient_disease=="SD", CD8a], dtt[biopsy_prepost=="Pre" & patient_disease=="PD", CD8a])
+```
+
+```{r cycif-data, include=FALSE}
+files <- list.files(path = "~/Dropbox/Sorger/projects/jhu/chain/", full.names = TRUE)
+files <- files[grepl("cyf$", files)]
+
+# read all the data as the means within the tumor compartment
+nn <- c("all"="", "tumor"="-A 8", "stroma"="-N 8","tumorpanck"="-A 8 -a 1024","nonpanck"="-n 1024")
+
+lapply(seq_along(nn), function(n) {
+  cat("working on ", names(nn)[n], "\n")
+  
+  # inner cyf file loop
+  dtt <- mclapply(files, function(f) {
+    
+    cat(basename(f), " - ", names(nn)[n], "\n")
+    tmpfile <- paste0("/tmp/", generate_random_string(8))
+    
+    # if no cells in this margin, just return null
+    if (system(paste("cyftools filter", f, nn[n], " - | cyftools count -"), intern=TRUE)=="0") {
+      cat("no cells meeting filter criteria for ", basename(f),"\n")
+      return(data.table())
+    }
+    
+    # if its a scramble margin, do the scramble on the fly (with lock)
+    if (grepl("scramble", names(nn)[n]) && grepl("lock",names(nn)[n])) {
+      ccmd=paste("cyftools scramble -P ",f, "- | cysift filter -", nn[n], tmpfile)
+    # scramble, without lock
+    } else if (grepl("scramble", names(nn)[n])) {
+      ccmd=paste("cyftools scramble", f,"- | cysift filter -", nn[n], tmpfile)
+    # otherwise do the margin filter
+    } else { 
+      ccmd=paste("cyftools filter",f, nn[n],tmpfile)
+    }
+    system(ccmd)
+    
+    # read the means for that margin
+    dt <- fread(cmd=paste("cyftools mean", tmpfile, " - | cyftools view - -R"))
+    dt[,c("sid","cid","cflag","pflag","x","y","Hoechst","AF1") := NULL]
+    dt[ , allcount       := fread(cmd=paste("cyftools count", tmpfile))$V1]
+    
+    # individual cell counts
+    drr = fread(cmd=paste("cyftools cellcount", tmpfile," - -a 10240 | cyftools view - -R"))
+    setnames(drr, c("10240_count"),c("CD3PD1_count"))
+    cols_to_remove <- names(drr)[!grepl("_count$", names(drr))]
+    drr[,  (cols_to_remove) := NULL]
+    dt <- cbind(drr, dt)
+    
+    # set the slide and margin labels
+    dt[, Slide_ID := sub("^(LSP[0-9]+).*", "\\1", basename(f))]
+    dt[, margin := names(nn)[n]]
+    
+    # cleanup
+    file.remove(tmpfile)
+    return(dt)
+  }, mc.cores=8)
+  
+  # paste the margins together
+  dtr <- rbindlist(dtt, fill=TRUE)
+  dtr <- dtr[!duplicated(paste(margin, Slide_ID))]
+  saveRDS(dtr, paste0("~/Sorger/cache/jhuorion_",names(nn)[n], ".rds"), compress=FALSE)
+})
+
+dtr <- rbindlist(lapply(paste0("~/Sorger/cache/jhucycif_",names(nn),".rds"), readRDS), fill=TRUE)
+dtr <- dtr[!duplicated(paste(margin, Slide_ID))]
+dtr[, c("Vimentin_count","CytochromeC_count","Hoechst1_count","Hoechst2_count",
+        "Hoechst3_count","Hoechst4_count","Hoechst5_count","Hoechst6_count",
+        "Hoechst7_count","delaunay_count","A488_count","A555_count","A647_count") := NULL]
+stopifnot(all(dtr$Slide_ID %in% crr$Slide_ID))
+rr <- merge(dtr, data.table::copy(crr), by = "Slide_ID", all.x = TRUE)
+#rr <- rr[!is.na(CD31)]
+
+# List all column names that end with '_count'
+count_columns <- grep("_count$", names(rr), value = TRUE)
+
+# Generate new normalized columns
+for (col_name in count_columns) {
+  new_col_name <- sub("_count", "_n", col_name)  # Replace '_count' with '_n' in the column name
+  rr[, (new_col_name) := get(col_name) / allcount]  # Create new column by dividing count column by allcount
+}
+
+#fwrite(rr, "~/Dropbox/Sorger/projects/jhu/240627_jhucycif_data.csv", sep=",", quote=FALSE)
+```
+
+```{r compare-pre-post}
+
+### paired plot
+rrt = rr[margin=="tumor",]
+rrt[, dcr := ifelse(patient_disease %in% c("PR","SD"), "Control","Progression")]
+averages_dt <- rrt[, lapply(.SD, mean), by = .(patient, biopsy_prepost), .SDcols = patterns("_n$")]
+averages_dt <- merge(averages_dt, rrt[!duplicated(patient),.(patient,dcr,patient_disease, patient_mut)], by="patient")
+
+#rrt <- rrt[!patient %in% c("1887-254")]
+#rrt[, CD8 := mean(CD8_n), by="patient"]
+#rrt <- rrt[!duplicated(as.character(patient))]
+
+tcol <- c("CD3e_n","CD8a_n","FOXP3_n","CD163_n","PD1_n","CD3PD1_n")
+#tcol <- c("pAKT_n","pERK_n","pS6_240_n","pS6_235_n")
+#tcol <- c(tcol, "LINE1_n","panCK_n","SMA_n","Catenin_n","CDX2_n",
+#          "gH2ax_n","MLH1_n","HER2_n","H3K27me3_n",
+#          "TROP2_n","CD44_n","pNDRG1_n","pRB_n","p27_n")
+
+rrm <- data.table::melt(averages_dt[biopsy_prepost=="Pre"], id.vars = c("biopsy_prepost", "patient_disease","patient_mut","dcr","patient"), measure.vars=tcol, value.name = "value",variable.name="cell")
+g <- create_beeswarm_plot(rrm, x="dcr", y="value", withbox=TRUE) +
+  #geom_text_repel(aes(label=patient)) + 
+  facet_wrap(rrm$cell, scales="free", nrow=1) + 
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+  theme(
+  strip.background = element_blank(),
+  strip.text = element_text(face = "bold", size = 10) 
+) + ylab("Cell Frac (positive)") + xlab("Mutation status") + 
+   theme(text = element_text(family = "Helvetica"),
+        axis.text.x = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.title.y = element_text(size = 9, margin = margin(r = 5)),
+        axis.title.x = element_text(size = 9, margin = margin(t = 2)),
+        plot.title = element_text(size = 9),
+        panel.background = element_rect(fill = "transparent", colour = NA),
+        plot.background = element_rect(fill = "transparent", colour = NA)) 
+save_jpdf(g, "cycif_Mut_WT_PRE_tumor.pdf", width=6, height=3)
+
+
+rrtt <- averages_dt[biopsy_prepost=="Pre"]
+rrtt[, ratio := CD163_n]
+setkeyv(rrtt,"ratio")
+clevels <- rrtt$patient
+rrtt[, patient := factor(patient, levels=clevels)]
+#rrt[, samplecount := seq(.N)]
+g <- ggplot(rrtt, aes(x=patient, y=ratio, fill=patient_disease)) + 
+  geom_bar(stat="identity", color="black") + ylab("CD163 Cell Fraction") + xlab("Patient") +
+  coord_flip() + # scale_fill_manual(values=pMMR_colors) + 
+  scale_fill_manual(values=c("SD"="#d9ef8b","PD"="#d53e4f","PR"="#1a9850"))+
+  theme_minimal() + 
+  theme(axis.line = element_line(), axis.ticks = element_line()) + 
+  #scale_x_continuous(expand=c(0,0), breaks=c(0,10,20,30,40,50,60,70)) + 
+  scale_y_continuous(expand=c(0,0))
+save_jpdf(g, "orion_Disease_CD163_Pre_tumor_waterfall.pdf", width=6, height=3)
+
+```
+
+```{r paired-plot}
+
+
+# Function to perform paired t-test across all patients for a given column
+perform_paired_t_test_for_column <- function(data, column_name) {
+  pre_values <- data[biopsy_prepost == "Pre", get(column_name, .SD)]
+  post_values <- data[biopsy_prepost == "Post", get(column_name, .SD)]
+  
+  if (length(pre_values) == length(post_values)) {
+    test_result <- t.test(pre_values, post_values, paired = TRUE)
+    pre_mean <- mean(pre_values)
+    post_mean <- mean(post_values)
+    
+    # Create and return a data.table with the results
+    return(data.table(
+      column = column_name,
+      p_value = test_result$p.value,
+      pre_mean = pre_mean,
+      post_mean = post_mean
+    ))
+  } else {
+    warning(sprintf("Unequal number of pre and post observations for %s", column_name))
+    # Return a data.table with NA values if there's an unequal number of observations
+    return(data.table(
+      column = column_name,
+      p_value = NA,
+      pre_mean = NA,
+      post_mean = NA
+    ))
+  }
+}
+
+# Calculate p-values for each column
+has_prepost <- names(table(averages_dt$patient))[table(averages_dt$patient)==2]
+columns_to_test <- c("CD3_n","CD8_n","CD163_n","FOXP3_n","CD3PD1_n")
+columns_to_test <- c("pAKT_n","pERK_n","pS6_240_n","pS6_235_n","PCNA_n","Ki67_n")
+columns_to_test <- c(columns_to_test, c(tcol, "LINE1_n","panCK_n","SMA_n","Catenin_n","CDX2_n",
+          "gH2ax_n","MLH1_n","HER2_n","H3K27me3_n",
+          "TROP2_n","CD44_n","pNDRG1_n","pRB_n","p27_n"))
+p_values <- rbindlist(lapply(columns_to_test, function(col) {
+  perform_paired_t_test_for_column(averages_dt[patient %in% has_prepost], col)
+}))
+
+# melt the data
+rrm <- data.table::melt(averages_dt, id.vars = c("biopsy_prepost","patient","dcr"), measure.vars=columns_to_test, value.name = "value",variable.name="cell")
+rrm[, biopsy_prepost := factor(biopsy_prepost, levels=c("Pre","Post"))]
+
+# plot paired T test
+g <- ggplot(rrm[patient %in% has_prepost & cell %in% c("pAKT_n","pERK_n","pS6_240_n","pS6_235_n")], aes(x = biopsy_prepost, y = value)) +
+  geom_boxplot(aes(fill = biopsy_prepost), alpha = 0.5, position = position_dodge(width = 0.8)) +
+  geom_line(aes(group = patient), col = "red") +
+  geom_point(aes(group = patient, color=dcr), position = position_dodge(width = 0)) +
+  theme_minimal() +
+  labs(y = "Cell fraction", x = "") +
+  scale_fill_manual(values = jhu_colors)+ 
+  scale_color_manual(values=c("Progression"="red","Control"="darkgreen")) +
+  facet_wrap(~cell, scales="free",nrow=1) + 
+  theme(text = element_text(color = "black"),  # Ensuring all text is black
+    panel.grid.major = element_blank(),  # Removing major grid lines
+    panel.grid.minor = element_blank(),  # Removing minor grid lines
+    axis.text = element_text(color = "black"),  # Ensuring axis text is black
+        legend.background = element_blank(),
+        legend.key = element_blank(),
+        legend.position="none")
+save_jpdf(g, "cycif_paired_HASprepost_tumorpanck.pdf", width=5, height=3)
+#save_ppdf(g, "innate_beeswarm.pdf", width=6, height=1.8)
+```
+
+```{r waterfall}
+rrt = rr[margin=="all"]
+# "ratio" is not good term, but it's the field we'll be looking at for this plot
+rrt[, ratio := CD3_n]
+setkeyv(rrt, "ratio")
+clevels <- rrt$Slide_ID
+rrt[, Slide_ID := factor(Slide_ID, levels=clevels)]
+rrt[, samplecount := seq(.N)]
+g <- ggplot(rrt, aes(x=Slide_ID, y=ratio, fill=biopsy_prepost)) + 
+  geom_bar(stat="identity", color="black") + ylab("Cells / mm2") + xlab("Sample ID") +
+  coord_flip() +  scale_fill_manual(values=jhu_colors) + 
+  theme(axis.line = element_line(), axis.ticks = element_line()) + 
+   theme(legend.position = c(0.65, 0.3), 
+        legend.justification = c(-0.2, -0.3), # Coordinates relative to the plot area
+        legend.box.margin = margin(6, 6, 6, 6), # Adjust spacing around the legend box if necessary
+        legend.margin = margin(-10, -10, -10, -10),
+        text = element_text(family = "Helvetica"),
+        axis.text.x = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.title.y = element_text(size = 9, margin = margin(r = 5)),
+        axis.title.x = element_text(size = 9, margin = margin(t = 2)),
+        plot.title = element_text(size = 9),
+        legend.title = element_blank(),
+        #legend.spacing.y = unit(1, "cm"),
+        legend.text = element_text(size = 9),
+        legend.background = element_blank(),
+        legend.key = element_blank(),
+        axis.line = element_line(colour = "black"),  # Add axis lines
+        panel.background = element_rect(fill = "transparent", colour = NA),  # remove panel background
+        plot.background = element_rect(fill = "transparent", colour = NA)
+  ) +
+  #scale_x_continuous(expand=c(0,0), breaks=c(0,10,20,30,40,50,60,70)) + 
+  scale_y_continuous(expand=c(0,0))
+```
