@@ -1196,8 +1196,9 @@ int PhenoProcessor::ProcessHeader(CellHeader& header) {
 
   for (const auto& m : m_marker_map) {
     if (m_p.find(m.first) == m_p.end()) {
-      std::cerr << "Warning: Marker in cell table " <<
-	m.first << " is not in the phenotype file. Bit will be OFF" << std::endl;
+      std::cerr << "Warning: Marker " <<
+	std::left << std::setw(12) << std::setfill(' ') <<
+	m.first << " not in phenotype file. Bit to OFF" << std::endl;
     }
   }
   
