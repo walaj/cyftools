@@ -1078,7 +1078,7 @@ static int cellcountfunc(int argc, char** argv) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'a' : arg >> tmp_string; additional_flags.push_back(std::stoi(tmp_string)); break;
+    case 'a' : arg >> tmp_string; additional_flags.push_back(std::stoull(tmp_string)); break;
     default: die = true;
     }
   }
