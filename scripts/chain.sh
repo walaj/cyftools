@@ -83,6 +83,17 @@ elif contains_string "$orion41_73" "$input_file"; then
     TUMOR_MARKER=131072
     TCELL_MARKER=4096
     roimag=0.325
+    distann="cyftools filter - - -A 8 -M | cyftools dist -i tumor - - |
+ cyftools filter - - -a 4096 -M | cyftools dist -i CD3 - - |
+ cyftools filter - - -a 256 -M | cyftools dist -i CD8 - - |
+ cyftools filter - - -a 4352 -M | cyftools dist -i CD3CD8 - - |
+ cyftools filter - - -a 32768 -M | cyftools dist -i PD1 - - |
+ cyftools filter - - -a 128 -M | cyftools dist -i FOXP3 - - |
+ cyftools filter - - -a 131072 -M | cyftools dist -i PDL1 - - |
+ cyftools filter - - -a 133120 -M | cyftools dist -i PanCKPDL1 - - |
+ cyftools filter - - -a 139264 -M | cyftools dist -i CD163PDL1 - - |
+ cyftools filter - - -A 32 -M | cyftools dist -i TLS - - |
+ cyftools filter - - -a 1024 -M | cyftools dist -i CD20 - - |"
 ## CRC Orion - samples 1-40
 elif contains_string "$orion1_40" "$input_file"; then
     echo "...chain.sh: detected Orion 1-40"
@@ -90,6 +101,17 @@ elif contains_string "$orion1_40" "$input_file"; then
     TUMOR_MARKER=131072
     TCELL_MARKER=4096
     roimag=0.325
+    distann="cyftools filter - - -A 8 -M | cyftools dist -i tumor - - |
+ cyftools filter - - -a 4096 -M | cyftools dist -i CD3 - - |
+ cyftools filter - - -a 256 -M | cyftools dist -i CD8 - - |
+ cyftools filter - - -a 4352 -M | cyftools dist -i CD3CD8 - - |
+ cyftools filter - - -a 32768 -M | cyftools dist -i PD1 - - |
+ cyftools filter - - -a 128 -M | cyftools dist -i FOXP3 - - |
+ cyftools filter - - -a 131072 -M | cyftools dist -i PDL1 - - |
+ cyftools filter - - -a 133120 -M | cyftools dist -i PanCKPDL1 - - |
+ cyftools filter - - -a 139264 -M | cyftools dist -i CD163PDL1 - - |
+ cyftools filter - - -A 32 -M | cyftools dist -i TLS - - |
+ cyftools filter - - -a 1024 -M | cyftools dist -i CD20 - - |"
 ## CRC CyCIF Immune panel
 elif [[ "$input_file" == *"immune"* ]]; then
     echo "...chain.sh: detected CyCIF Immune. Need radial file"

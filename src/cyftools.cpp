@@ -1821,7 +1821,7 @@ static int cleanfunc(int argc, char** argv) {
     case 'm' : clean_markers = true; break;
     case 'M' : clean_meta = true; break;
     case 'P' : clean_programs = true; break;
-    case 'C' : clean_programs = true; clean_meta = true; break;      
+    case 'C' : clean_programs = true; clean_meta = true; clean_pflags = true; clean_cflags = true; break;
     default: die = true;
     }
   }
@@ -1843,7 +1843,7 @@ static int cleanfunc(int argc, char** argv) {
       "  -m                        Remove all marker data.\n"
       "  -M                        Remove all meta data.\n"
       "  -P                        Remove all @PG tags from header.\n"
-      "  -C                        Remove all marker and program @PG data (resets to just original cell table)\n"
+      "  -C                        Remove all flag, meta and program @PG data (resets to just original cell table)\n"
       "  -v, --verbose             Increase output to stderr.\n"
       "\n"
       "Example:\n"
