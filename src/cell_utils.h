@@ -131,6 +131,8 @@ float euclidean_distance(float x1, float y1, float x2, float y2);
 
 bool check_readable(const std::string& filename);
 
+bool check_writeable_folder(const std::string& filename);
+
 float euclidean_distance_squared(float x1, float y1, float x2, float y2);
 
 std::pair<std::string, std::string> colon_parse(const std::string& str);

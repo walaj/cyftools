@@ -960,9 +960,10 @@ int CellTable::PlotPNG(const std::string& file,
   std::mt19937 gen(rd()); 
   std::uniform_int_distribution<> dis(0,1);
 
-  float micron_per_pixel = 1; //0.325f;
+  //float micron_per_pixel = 1; //0.325f;
+  float micron_per_pixel = 0.65f; //0.325f;  
   const float radius_size = 6.0f * scale_factor;
-  const float ALPHA_VAL = 0.7f; // alpha for cell circles
+  const float ALPHA_VAL = 1.0f; // alpha for cell circles
   constexpr float TWO_PI = 2.0 * M_PI;
   
   // Original dimensions
@@ -1030,13 +1031,13 @@ int CellTable::PlotPNG(const std::string& file,
 
   // red radius
   if (false)
-  for (size_t j = 0; j < CellCount(); j++) { // loop the cells
-    const float x = m_x_ptr->at(j);
-    const float y = m_y_ptr->at(j) + legend_total_height;
+    for (size_t j = 0; j < CellCount(); j++) { // loop the cells
+      const float x = m_x_ptr->at(j);
+      const float y = m_y_ptr->at(j) + legend_total_height;
     if (j % 10000 == 0) { 
       cairo_set_source_rgb(crp, 1, 0, 0);
       cairo_set_line_width(crp, 16);
-      cairo_arc(crp, x*scale_factor, y*scale_factor, 50.0f/0.325f*scale_factor, 0, 2*M_PI);
+      cairo_arc(crp, x*scale_factor, y*scale_factor, 50.0f/micron_per_pixel*scale_factor, 0, 2*M_PI);
       cairo_stroke(crp);
     }
   }
@@ -1057,8 +1058,8 @@ int CellTable::PlotPNG(const std::string& file,
       
       // Move to the first vertex
       auto firstVertex = *polygon.begin();
-      cairo_move_to(crp, firstVertex.x*scale_factor*micron_per_pixel,
-    (firstVertex.y*micron_per_pixel+legend_total_height)*scale_factor);
+      //cairo_move_to(crp, firstVertex.x*scale_factor*micron_per_pixel, (firstVertex.y*micron_per_pixel+legend_total_height)*scale_factor);
+      cairo_move_to(crp, firstVertex.x*scale_factor, (firstVertex.y+legend_total_height)*scale_factor);      
       
       // Draw lines to each subsequent vertex
       for (const auto& v : polygon) {
@@ -1068,7 +1069,8 @@ int CellTable::PlotPNG(const std::string& file,
 	//cairo_arc(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel, 10, 0, TWO_PI);
 	//cairo_fill(crp);
 	
-	cairo_line_to(crp, v.x*scale_factor*micron_per_pixel, (v.y*micron_per_pixel+legend_total_height)*scale_factor);
+	//cairo_line_to(crp, v.x*scale_factor*micron_per_pixel, (v.y*micron_per_pixel+legend_total_height)*scale_factor);
+	cairo_line_to(crp, v.x*scale_factor, (v.y+legend_total_height)*scale_factor);	
       }
       
       // Close the polygon

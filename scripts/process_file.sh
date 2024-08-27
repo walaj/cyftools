@@ -9,9 +9,9 @@ source ${HOME}/git/cyftools/scripts/config.sh
 ############
 
 #### ORION CRC
-#HOMEBASE=${PROJ_DATA}/orion/orion_1_74
-#ROIBASE=rois
-#GATEBASE=pheno
+HOMEBASE=${PROJ_DATA}/orion/orion_1_74
+ROIBASE=rois
+GATEBASE=phenotype
 
 #### PROSTATE CYCIF
 #HOMEBASE=${PROJ_DATA}/prostate
@@ -24,9 +24,9 @@ source ${HOME}/git/cyftools/scripts/config.sh
 #GATEBASE=gates
 
 #### JHU CYCIF
-HOMEBASE=${PROJ_DATA}/jhu/cycif
-ROIBASE=roi
-GATEBASE=phenotype
+#HOMEBASE=${PROJ_DATA}/jhu/cycif
+#ROIBASE=roi
+#GATEBASE=phenotype
 
 echo "...getting file list from $HOMEBASE"
 for infile in $HOMEBASE/clean/*.cyf; do    
@@ -51,8 +51,8 @@ for infile in $HOMEBASE/clean/*.cyf; do
     
     ## run the actual chain command
     ~/git/cyftools/scripts/chain.sh $HOMEBASE/clean/${base}.cyf\
-				    $HOMEBASE/chain/${base}.cyf\
-				    $HOMEBASE/$GATEBASE/${base}.csv\
+				    $HOMEBASE/chain_coy/${base}.cyf\
+				    $HOMEBASE/$GATEBASE/${base}.phenotype.csv\
 				    ${HOMEBASE}/${ROIBASE}/${base}.roi.csv
 
     ## uncomment to run just one sample

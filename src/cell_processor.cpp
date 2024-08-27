@@ -1005,8 +1005,7 @@ int CleanProcessor::ProcessHeader(CellHeader& header) {
     //std::cerr << " i " << i << " tag " << m_header.at(i).id << " typ " <<
     //  static_cast<unsigned int>(m_header.at(i).type) << std::endl;
     if ( (m_clean_meta   && m_header.at(i).type == Tag::CA_TAG) ||
-         (m_clean_marker && m_header.at(i).type == Tag::MA_TAG) ||
-	 (m_clean_graph  && m_header.at(i).type == Tag::GA_TAG))
+         (m_clean_marker && m_header.at(i).type == Tag::MA_TAG))
       to_remove.insert(i);
   }
   m_header.Cut(to_remove);
@@ -1019,6 +1018,9 @@ int CleanProcessor::ProcessHeader(CellHeader& header) {
       m_to_remove.insert(i);
   }
 
+  if (m_clean_programs)
+    m_header.CleanProgramTags();
+  
   // just in time, make the output stream
   this->SetupOutputStream();
 
@@ -1053,13 +1055,6 @@ int CleanProcessor::ProcessLine(Cell& cell) {
   if (m_clean_pflags)
     cell.pflag = 0;
   
-  // clean the graph
-  /*  if (m_clean_graph) {
-    cell.m_spatial_ids.clear();
-    cell.m_spatial_dist.clear();
-    cell.m_spatial_flags.clear();
-    }*/
-
   return 1;
   
 }

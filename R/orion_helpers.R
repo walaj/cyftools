@@ -211,7 +211,8 @@ load_or_run <- function(cache_path, code_block, output_name) {
 #' @export
 km_plot <- function(rd, parm, parm.name, parm.labels,
                     flip=FALSE, flip.labels = FALSE, return.model=FALSE, 
-                    return.data = FALSE) {
+                    return.data = FALSE, 
+                    stage_adjust = FALSE) {
   
   library(survival)
   
@@ -258,7 +259,11 @@ km_plot <- function(rd, parm, parm.name, parm.labels,
   
   # store the model data in a data.table for ggplot ease
   # fit the survival model
-  model_fit = survfit(surv_model ~ get(parm), data = rd)
+  if (stage_adjust)
+    model_fit = survfit(surv_model ~ get(parm) + stage_num, data = rd)
+  else
+    model_fit = survfit(surv_model ~ get(parm) , data = rd)
+  
   
   # Compute the optimal cutpoint
   if (rd[, is.numeric(get(parm))]) {
@@ -267,7 +272,10 @@ km_plot <- function(rd, parm, parm.name, parm.labels,
     parm="cut"
     parm.labels=c("0"="Low","1"="High")
     cat("Cutpoint: ", as.numeric(res.cut$cutpoint)[1], "\n")
-    model_fit = survfit(surv_model ~ get(parm), data = rd)
+    if (stage_adjust)
+      model_fit = survfit(surv_model ~ get(parm) + stage_num, data = rd)
+    else
+      model_fit = survfit(surv_model ~ get(parm), data = rd)
   }
   
   dt.plot <- data.table(time=model_fit$time, 
@@ -279,7 +287,11 @@ km_plot <- function(rd, parm, parm.name, parm.labels,
   dt.plot <- rbind(dt.plot, dt.1)
   
   # # Fit a Cox proportional hazards model to the data
-  cox_model <- coxph(surv_model ~ get(parm), data = rd)
+  if (stage_adjust)
+    cox_model <- coxph(surv_model ~ get(parm) + stage_num, data = rd)
+  else
+    cox_model <- coxph(surv_model ~ get(parm) , data = rd)
+  
   
   # get the HRF
   coefs <- coef(cox_model)
@@ -750,7 +762,7 @@ compare_groups <- function(rrt, var) {
 
 # Function to create a beeswarm plot with significance comparisons
 create_beeswarm_plot <- function(data, x_var, y_var, withbox=FALSE) {
-  dx_combos <- list(c("tipMMR","pMMR"),c("tipMMR","dMMR"),c("dMMR","pMMR"))
+  dx_combos <- list(c("tipMMR","tdpMMR"),c("tipMMR","dMMR"),c("dMMR","tdpMMR"))
  # dx_combos <- list(c("focal","no"))
   #dx_combos <- list(c("Pre","Post"))
   #dx_combos  <- list(c("PD","PR"),c("PD","SD"),c("SD","PR"))

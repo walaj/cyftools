@@ -6,6 +6,7 @@
 #include <cmath>
 #include <fstream>
 #include <unordered_set>
+#include <filesystem>
 
 #ifdef HAVE_CAIRO
 #include "cairo/cairo.h"
@@ -178,6 +179,33 @@ bool check_readable(const std::string& filename) {
   }
 
   return answer;
+}
+
+bool check_writeable_folder(const std::string& filename) {
+
+  // Extract the directory path from the filename
+  std::filesystem::path filepath(filename);
+  std::filesystem::path directory = filepath.parent_path();
+  
+  // If no directory is provided, assume the current directory
+  if (directory.empty()) {
+    directory = ".";
+  }
+  
+  // Check if the directory exists and is writable
+  bool isDirWritable = false;
+  if (std::filesystem::exists(directory) && std::filesystem::is_directory(directory)) {
+    // Try to create a temporary file in the directory to check writability
+    std::filesystem::path tempFile = directory / "tempfile.tmp";
+    std::ofstream tempStream(tempFile.string(), std::ios::out | std::ios::trunc);
+    isDirWritable = tempStream.is_open();
+    if (tempStream) {
+      tempStream.close();
+      std::filesystem::remove(tempFile); // Clean up the temporary file
+    }
+  }
+  
+  return isDirWritable;
 }
 
 std::pair<std::string, std::string> colon_parse(const std::string& str) {

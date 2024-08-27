@@ -15,7 +15,9 @@ class Tag {
   static const uint8_t MA_TAG = 1; // marker tag
   static const uint8_t CA_TAG = 2; // meta tag
   static const uint8_t GA_TAG = 3; // graph tag
-  static const uint8_t PG_TAG = 4; // program tag  
+  static const uint8_t PG_TAG = 4; // program tag
+  static const uint8_t VN_TAG = 5; // version tag
+  static const uint8_t SA_TAG = 6; // sample tag
   
   uint8_t type;
   std::string id;
@@ -34,6 +36,8 @@ class Tag {
     case CA_TAG: typen = "CA"; break;
     case GA_TAG: typen = "GA"; break;
     case PG_TAG: typen = "PG"; break;
+    case VN_TAG: typen = "VN"; break;
+    case SA_TAG: typen = "SA"; break;
     default: typen = "UNKNOWN TAG TYPE"; 
     }
     return (typen);
@@ -68,7 +72,11 @@ class CellHeader {
   
   std::vector<Tag> GetMarkerTags() const;
 
-  std::vector<Tag> GetProgramTags() const;  
+  std::vector<Tag> GetProgramTags() const;
+
+  Tag GetVersionTags() const;
+
+  std::vector<Tag> GetSampleTags() const;  
 
   std::vector<Tag> GetMetaTags() const;
 
@@ -91,6 +99,8 @@ class CellHeader {
 
   size_t WhichColumn(const std::string& str, uint8_t tag_type) const;
 
+  void CleanProgramTags();
+  
   void Cut(const std::unordered_set<size_t> to_remove);
 
   // overload [] operator
@@ -144,12 +154,6 @@ class CellHeader {
 
 private:
   std::vector<Tag> tags;
-
-  size_t num_rows = 0;  // Number of rows in the data
-
-  size_t pg_tag_num = 0; // count pg tags, so that newer tags get higher "i" value
-  size_t ma_tag_num = 0; // count pg tags, so that newer tags get higher "i" value
-  size_t ca_tag_num = 0; // count pg tags, so that newer tags get higher "i" value
   
 };
 
