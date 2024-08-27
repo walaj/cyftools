@@ -2396,7 +2396,6 @@ static int roifunc(int argc, char** argv) {
       v.y *= micron_per_pixel;
     }
   }
-  std::cerr << " MAX " << maxr << std::endl;
 
   if (opt::verbose)
     for (const auto& c : rois)
