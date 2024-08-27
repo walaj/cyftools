@@ -61,7 +61,7 @@ elif [ -d /Users/kristin ]; then
     PROJ_DATA=/Users/kristin/Dropbox/Sorger/projects    
 elif [ -d /home/jaw34 ]; then
     PROJ_HOME=/home/jaw34/projects/
-    PROJ_DATA=/n/scratch/users/j/jaw34/
+    PROJ_DATA=/n/scratch/users/j/jaw34/projects/
 elif [ -d /home/kq18 ]; then
     PROJ_HOME=/home/kq18/projects/
     PROJ_DATA=/home/kq18/projects/
