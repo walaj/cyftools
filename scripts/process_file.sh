@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# Check if USE_SLURM is set and non-zero
+#USE_SLURM=1
+if [[ "${USE_SLURM:-0}" -eq 1 ]]; then
+    echo "Submitting jobs to SLURM..."
+else
+    echo "Running jobs interactively..."
+fi
+
 ## configuration file
 #### NEED TO EDIT TO LINK PROJECT NAME (e.g. JHU) to SAMPLES
 source ${HOME}/git/cyftools/scripts/config.sh
@@ -12,21 +20,25 @@ source ${HOME}/git/cyftools/scripts/config.sh
 HOMEBASE=${PROJ_DATA}/orion/orion_1_74
 ROIBASE=rois
 GATEBASE=phenotype
+CHAINDIR=chain_coy
 
 #### PROSTATE CYCIF
 #HOMEBASE=${PROJ_DATA}/prostate
 #ROIBASE=roisgu
 #GATEBASE=pheno
+#CHAINDIR=chain
 
 #### JHU ORION
 #HOMEBASE=${PROJ_DATA}/jhu
 #ROIBASE=roi
 #GATEBASE=gates
+#CHAINDIR=chain
 
 #### JHU CYCIF
 #HOMEBASE=${PROJ_DATA}/jhu/cycif
 #ROIBASE=roi
 #GATEBASE=phenotype
+#CHAINDIR=chain_coy
 
 echo "...getting file list from $HOMEBASE"
 for infile in $HOMEBASE/clean/*.cyf; do    
@@ -48,14 +60,23 @@ for infile in $HOMEBASE/clean/*.cyf; do
     #fi
     #check_file_exists "$HOMEBASE/rawcsv/${base}.csv"
     #~/git/cysift/scripts/pheno.sh "$HOMEBASE/rawcsv/${base}.csv" "$HOMEBASE/$GATEBASE/${base}.csv"
-    
-    ## run the actual chain command
-    ~/git/cyftools/scripts/chain.sh $HOMEBASE/clean/${base}.cyf\
-				    $HOMEBASE/chain_coy/${base}.cyf\
-				    $HOMEBASE/$GATEBASE/${base}.phenotype.csv\
-				    ${HOMEBASE}/${ROIBASE}/${base}.roi.csv
 
+    ## run the actual chain command
+    if [[ "${USE_SLURM:-0}" -eq 1 ]]; then
+        # Submit the job to SLURM
+        sbatch ~/git/cyftools/scripts/chain.sh $HOMEBASE/clean/${base}.cyf\
+					$HOMEBASE/$CHAINDIR/${base}.cyf\
+					$HOMEBASE/$GATEBASE/${base}.phenotype.csv\
+					${HOMEBASE}/${ROIBASE}/${base}.roi.csv
+    else
+        # Run interactively
+        ~/git/cyftools/scripts/chain.sh $HOMEBASE/clean/${base}.cyf\
+					$HOMEBASE/$CHAINDIR/${base}.cyf\
+					$HOMEBASE/$GATEBASE/${base}.phenotype.csv\
+					${HOMEBASE}/${ROIBASE}/${base}.roi.csv
+    fi
+    
     ## uncomment to run just one sample
-    #exit 1
+    exit 1
     
 done

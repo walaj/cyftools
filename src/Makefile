@@ -45,7 +45,7 @@ ifeq ($(wildcard $(BREWHOME)),)  # If dir does not exist, probably on HMS server
             $(warning    module load cairo boost)
             $(warning ******************************************************************)
 
-    OMP = -I$(HMSHOME)/software/openmpi-4.1.5/include
+    OMP = -I$(HMSHOME)/software/openmpi-4.1.5/include -DHAVE_OMP
     OMPL= -L$(HMSHOME)/software/openmpi-4.1.5/lib -lmpi -Wl,-rpath=$(HMSHOME)/software/openmpi-4.1.5/lib/
 
     CAIRO=-DHAVE_CAIRO

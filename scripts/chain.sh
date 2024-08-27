@@ -7,6 +7,12 @@
 #SBATCH -o hostname_%j.out                 # File to which STDOUT will be written, including job ID (%j)
 #SBATCH -e hostname_%j.err                 # File to which STDERR will be written, including job ID (%j)
 
+if [[ "${USE_SLURM:-0}" -eq 1 ]]; then
+    module load gcc/9.2.0
+    module load cairo
+    module load boost
+fi
+
 input_file=$1
 output_file=$2
 pheno_file=$3
@@ -16,7 +22,7 @@ source ~/git/cyftools/scripts/config.sh
 
 ### PARAMS
 # num threads
-T=6
+T=4
 # verbose?
 V="-v"
 
@@ -82,6 +88,8 @@ elif contains_string "$orion41_73" "$input_file"; then
     RAD=${PROJ_HOME}/orion/radial.csv
     TUMOR_MARKER=131072
     TCELL_MARKER=4096
+    BCELL_MARKER=1024
+    IMMUNE_MARKER=14296
     roimag=0.325
     distann="cyftools filter - - -A 8 -M | cyftools dist -i tumor - - |
  cyftools filter - - -a 4096 -M | cyftools dist -i CD3 - - |
@@ -100,6 +108,8 @@ elif contains_string "$orion1_40" "$input_file"; then
     RAD=${PROJ_HOME}/orion/radial.csv    
     TUMOR_MARKER=131072
     TCELL_MARKER=4096
+    BCELL_MARKER=1024
+    IMMUNE_MARKER=14296
     roimag=0.325
     distann="cyftools filter - - -A 8 -M | cyftools dist -i tumor - - |
  cyftools filter - - -a 4096 -M | cyftools dist -i CD3 - - |
