@@ -17,6 +17,8 @@ std::ostream& operator<<(std::ostream& os, const Tag& tag) {
   case Tag::CA_TAG: ttype = "CA"; break;
   case Tag::GA_TAG: ttype = "GA"; break;
   case Tag::PG_TAG: ttype = "PG"; break;
+  case Tag::VN_TAG: ttype = "VN"; break;
+  case Tag::SA_TAG: ttype = "SA"; break;
   default:
     throw std::runtime_error("Unknown tag type with uint8_t value: " + std::to_string(tag.type));
   }
@@ -25,8 +27,8 @@ std::ostream& operator<<(std::ostream& os, const Tag& tag) {
   if (ttype != "PG")
     os << "\tID:" << tag.id;
   
-  if (ttype == "MA" || ttype == "CA")
-    os << "\tIN:" << tag.i;
+  //if (ttype == "MA" || ttype == "CA")
+  //  os << "\tIN:" << tag.i;
   
   os << "\t" << tag.data;
   
@@ -56,11 +58,10 @@ std::vector<Tag> CellHeader::GetInfoTags() const {
 
   std::vector<Tag> info_tags;
   for (const auto& t : tags)
-    if (t.type == Tag::GA_TAG || t.type == Tag::PG_TAG)
+    if (t.type == Tag::GA_TAG || t.type == Tag::PG_TAG ||
+	t.type == Tag::VN_TAG || t.type == Tag::SA_TAG)
       info_tags.push_back(t);
       
-  return info_tags;
-  
   return info_tags;
 }
 
@@ -131,12 +132,11 @@ void CellHeader::addTag(const Tag& tag) {
   }
 
   // find what the new tag id should be
-  // this is just the highest existing for that tag type, + 1
+  // this is just the highest existing + 1
   int new_tag_i = 0; 
   for (const auto& t : GetAllTags()) {
-    if (thistag.type == t.type) {
+    if (t.i > new_tag_i)
       new_tag_i = t.i;
-    }
   }
   
   // add tags to data_tags that store
@@ -156,6 +156,13 @@ void CellHeader::addTag(const Tag& tag) {
 
   // make sure tags are sorted
   SortTags();
+}
+
+std::ostream& operator<<(std::ostream& os, const CellHeader& h) {
+  for (const auto& tag : h.tags) {
+    os << tag << std::endl;
+  }
+  return os;
 }
 
 std::vector<Tag> CellHeader::GetMarkerTags() const {
@@ -191,13 +198,23 @@ std::vector<Tag> CellHeader::GetProgramTags() const {
   return program_tags;
 }
 
+std::vector<Tag> CellHeader::GetSampleTags() const {
+
+  // return only tags that hold marker data
+  std::vector<Tag> sample_tags;
+  for (const auto& t : tags)
+    if (t.type == Tag::SA_TAG)
+      sample_tags.push_back(t);
+  
+  return sample_tags;
+}
+
+
 void CellHeader::Print() const {
 
   for (const auto& tag : tags) {
     std::cout << tag << std::endl;
   }
-  //  for (const auto& tag : info_tags)
-  //  std::cout << tag << std::endl;
   
 }
 
@@ -235,6 +252,8 @@ Tag::Tag(const std::string& line) {
     else if (token.substr(1) == "GA") { type = Tag::GA_TAG; }
     else if (token.substr(1) == "CA") { type = Tag::CA_TAG; }
     else if (token.substr(1) == "PG") { type = Tag::PG_TAG; }
+    else if (token.substr(1) == "SA") { type = Tag::SA_TAG; }
+    else if (token.substr(1) == "VN") { type = Tag::VN_TAG; }
     else { throw std::runtime_error("Tag of type" + token.substr(1) + "not an allowed tag"); }
     
     ++it;
@@ -253,4 +272,12 @@ Tag::Tag(const std::string& line) {
       data = data + field + ":" + value;
     }
   }
+}
+
+void CellHeader::CleanProgramTags() {
+  // remove PG tags
+  tags.erase(std::remove_if(tags.begin(), tags.end(), 
+			    [](const Tag& t) { return t.type == Tag::PG_TAG; }), 
+	     tags.end());
+  
 }

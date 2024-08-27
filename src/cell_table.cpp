@@ -960,9 +960,10 @@ int CellTable::PlotPNG(const std::string& file,
   std::mt19937 gen(rd()); 
   std::uniform_int_distribution<> dis(0,1);
 
-  float micron_per_pixel = 1; //0.325f;
-  const float radius_size = 2.0f * scale_factor;
-  const float ALPHA_VAL = 0.7f; // alpha for cell circles
+  //float micron_per_pixel = 1; //0.325f;
+  float micron_per_pixel = 0.65f; //0.325f;  
+  const float radius_size = 6.0f * scale_factor;
+  const float ALPHA_VAL = 1.0f; // alpha for cell circles
   constexpr float TWO_PI = 2.0 * M_PI;
   
   // Original dimensions
@@ -1030,13 +1031,13 @@ int CellTable::PlotPNG(const std::string& file,
 
   // red radius
   if (false)
-  for (size_t j = 0; j < CellCount(); j++) { // loop the cells
-    const float x = m_x_ptr->at(j);
-    const float y = m_y_ptr->at(j) + legend_total_height;
+    for (size_t j = 0; j < CellCount(); j++) { // loop the cells
+      const float x = m_x_ptr->at(j);
+      const float y = m_y_ptr->at(j) + legend_total_height;
     if (j % 10000 == 0) { 
       cairo_set_source_rgb(crp, 1, 0, 0);
       cairo_set_line_width(crp, 16);
-      cairo_arc(crp, x*scale_factor, y*scale_factor, 50.0f/0.325f*scale_factor, 0, 2*M_PI);
+      cairo_arc(crp, x*scale_factor, y*scale_factor, 50.0f/micron_per_pixel*scale_factor, 0, 2*M_PI);
       cairo_stroke(crp);
     }
   }
@@ -1057,8 +1058,8 @@ int CellTable::PlotPNG(const std::string& file,
       
       // Move to the first vertex
       auto firstVertex = *polygon.begin();
-      cairo_move_to(crp, firstVertex.x*scale_factor*micron_per_pixel,
-    (firstVertex.y*micron_per_pixel+legend_total_height)*scale_factor);
+      //cairo_move_to(crp, firstVertex.x*scale_factor*micron_per_pixel, (firstVertex.y*micron_per_pixel+legend_total_height)*scale_factor);
+      cairo_move_to(crp, firstVertex.x*scale_factor, (firstVertex.y+legend_total_height)*scale_factor);      
       
       // Draw lines to each subsequent vertex
       for (const auto& v : polygon) {
@@ -1068,7 +1069,8 @@ int CellTable::PlotPNG(const std::string& file,
 	//cairo_arc(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel, 10, 0, TWO_PI);
 	//cairo_fill(crp);
 	
-	cairo_line_to(crp, v.x*scale_factor*micron_per_pixel, (v.y*micron_per_pixel+legend_total_height)*scale_factor);
+	//cairo_line_to(crp, v.x*scale_factor*micron_per_pixel, (v.y*micron_per_pixel+legend_total_height)*scale_factor);
+	cairo_line_to(crp, v.x*scale_factor, (v.y+legend_total_height)*scale_factor);	
       }
       
       // Close the polygon
@@ -1411,26 +1413,21 @@ int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
   
 }
   
-void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file) {
+void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, const std::string& metac) {
 
-  // Assume x and y indiceis are the first and second
-  int x_index = 0;
-  int y_index = 1;
+  // key indices
+  int id_index = -1;
+  int x_index = -1;
+  int y_index = -1;
 
-  // assume starts at 2 and ends and end of file
-  int start_index = 0; // start and end indicies for markers
-  int end_index = 0;
-  
   // csv reader
   std::unique_ptr<io::LineReader> reader;
 
   // Initialize the reader depending on the input string
   if (file == "-") {
-    // Read from stdin
-    reader = std::make_unique<io::LineReader>("", stdin);
+    reader = std::make_unique<io::LineReader>("", stdin); 
   } else {
-    // Read from file
-    reader = std::make_unique<io::LineReader>(file);
+    reader = std::make_unique<io::LineReader>(file);  // Read from file
   }
 
   // get read to read file
@@ -1439,121 +1436,103 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file) {
   size_t flag_index = -1;
   char* next_line_ptr;
 
+  // read in meta columns in header
+  StringSet meta_items = tokenize_comma_delimited<StringSet>(metac);
+  meta_items.insert({"Area", "MajorAxisLength", "MinorAxisLength",
+      "Eccentricity", "Solidity", "Extent", "Orientation"});
+
   // for verbose
   size_t count = 0;
+
+  // to make sure table not ragged
+  size_t num_cols = 0;
   
   // Read and process the lines
   while ((next_line_ptr = reader->next_line()) != nullptr) {
-
+    
     // get the line. Skip if empty
     line = std::string(next_line_ptr);
     if (line.size() == 0) {
       break;
     }
     
-    // If the line starts with '@', parse it as a Tag and add it to m_header
-    if (line[0] == '@') {
+    // line is the header line (starts with non-numeric)
+    if (std::isalpha(static_cast<unsigned char>(line.at(0)))) {
       
       // make sure there are no header lines in the middle of file
       if (header_read)
 	throw std::runtime_error("Misformed file: header lines should all be at top of file");
-
-      // assumng "jeremiah" format of X,Y,markers...
-      proc.SetXInd(0);
-      proc.SetYInd(1);
-      proc.SetStartIndex(2);
-      proc.SetEndIndex(1000000); // just go to end of line they're all markers
       
-      // add the tag to the header
-      Tag tag(line);
-      m_header.addTag(tag);
-
-    }
-
-    // line starts with CellID (assuming...)
-    else if (line[0] == 'C') {
-
-      // make sure there are no header lines in the middle of file
-      if (header_read)
-	throw std::runtime_error("Misformed file: header lines should all be at top of file");
-
-      std::vector<std::string> header_lines = tokenize_comma_delimited(line);
-
+      StringVec header_lines = tokenize_comma_delimited<StringVec>(line);
+      
       size_t ind = 0;
       for (const auto& s : header_lines) {
 	
-	if (is_mcmicro_meta(s)) {
-	  if (s == "X_centroid") 
-	    x_index = ind;
-	  else if (s == "Y_centroid")
-	    y_index = ind;
-	  // right now, do nothing with meta data
-	  
-	  // if we're already past markers
-	  if (start_index > 0 && end_index == 0)
-	    end_index = ind; // this is the last index seen
+	num_cols++;
+	// if keyword for X, Y 
+	if (s == "X_centroid" || s == "X") {
+	  x_index = ind;
 	}
-
-	// this is a marker, add the tag
-	else {
-
-	  // clean out the ARgo etc
+	else if (s == "Y_centroid" || s == "Y") {
+	  y_index = ind;
+	}
+	else if (s == "CellID") {
+	  id_index = ind;
+	}
+	// this is a meta/marker, add the tag
+	else { 
+	  
+	  // clean out the hyphens etc
 	  std::string s2 = clean_marker_string(s);
-	  
-	  Tag tag(Tag::MA_TAG, s2, "");
+	  uint8_t tag_type = (meta_items.find(s) != meta_items.end()) ? Tag::CA_TAG : Tag::MA_TAG;
+	  Tag tag(tag_type, s2, "");
 	  m_header.addTag(tag);
-	  // if first marker we've seen, then set start
-	  if (start_index == 0) {
-	    start_index = ind;
-	  }
+	  
 	}
-
+	
 	// just a sanity check here
-	if (ind == 0 && s != "CellID") {
+	/*if (ind == 0 && s != "CellID") {
 	  std::cerr << "Error: cyftools convert -- saw header in csv as starting with C but its not CellID, double check?" << std::endl;
 	  assert(false);
 	} else if (ind == 1 && !(s != "Hoechst" || s != "Hoechst1")) {
 	  std::cerr << "Warning: cyftools convert -- usually assume mcmicro header is CellID,Hoechst(1),... but see here that 2nd elem is " << s << std::endl;
 	  std::cerr << "         OK to proceed, but will assume " << s << " is first marker." << std::endl;
-	} 
+	  } */
 	ind++;
       }
 
-      // we know X_centroid isn't at 0 slow, because we got into here with 'C' as first letter
+      // we know X_centroid isn't at 0, because we got into here with 'C' as first letter
       // so what happened is that it never found X_centroid
-      if (x_index == 0) {
+      if (x_index < 0) {
 	std::cerr << "Error: cyftools convert -- X_centroid not found" << std::endl;
 	assert(false);
       }
-      if (y_index == 0) {
+      if (y_index < 0) {
 	std::cerr << "Error: cyftools convert -- Y_centroid not found" << std::endl;
 	assert(false);
       }
-      
-      // some more sanity check
-      assert(start_index > 0);
-      assert(end_index > 0);
+      if (id_index < 0) {
+	std::cerr << "Warning: cyftools convert -- CellID not found - will just create" << std::endl;
+      }
       
       proc.SetXInd(x_index);
       proc.SetYInd(y_index);
-      proc.SetStartIndex(start_index); // assuming that 0 is CellID
-      proc.SetEndIndex(end_index);
-
-    }
-
-
-    else {
+      proc.SetIDInd(id_index);
+      
+    // non-header line (data)
+    } else {
       
       // Label that the header has already been read
+      // process the header
       if (!header_read) {
 	header_read = true;
 	
-	// process the header
 	// if it gives non-zero output, it means stop there
 	if (proc.ProcessHeader(m_header))
 	  return;
       }
-
+      
+      
       // process lines
       proc.ProcessLine(line);
 
@@ -1573,8 +1552,6 @@ void CellTable::setCmd(const std::string& cmd) {
 
   m_header.SortTags();
 }
-
-
  
  void CellTable::validate() const {
    

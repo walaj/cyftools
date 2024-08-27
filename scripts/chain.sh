@@ -187,13 +187,13 @@ fi
 
 ## set the roi file
 if [[ -f "$roi_file" ]]; then
-    roicmd="cyftools roi - - -b -m $roimag -r $roi_file |"
+    roicmd="cyftools roi - - -m $roimag -r $roi_file |"
 else
     roicmd=""
 fi
 
 ## make the tls commands
-if [ -n "$BCELL_MARKER" && -n "$IMMUNE_MARKER" ]; then
+if [[ -n "$BCELL_MARKER" && -n "$IMMUNE_MARKER" ]]; then
     tlscmd="cyftools tls - - -b $BCELL_MARKER -i $IMMUNE_MARKER -m 300 -d 35 ${V} |"
 fi
 

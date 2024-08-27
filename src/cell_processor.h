@@ -270,10 +270,10 @@ class CleanProcessor : public CellProcessor {
 
 public:
 
-  void SetParams(bool clean_graph, bool clean_meta, bool clean_marker,
+  void SetParams(bool clean_programs, bool clean_meta, bool clean_marker,
 		 bool clean_cflags, bool clean_pflags) {
     
-    m_clean_graph = clean_graph;
+    m_clean_programs = clean_programs;
     m_clean_meta = clean_meta;
     m_clean_marker = clean_marker;
     m_clean_cflags = clean_cflags;
@@ -287,7 +287,7 @@ public:
 
 private:
 
-  bool m_clean_graph  = false; 
+  bool m_clean_programs  = false; 
   bool m_clean_meta   = false; 
   bool m_clean_marker = false;
   bool m_clean_pflags = false;
@@ -649,6 +649,8 @@ class ROIProcessor : public CellProcessor {
   bool m_label;
 
   bool m_blacklist_remove = false;
+
+  bool m_roi_region = false; // set true if any polygon/roi is a region
 };
 
 class ViewProcessor : public CellProcessor { 
@@ -662,7 +664,8 @@ class ViewProcessor : public CellProcessor {
 		 bool crevasse,
 		 int round,
 		 const std::unordered_set<std::string>& include,
-		 bool tabprint
+		 bool tabprint,
+		 bool strict_cut
 		 ) {
     
     m_print_header = print_header;
@@ -673,6 +676,7 @@ class ViewProcessor : public CellProcessor {
     m_csv_header = rheader;
     m_adjacent = adjacent;
     m_tabprint = tabprint;
+    m_strict_cut = strict_cut;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -693,6 +697,8 @@ class ViewProcessor : public CellProcessor {
   
   bool m_print_header;
 
+  bool m_strict_cut = false; // skip the CellID etc
+  
   // number of integers to round output to
   int m_round;
 
@@ -858,11 +864,8 @@ class CerealProcessor : public LineProcessor {
   // which are the columns for X and Y
   void SetXInd(int x) { m_x_index = x; }
   void SetYInd(int y) { m_y_index = y; }
+  void SetIDInd(int i) { m_id_index = i; }
 
-  // which are the start and end columns for markers
-  void SetStartIndex(int start) { m_start = start; }
-  void SetEndIndex(int end) { m_end = end; }
-  
   int ProcessHeader(CellHeader& header) override;
 
   int ProcessLine(const std::string& line) override;
@@ -878,10 +881,9 @@ private:
   std::string m_filename;
 
   // index tracking
-  int m_x_index = 0;
-  int m_y_index = 1;  // assume starts with x and y
-  int m_start = 0;
-  int m_end = 0;  
+  int m_x_index = -1;
+  int m_y_index = -1; 
+  int m_id_index = -1; 
   
   CellHeader m_header;
   

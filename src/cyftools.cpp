@@ -26,7 +26,7 @@ namespace opt {
   static std::string infile;
   static std::string outfile;
   static std::string module;
-  static std::vector<std::string> infile_vec;
+  static StringVec infile_vec;
  
   static bool header = false;
   static bool header_only = false;
@@ -65,7 +65,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  info        - Display detailed information\n"
 "  summary     - Display brief information\n"    
 "  count       - Count cells\n"
-"  head        - Returns first lines of a file\n"
+  //"  head        - Returns first lines of a file\n"
 " --- Low-level processing ---\n"
 "  convert     - Create a .cyf format file from a CSV\n"    
 "  cut         - Select only given markers and metas\n"
@@ -284,8 +284,8 @@ int main(int argc, char **argv) {
     val = sampleselectfunc(argc, argv);
   } else if (opt::module == "convolve") {
     val = convolvefunc(argc, argv);
-  } else if (opt::module == "head") {
-    val = headfunc(argc, argv);
+    //  } else if (opt::module == "head") {
+    //  val = headfunc(argc, argv);
   } else if (opt::module == "sort") {
     val = sortfunc(argc, argv);
   } else if (opt::module == "delaunay") {
@@ -725,14 +725,16 @@ static int flagsetfunc(int argc, char** argv) {
 
 static int reheaderfunc(int argc, char** argv) {
 
-  const char* shortopts = "vr:";
+  const char* shortopts = "vr:s:";
   
-  std::vector<std::string> rename;
+  StringVec rename;
+  StringVec sample;
   std::string str;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'r' : arg >> str; rename.push_back(str); break;
+    case 's' : arg >> str; sample.push_back(str); break;
     default: die = true;
     }
   }
@@ -744,46 +746,44 @@ static int reheaderfunc(int argc, char** argv) {
       "  Change or reheader the header only \n"
       "    .cyf file: filepath or a '-' to stream to stdin\n"
       "    -r       Rename a marker of meta column (old:new) \n"
+      "    -s       Add a sample tag (<id>:<field> e.g. microns_to_pixel:0.325) \n"      
       "\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
+  /////////// read the header
+  // std::istream *inputStream = nullptr;
+  // std::unique_ptr<std::ifstream> fileStream;
+  // // set input from file or stdin
+  // if (opt::infile == "-") {
+  //   inputStream = &std::cin;
+  // } else {
+  //   fileStream = std::make_unique<std::ifstream>(opt::infile, std::ios::binary);
+  //   if (!fileStream->good()) {
+  //     std::cerr << "Error opening: " << opt::infile << " - file may not exist" << std::endl;
+  //     return 1;
+  //   }
+  //   inputStream = fileStream.get();
+  // }
 
-  ///////// read the header
-  /////////
-  std::istream *inputStream = nullptr;
-  std::unique_ptr<std::ifstream> fileStream;
+  // cereal::PortableBinaryInputArchive inputArchive(*inputStream);
+
+  // CellHeader header;
   
-  // set input from file or stdin
-  if (opt::infile == "-") {
-    inputStream = &std::cin;
-  } else {
-    fileStream = std::make_unique<std::ifstream>(opt::infile, std::ios::binary);
-    if (!fileStream->good()) {
-      std::cerr << "Error opening: " << opt::infile << " - file may not exist" << std::endl;
-      return 1;
-    }
-    inputStream = fileStream.get();
-  }
-
-  cereal::PortableBinaryInputArchive inputArchive(*inputStream);
-
-  CellHeader header;
+  // // First read the CellHeader
+  // try {
+  //   inputArchive(header);
+  // } catch (const std::bad_alloc& e) {
+  //   // Handle bad_alloc exception
+  //   std::cerr << "Memory allocation failed during deserialization: " << e.what() << std::endl;
+  //   return 1;  // or handle the error appropriately for your program
+  // } catch (const cereal::Exception& e) {
+  //   // Handle exception if any error occurs while deserializing header
+  //   std::cerr << "Error while deserializing header: " << e.what() << std::endl;
+  //   return 1;  // or handle the error appropriately for your program
+  // }
   
-  // First read the CellHeader
-  try {
-    inputArchive(header);
-  } catch (const std::bad_alloc& e) {
-    // Handle bad_alloc exception
-    std::cerr << "Memory allocation failed during deserialization: " << e.what() << std::endl;
-    return 1;  // or handle the error appropriately for your program
-  } catch (const cereal::Exception& e) {
-    // Handle exception if any error occurs while deserializing header
-    std::cerr << "Error while deserializing header: " << e.what() << std::endl;
-    return 1;  // or handle the error appropriately for your program
-  }
-
   /*  is.seekg(0, is.end);
   int length = is.tellg() - is.tellg(); // calculate the remaining bytes in the file
   is.seekg(is.tellg(), is.beg); // go to the current position
@@ -1078,7 +1078,7 @@ static int cellcountfunc(int argc, char** argv) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'a' : arg >> tmp_string; additional_flags.push_back(std::stoi(tmp_string)); break;
+    case 'a' : arg >> tmp_string; additional_flags.push_back(std::stoull(tmp_string)); break;
     default: die = true;
     }
   }
@@ -1520,7 +1520,7 @@ static int ldacreatefunc(int argc, char** argv) {
   build_table();
 
   // error check the markers
-  std::vector<std::string> markers;
+  StringVec markers;
   for (const auto& s : tokens) {
 
     if (!table.HasColumn(s)) {
@@ -1709,7 +1709,7 @@ static int plotpngfunc(int argc, char** argv) {
       if (line.at(0) == '#') continue;
 
       // tokenize
-      std::vector<std::string> tokens = tokenize_comma_delimited(line);
+      StringVec tokens = tokenize_comma_delimited<StringVec>(line);
       if (tokens.size() != 7) {
 	std::cerr << "Error: cytools png -- palette line " << line << " does not have 7 elements (pflag, cflag,r,g,b,a,label)" << std::endl;
 	return 1;
@@ -1806,11 +1806,11 @@ static int plotpngfunc(int argc, char** argv) {
 static int cleanfunc(int argc, char** argv) {
 
   const char* shortopts = "vmMPCcp";
-  bool clean_graph = false;
   bool clean_markers = false;
   bool clean_meta = false;
   bool clean_cflags = false;
   bool clean_pflags = false;
+  bool clean_programs = false;
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -1820,8 +1820,8 @@ static int cleanfunc(int argc, char** argv) {
     case 'p' : clean_pflags= true; break;      
     case 'm' : clean_markers = true; break;
     case 'M' : clean_meta = true; break;
-    case 'P' : clean_graph = true; break;
-    case 'C' : clean_graph = true; clean_markers = true; clean_meta = true; break;      
+    case 'P' : clean_programs = true; break;
+    case 'C' : clean_programs = true; clean_meta = true; break;      
     default: die = true;
     }
   }
@@ -1842,8 +1842,8 @@ static int cleanfunc(int argc, char** argv) {
       "  -p                        Clear the phenotype flags\n"
       "  -m                        Remove all marker data.\n"
       "  -M                        Remove all meta data.\n"
-      "  -P                        Remove all graph data.\n"
-      "  -C                        Remove all marker, meta, and graph data.\n"
+      "  -P                        Remove all @PG tags from header.\n"
+      "  -C                        Remove all marker and program @PG data (resets to just original cell table)\n"
       "  -v, --verbose             Increase output to stderr.\n"
       "\n"
       "Example:\n"
@@ -1855,7 +1855,7 @@ static int cleanfunc(int argc, char** argv) {
   
   CleanProcessor cleanp;
   cleanp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  cleanp.SetParams(clean_graph, clean_meta, clean_markers, clean_cflags, clean_pflags);  
+  cleanp.SetParams(clean_programs, clean_meta, clean_markers, clean_cflags, clean_pflags);  
 
   // process 
   if (!table.StreamTable(cleanp, opt::infile)) {
@@ -2311,7 +2311,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "sort" || opt::module == "divide" || 
 	 opt::module == "pearson" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
-	 opt::module == "delaunay" || opt::module == "head" || 
+	 opt::module == "delaunay" ||  
 	 opt::module == "mean" || opt::module == "ldacreate" ||
 	 opt::module == "ldarun" || opt::module == "png" ||
 	 opt::module == "tls" || opt::module == "dist" ||
@@ -2342,17 +2342,17 @@ static void parseRunOptions(int argc, char** argv) {
 static int roifunc(int argc, char** argv) {
 
   std::string roifile;
-  const char* shortopts = "vn:r:m:b";
-  bool blacklist = false;
+  const char* shortopts = "vr:m:";
+  bool blacklist = true;
   float micron_per_pixel = 0;
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'n' : arg >> opt::n; break;
+      //case 'n' : arg >> opt::n; break;
     case 'r' : arg >> roifile; break;
     case 'm' : arg >> micron_per_pixel; break;
-    case 'b' : blacklist = true; break;
+      //case 'b' : blacklist = true; break;
     default: die = true;
     }
   }
@@ -2362,6 +2362,11 @@ static int roifunc(int argc, char** argv) {
     die = true;
   }
     
+  // make sure ROI file exists/readable
+  if (!check_readable(roifile)) {
+    std::cerr << "Error: " << roifile << " not readable/exists" << std::endl;
+    die = true;
+  }
   
   if (die || roifile.empty() || in_out_process(argc, argv)) {
     
@@ -2371,8 +2376,7 @@ static int roifunc(int argc, char** argv) {
       "  .cyf file: filepath or a '-' to stream to stdin\n"
       "  -r <roifile>              ROI file\n"
       "  -m <float>                Microns per pixel scale factor\n"
-      "  -b                        Flag to look for \"blacklist\" keyword and remove cells in these regions\n"
-      "  -l                        Output all cells and add \"roi\" column with ROI label\n"      
+      //      "  -l                        Output all cells and add \"roi\" column with ROI label\n"      
       "  -v, --verbose             Increase output to stderr"
       "\n";
     std::cerr << USAGE_MESSAGE;
@@ -2383,12 +2387,16 @@ static int roifunc(int argc, char** argv) {
   std::vector<Polygon> rois = read_polygons_from_file(roifile);
 
   // scale the polygons
+  float maxr = 01;
   for (auto& p : rois) {
     for (auto& v : p.vertices) {
+      if (v.x > maxr)
+	maxr = v.x; 
       v.x *= micron_per_pixel;
       v.y *= micron_per_pixel;
     }
   }
+  std::cerr << " MAX " << maxr << std::endl;
 
   if (opt::verbose)
     for (const auto& c : rois)
@@ -2407,11 +2415,12 @@ static int roifunc(int argc, char** argv) {
 
 static int viewfunc(int argc, char** argv) {
   
-  const char* shortopts = "vn:hHRAtCx:";
+  const char* shortopts = "vn:hHRAtCx:X:";
   int precision = 2;
   bool rheader = false;  // view as csv with csv header
   bool adjacent = false; // view as name:value
   bool crevasse = false; // view as output for crevasse
+  bool strict_cut = false; // only print the cut field
   bool tabprint = false; // view as tab-delimited and columns justified
   std::string cut; // list of markers, csv separated, to cut on
   
@@ -2421,6 +2430,7 @@ static int viewfunc(int argc, char** argv) {
     case 'v' : opt::verbose = true; break;
     case 'n' : arg >> precision; break;
     case 'C' : crevasse = true; break;
+    case 'X' : arg >> cut; strict_cut = true; break;
     case 'x' : arg >> cut; break;
     case 't' : tabprint = true; break;
     case 'A' : adjacent = true; break;
@@ -2451,6 +2461,7 @@ static int viewfunc(int argc, char** argv) {
       "  -C                         Print as CellID,x,y,...markers... for Crevasse\n"
       "  -t                         Print tab-delimited and const space\n"
       "  -x <fields>                Comma-separated list of fields to trim output to.\n"
+      "  -X <fields>                Like -x, but ONLY output those columns, no CellID, etc\n"
       "  -n <decimals>              Number of decimals to keep. Default is -1 (no change).\n"
       "  -H                         View only the header.\n"
       "  -h                         Output with the header.\n"
@@ -2476,7 +2487,7 @@ static int viewfunc(int argc, char** argv) {
   
   ViewProcessor viewp;
   viewp.SetParams(opt::header, opt::header_only, rheader, adjacent, crevasse,
-		  precision, tokens, tabprint);
+		  precision, tokens, tabprint, strict_cut);
 
   table.StreamTable(viewp, opt::infile);
   
@@ -2918,7 +2929,7 @@ static int spatialfunc(int argc, char** argv) {
    // SelectOp = pair<enum of comparators, float value>
    SelectOpVec num_vec;
    SelectOpMap criteria;
-   std::vector<std::string> field_vec;
+   StringVec field_vec;
 
    // short hand for selecting multiple flags as OR
    // (-s or -S), better than enumerating every flag with -a -o construct
@@ -3248,7 +3259,7 @@ static int radialdensfunc(int argc, char** argv) {
   std::vector<cy_uint> logandV(rsv.size());
   std::vector<int>     normalize_localV(rsv.size());
   std::vector<int>     normalize_globalV(rsv.size());  
-  std::vector<std::string> labelV(rsv.size());
+  StringVec labelV(rsv.size());
   if (rsv.empty()) {
     innerV = {inner};
     outerV = {outer};
@@ -3287,7 +3298,7 @@ static int radialdensfunc(int argc, char** argv) {
     return 0;*/
 }
 
-static void cyftools_cat(const std::vector<std::string>& inputFiles, const std::string& outputFile) {
+static void cyftools_cat(const StringVec& inputFiles, const std::string& outputFile) {
     std::ofstream os(outputFile, std::ios::binary);
     cereal::PortableBinaryOutputArchive oarchive(os);
 
@@ -3398,22 +3409,27 @@ int debugfunc(int argc, char** argv) {
 }
 
 static int convertfunc(int argc, char** argv) {
-  const char* shortopts = "s:v";
-  //bool mcmicro = false;
-  uint32_t sampleid = static_cast<uint32_t>(-1);
+  const char* shortopts = "s:vm:u:c:";
+  uint32_t sampleid = 0; //static_cast<uint32_t>(-1);
+  std::string metacols;
+  std::string units;
+  std::string microns_to_pixels;
+
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 's' : arg >> sampleid; break;
-      //case 'c' : mcmicro = true; break;
     case 'v' : opt::verbose = true; break;
+    case 'm' : arg >> metacols; break;
+    case 'u' : arg >> units; break;
+    case 'c' : arg >> microns_to_pixels; break;      
     default: die = true;
     }
   }
 
-  if (sampleid == static_cast<uint32_t>(-1)) {
+  /*if (sampleid == static_cast<uint32_t>(-1)) {
     die = true;
-  }
+    }*/
   
   if (die || in_out_process(argc, argv)) {
     
@@ -3431,6 +3447,7 @@ static int convertfunc(int argc, char** argv) {
       "Optional Options:\n"
       "  -v, --verbose             Increase output to stderr.\n"
       "  -h,                       Optionally, supply the header text file here, rather than as appended to csv\n"
+      "  -m,                       List metadata headers as a comma-delimited string (i.e. 'Area,Size,LDA')"
       "\n"
       "Example:\n"
       "  cyftools convert input.csv output.cyf\n"
@@ -3442,7 +3459,7 @@ static int convertfunc(int argc, char** argv) {
   CerealProcessor cerp;
   cerp.SetParams(opt::outfile, cmd_input, sampleid);
 
-  table.StreamTableCSV(cerp, opt::infile);
+  table.StreamTableCSV(cerp, opt::infile, metacols);
 
   return 0;
 }
@@ -3613,18 +3630,28 @@ static bool in_out_process(int argc, char** argv) {
   }
 
   // there should be only 2 non-flag input
-  if (count > 2)
+  if (count > 2) {
+    std::cerr << "Error: >2 in/out detected. Need 2 (input and output)" << std::endl;
     return true;
+  }
   // die if no inputs provided
-  if (count == 0)
-    return true;
-  
-  if (!check_readable(opt::infile) && opt::infile != "-") {
-    std::cerr << "Error: File " << opt::infile << " not readable/exists" << std::endl;
+  if (count == 0) {
+    std::cerr << "Error:NO in/out detected. Need 2 (input and output)" << std::endl;    
     return true;
   }
 
-  
+  // check if the input file is readable
+  if (!check_readable(opt::infile) && opt::infile != "-") {
+    std::cerr << "Error: Input file " << opt::infile << " not readable/exists" << std::endl;
+    return true;
+  }
+
+  // check if the input file is readable
+  if (!check_writeable_folder(opt::outfile) && opt::outfile != "-") {
+    std::cerr << "Error: Output file " << opt::outfile << " not readable/exists" << std::endl;
+    return true;
+  }
+
   return opt::infile.empty() || opt::outfile.empty();
 
 

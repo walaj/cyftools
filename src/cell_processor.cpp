@@ -6,7 +6,13 @@
 
 #include "cell_row.h"
 
+#include <regex>
 #include <limits>
+
+static inline bool roikey(const Polygon& poly, const std::string& keyword) {
+    return poly.Text.find(keyword) != std::string::npos ||
+           poly.Name.find(keyword) != std::string::npos;
+}
 
 int FilterProcessor::ProcessHeader(CellHeader& header) {
   
@@ -968,8 +974,14 @@ int ROIProcessor::ProcessHeader(CellHeader& header) {
 
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
 
-  //Tag roi_tag(Tag::CA_TAG,"roi", "");
-  //m_header.addTag(roi_tag);
+  // check if ROI regions are in the header
+  for (const auto &polygon : m_rois) {
+    if (roikey(polygon, "region")) {
+      Tag roi_tag(Tag::CA_TAG,"roi_region", "");
+      m_header.addTag(roi_tag);
+      m_roi_region = true;
+    }
+  }
   
   m_header.SortTags();
 
@@ -993,8 +1005,7 @@ int CleanProcessor::ProcessHeader(CellHeader& header) {
     //std::cerr << " i " << i << " tag " << m_header.at(i).id << " typ " <<
     //  static_cast<unsigned int>(m_header.at(i).type) << std::endl;
     if ( (m_clean_meta   && m_header.at(i).type == Tag::CA_TAG) ||
-         (m_clean_marker && m_header.at(i).type == Tag::MA_TAG) ||
-	 (m_clean_graph  && m_header.at(i).type == Tag::GA_TAG))
+         (m_clean_marker && m_header.at(i).type == Tag::MA_TAG))
       to_remove.insert(i);
   }
   m_header.Cut(to_remove);
@@ -1007,6 +1018,9 @@ int CleanProcessor::ProcessHeader(CellHeader& header) {
       m_to_remove.insert(i);
   }
 
+  if (m_clean_programs)
+    m_header.CleanProgramTags();
+  
   // just in time, make the output stream
   this->SetupOutputStream();
 
@@ -1041,21 +1055,10 @@ int CleanProcessor::ProcessLine(Cell& cell) {
   if (m_clean_pflags)
     cell.pflag = 0;
   
-  // clean the graph
-  /*  if (m_clean_graph) {
-    cell.m_spatial_ids.clear();
-    cell.m_spatial_dist.clear();
-    cell.m_spatial_flags.clear();
-    }*/
-
   return 1;
   
 }
 
-static inline bool roikey(const Polygon& poly, const std::string& keyword) {
-    return poly.Text.find(keyword) != std::string::npos ||
-           poly.Name.find(keyword) != std::string::npos;
-}
 
 int ROIProcessor::ProcessLine(Cell& cell) {
 
@@ -1064,7 +1067,9 @@ int ROIProcessor::ProcessLine(Cell& cell) {
 
   // Loop through all polygons and check if the point is inside any of them
   for (const auto &polygon : m_rois) {
-
+    
+    int number = 0; // region number
+    
     // if point is in this polygon, add the polygon id number to the roi
     if (polygon.PointIn(cell.x,cell.y)) {
       
@@ -1078,14 +1083,33 @@ int ROIProcessor::ProcessLine(Cell& cell) {
       } else if (roikey(polygon, "umor")) {
 	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);
 	print_line = true;
-      } else if (polygon.Text.find("cd3panck_error") != std::string::npos || polygon.Name.find("cd3panck_error") != std::string::npos) {
+      } else if (roikey(polygon, "cd3panck_error")) {
 	if (IS_FLAG_SET(cell.pflag, ORION_PANCK))
 	  CLEAR_FLAG(cell.pflag, ORION_CD3);
 	print_line = true;
+      } else if (roikey(polygon, "region")) {
+	std::regex pattern(R"(region(\d+))");
+	std::smatch matches;
+	// Check if the input string matches the pattern
+	if (std::regex_match(polygon.Text, matches, pattern)) {
+	  // Extract the trailing integer part and convert to an integer
+	  number = std::stoi(matches[1].str());
+	  assert(m_roi_region);
+	} else if (std::regex_match(polygon.Name, matches, pattern)) {
+	  number = std::stoi(matches[1].str());
+	  assert(m_roi_region);	  
+	} else {
+	  std::cerr << "Warning: ROI with name " << polygon.Text << "-" <<
+	    polygon.Name << " cannot be parsed" << std::endl;
+	}
       } else {
 	print_line = true;
       }
 
+      // add the region number if indicated
+      if (m_roi_region)
+	cell.cols.push_back(number);
+      
       // secondary annotations for PCa
       if (roikey(polygon, "3+3")) {
 	SET_FLAG(cell.cflag, GLEASON_GRADE_GROUP_1);
@@ -1107,8 +1131,6 @@ int ROIProcessor::ProcessLine(Cell& cell) {
       } else if (roikey(polygon, "SV") || roikey(polygon, "eminal")) {
 	SET_FLAG(cell.cflag, SEMINAL_VESICLES);
       }
-      
-      
       // uncomment below if want to prevent over-writing existing
       // break;
     }
@@ -1169,8 +1191,9 @@ int PhenoProcessor::ProcessHeader(CellHeader& header) {
 
   for (const auto& m : m_marker_map) {
     if (m_p.find(m.first) == m_p.end()) {
-      std::cerr << "Warning: Marker in cell table " <<
-	m.first << " is not in the phenotype file. Bit will be OFF" << std::endl;
+      std::cerr << "Warning: Marker " <<
+	std::left << std::setw(12) << std::setfill(' ') <<
+	m.first << " not in phenotype file. Bit to OFF" << std::endl;
     }
   }
   
@@ -1368,7 +1391,7 @@ int ViewProcessor::ProcessLine(Cell& cell) {
       return NO_WRITE_CELL;
     }
     
-    cell.PrintWithHeader(m_round, m_tabprint, m_adjacent, m_header);
+    cell.PrintWithHeader(m_round, m_tabprint, m_adjacent, m_header, false);
 
     return NO_WRITE_CELL; // don't output, since already printing it
   }
@@ -1385,8 +1408,8 @@ int ViewProcessor::ProcessLine(Cell& cell) {
     }
   }
   cell.cols = cols_new;
-  
-  cell.PrintWithHeader(m_round, m_tabprint, m_adjacent, m_header);
+
+  cell.PrintWithHeader(m_round, m_tabprint, m_adjacent, m_header, m_strict_cut);
     
   return NO_WRITE_CELL; // don't output, since already printing it
 }
@@ -1491,9 +1514,16 @@ int CerealProcessor::ProcessHeader(CellHeader& header) {
 }
 
 int CerealProcessor::ProcessLine(const std::string& line) {
+  
+  Cell row(line,
+	   m_id_index,
+	   m_x_index,
+	   m_y_index,
+	   m_header,
+	   m_cellid,
+	   m_sampleid);
 
-  Cell row(line, m_x_index, m_y_index, m_start, m_end,
-	   m_header, m_cellid, m_sampleid);
+  // used here only if m_id_index < 0
   m_cellid++;
 
   // serialize it
@@ -1502,7 +1532,7 @@ int CerealProcessor::ProcessLine(const std::string& line) {
   // serializing here, so don't need to write in the cell_table call
   // minor, but NO_WRITE_CELL is in CellProcessor abstract class, of which CerealProcessor is uniquely not a child  
   return 0; 
-  
+ 
 }
 
 int DebugProcessor::ProcessHeader(CellHeader& header) {

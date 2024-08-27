@@ -6,6 +6,7 @@
 #include <cmath>
 #include <fstream>
 #include <unordered_set>
+#include <filesystem>
 
 #ifdef HAVE_CAIRO
 #include "cairo/cairo.h"
@@ -49,7 +50,7 @@ PhenoMap phenoread(const std::string& filename) {
   bool onetable = false;// if one table format, handle differently
 
   // if one table format, store the marker names and order
-  std::vector<std::string> onetable_header;
+  StringVec onetable_header;
   
   // read and load the phenotype file
   std::string line;
@@ -64,7 +65,7 @@ PhenoMap phenoread(const std::string& filename) {
 
     else if (line.find("Sample") != std::string::npos && linenum == 0) {
       onetable = true;
-      onetable_header = tokenize_comma_delimited(line);
+      onetable_header = tokenize_comma_delimited<StringVec>(line);
       continue;
     }
 
@@ -130,116 +131,6 @@ std::string columnTypeToString(ColumnType type) {
   }
 }
 
-std::vector<std::string> tokenize_comma_delimited(const std::string& str) {
-    std::vector<std::string> tokens;
-    size_t start = 0;
-    size_t end = str.find(',');
-
-    while (end != std::string::npos) {
-        tokens.push_back(str.substr(start, end - start));
-        start = end + 1;
-        end = str.find(',', start);
-    }
-
-    // Add the last token
-    tokens.push_back(str.substr(start));
-
-    return tokens;
-    }
-/*
-std::string exclude_elements(const std::string_view& str, const std::unordered_set<size_t>& exclude_set) {
-  
-    std::string result;
-    size_t start = 0;
-    size_t end = str.find(',');
-    
-    for (size_t index = 0; end != std::string_view::npos; ++index) {
-      std::string_view token = str.substr(start, end - start);
-      
-      if (exclude_set.find(index) == exclude_set.end()) {
-	if (!result.empty()) {
-	  result += ',';
-	}
-	result += token;
-      }
-      
-      start = end + 1;
-      end = str.find(',', start);
-    }
-    
-    // Process the last token
-    std::string_view last_token = str.substr(start);
-    if (exclude_set.find(str.size() - 1) == exclude_set.end()) {
-      if (!result.empty()) {
-	result += ',';
-      }
-      result += last_token;
-    }
-    
-    return result;
-}
-*/
-/*int get_nth_element_as_integer(const std::string_view& str, size_t n) {
-  size_t start = 0;
-    size_t end = str.find(',');
-    
-    for (size_t index = 1; index < n; ++index) {
-      if (end == std::string_view::npos) {
-	throw std::out_of_range("The nth element is out of range.");
-      }
-      
-      start = end + 1;
-      end = str.find(',', start);
-    }
-    
-    std::string_view token = (end != std::string_view::npos) ? str.substr(start, end - start) : str.substr(start);
-    
-    // Check if the token is an integer
-    char* end_ptr;
-    long value = std::strtol(token.data(), &end_ptr, 10);
-    
-    if (end_ptr != token.data() && static_cast<size_t>(end_ptr - token.data()) == token.size() && value >= std::numeric_limits<int>::min() && value <= std::numeric_limits<int>::max()) {
-        return static_cast<int>(value);
-    } else {
-        throw std::invalid_argument("The nth element is not an integer.");
-    }
-}
-
-void get_two_elements_as_floats(const std::string_view& str, size_t n, size_t m,
-				float &x, float &y) {
-    size_t start = 0;
-    size_t end = str.find(',');
-    size_t index = 1;
-
-    while (index <= std::max(n, m) && end != std::string_view::npos) {
-        std::string_view token = str.substr(start, end - start);
-
-        if (index == n || index == m) {
-            char* end_ptr;
-            float value = std::strtof(token.data(), &end_ptr);
-
-            if (end_ptr != token.data() && static_cast<size_t>(end_ptr - token.data()) == token.size()) {
-                if (index == n) {
-                    x = value;
-                } else {
-                    y = value;
-                }
-            } else {
-                throw std::invalid_argument("Element at index " + std::to_string(index) + " is not a float.");
-            }
-        }
-
-        start = end + 1;
-        end = str.find(',', start);
-        ++index;
-    }
-
-    if (index <= std::max(n, m)) {
-        throw std::out_of_range("One or both indices are out of range.");
-    }
-}
-*/
-
 #ifdef HAVE_HDF5
 void write_hdf5_dataframe_attributes(H5::Group& group) {
 
@@ -288,6 +179,33 @@ bool check_readable(const std::string& filename) {
   }
 
   return answer;
+}
+
+bool check_writeable_folder(const std::string& filename) {
+
+  // Extract the directory path from the filename
+  std::filesystem::path filepath(filename);
+  std::filesystem::path directory = filepath.parent_path();
+  
+  // If no directory is provided, assume the current directory
+  if (directory.empty()) {
+    directory = ".";
+  }
+  
+  // Check if the directory exists and is writable
+  bool isDirWritable = false;
+  if (std::filesystem::exists(directory) && std::filesystem::is_directory(directory)) {
+    // Try to create a temporary file in the directory to check writability
+    std::filesystem::path tempFile = directory / "tempfile.tmp";
+    std::ofstream tempStream(tempFile.string(), std::ios::out | std::ios::trunc);
+    isDirWritable = tempStream.is_open();
+    if (tempStream) {
+      tempStream.close();
+      std::filesystem::remove(tempFile); // Clean up the temporary file
+    }
+  }
+  
+  return isDirWritable;
 }
 
 std::pair<std::string, std::string> colon_parse(const std::string& str) {
@@ -549,23 +467,6 @@ JPoint nextToTop(std::stack<JPoint> &S) {
 }
 ///////////////
 //////////////
-
-bool is_mcmicro_meta(const std::string& str) {
-    static const std::unordered_set<std::string> keywords = {
-      "X_centroid",
-      "Y_centroid",
-      "CellID",
-      "Area",
-      "MajorAxisLength",
-      "MinorAxisLength",
-      "Eccentricity",
-      "Solidity",
-      "Extent",
-      "Orientation"
-    };
-    
-    return keywords.find(str) != keywords.end();
-}
 
 std::string clean_marker_string(const std::string& input) {
     // Copy the input string to work with
