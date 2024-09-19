@@ -1051,7 +1051,7 @@ void CellTable::AnnotateCall(int num_neighbors, float frac,
   for (size_t i = 0; i < nobs; ++i) {
     
     // verbose printing
-    if (i % 50000 == 0 && m_verbose)
+    if (i % 200000 == 0 && m_verbose)
       std::cerr << "...annoting for cell " << setw(12) << AddCommas(i) << 
 	" K " << setw(3) << num_neighbors << " Dist: " << setw(9) << dist <<
 	" frac " << setw(4) << frac << " flag " << setw(4) << flag_to_set << 
@@ -1355,7 +1355,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
 
   if (m_verbose)  {
     for (size_t i = 0; i < inner.size(); i++) {
-      std::cerr << "Radius: [" << std::setw(4) << inner.at(i) << "," << std::setw(4) << outer.at(i) <<
+      std::cerr << "...Radius: [" << std::setw(4) << inner.at(i) << "," << std::setw(4) << outer.at(i) <<
 	"] OR: " << std::setw(7) << logor.at(i) << " AND: " << std::setw(7) << logand.at(i) << " - " << label.at(i) << std::endl;
     }
   }
@@ -1516,9 +1516,10 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
       //	value = total_cell_count[j] == 0 ? 0 : value / flag_count[j] * total_image_cell_count;
       dc[j]->SetNumericElem(value, i);
     }
-  
-    if (m_verbose && i % 5000 == 0) {
-      countr += 5000;
+
+    const print_interval = 100000;
+    if (m_verbose && i % print_interval == 0) {
+      countr +=print_interval;
       std::cerr << std::fixed << "...cell " << std::setw(11) << AddCommas(i) 
 		<< " thr " << std::setw(2) << omp_get_thread_num() 
 		<< " %done: " << std::setw(3) << static_cast<int>(static_cast<float>(countr) / m_pflag_ptr->size() * 100) 
