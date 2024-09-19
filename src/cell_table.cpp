@@ -962,7 +962,7 @@ int CellTable::PlotPNG(const std::string& file,
 
   //float micron_per_pixel = 1; //0.325f;
   float micron_per_pixel = 0.65f; //0.325f;  
-  const float radius_size = 6.0f * scale_factor;
+  const float radius_size = 20.0f * scale_factor;
   const float ALPHA_VAL = 1.0f; // alpha for cell circles
   constexpr float TWO_PI = 2.0 * M_PI;
   
@@ -1109,24 +1109,31 @@ int CellTable::PlotPNG(const std::string& file,
   int n = CellCount();
   if (it != m_table.end()) {
     FloatColPtr cptr = it->second; // This is your reference/pointer to the FloatColPtr
+    
     // Use a set to find unique elements, since sets automatically
     // remove duplicates and store elements in sorted order
     std::set<float> unique_clusters(cptr->begin(), cptr->end());
-
+    if (m_verbose)
+      std::cerr << "...cyftools png - found " << unique_clusters.size() << " clusters to draw hulls" << std::endl;
+    
     // loop the clusters and make the convex hull
     for (const auto& cl : unique_clusters) {
       
       // cluster 0 is holder for not a cluster
-      if (cl == 0 || true) // debug - true means dont' plot
+      if (cl == 0) // || true) // debug - true means dont' plot
 	continue;
 
       // fill polygon with the points that will need to have hull around them
       std::vector<JPoint> polygon;
       polygon.reserve(n);
-      for (size_t i = 0; i < n; i++) {
+      for (size_t i = 0; i < n; i++) { // loop all cells in the entire analysis
 	if (cptr->at(i) == cl)
 	  polygon.push_back(JPoint(m_x_ptr->at(i), m_y_ptr->at(i)));
       }
+
+      if (polygon.size() < 200)
+	continue;
+      
       
       // get the convex hull
       hull_map[cl] = convexHull(polygon);
@@ -1137,7 +1144,7 @@ int CellTable::PlotPNG(const std::string& file,
 
     // draw the hulls
     ///////
-    cairo_set_source_rgb(crp, 1.0, 0.0, 0.0);
+    cairo_set_source_rgb(crp, 0.0, 0.0, 0.0);
     cairo_set_line_width(crp, 60.0*scale_factor); // Set the line width to 5.0
     // loop through invidual hulls
     for (auto& hullm : hull_map) {

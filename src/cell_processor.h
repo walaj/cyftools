@@ -271,13 +271,16 @@ class CleanProcessor : public CellProcessor {
 public:
 
   void SetParams(bool clean_programs, bool clean_meta, bool clean_marker,
-		 bool clean_cflags, bool clean_pflags) {
+		 bool clean_cflags, bool clean_pflags,
+		 cy_uint cflag, cy_uint pflag) {
     
     m_clean_programs = clean_programs;
     m_clean_meta = clean_meta;
     m_clean_marker = clean_marker;
     m_clean_cflags = clean_cflags;
     m_clean_pflags = clean_pflags;
+    m_cflag = cflag;
+    m_pflag = pflag;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -287,6 +290,8 @@ public:
 
 private:
 
+  cy_uint m_pflag = 0;
+  cy_uint m_cflag = 0;
   bool m_clean_programs  = false; 
   bool m_clean_meta   = false; 
   bool m_clean_marker = false;

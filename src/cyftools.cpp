@@ -878,7 +878,7 @@ static int marginfunc(int argc, char** argv) {
       "  Identify cells at the tumor / stroma interface margin\n"
       "\n"
       "Arguments:\n"
-      "  [.cyf file]                 Input .cyf file path or '-' to stream from stdin.\n"
+      "  [.cyf file]               Input .cyf file path or '-' to stream from stdin.\n"
       "  -d [100]                  Radius to look at the margin for\n"
       "  -T [1]                    Flag to label tumor as\n"
       "  -M [4]                    Flag to label margin as\n"      
@@ -1805,12 +1805,14 @@ static int plotpngfunc(int argc, char** argv) {
  
 static int cleanfunc(int argc, char** argv) {
 
-  const char* shortopts = "vmMPCcp";
+  const char* shortopts = "vmMGRcpC:P:";
   bool clean_markers = false;
   bool clean_meta = false;
   bool clean_cflags = false;
   bool clean_pflags = false;
   bool clean_programs = false;
+  cy_uint cflag_reset = -1;
+  cy_uint pflag_reset = -1; 
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -1820,8 +1822,10 @@ static int cleanfunc(int argc, char** argv) {
     case 'p' : clean_pflags= true; break;      
     case 'm' : clean_markers = true; break;
     case 'M' : clean_meta = true; break;
-    case 'P' : clean_programs = true; break;
-    case 'C' : clean_programs = true; clean_meta = true; clean_pflags = true; clean_cflags = true; break;
+    case 'P' : arg >> pflag_reset; break;
+    case 'C' : arg >> cflag_reset; break;      
+    case 'G' : clean_programs = true; break;
+    case 'R' : clean_programs = true; clean_meta = true; clean_pflags = true; clean_cflags = true; break;
     default: die = true;
     }
   }
@@ -1838,24 +1842,27 @@ static int cleanfunc(int argc, char** argv) {
       "  <output.cyf file>          Output .cyf file path or '-' to stream as a cyf-formatted stream to stdout.\n"
       "\n"
       "Options:\n"
-      "  -c                        Clear the cell flags\n"
-      "  -p                        Clear the phenotype flags\n"
+      "  -c                        Clear all cell flags\n"
+      "  -p                        Clear all phenotype flags\n"
+      "  -C <flags>                Clear specific cell flags\n"
+      "  -P <flags>                Clear the phenotype flags\n"
       "  -m                        Remove all marker data.\n"
       "  -M                        Remove all meta data.\n"
-      "  -P                        Remove all @PG tags from header.\n"
-      "  -C                        Remove all flag, meta and program @PG data (resets to just original cell table)\n"
+      "  -G                        Remove all @PG tags from header.\n"
+      "  -R                        Remove all flag, meta and program @PG data (resets to just original cell table)\n"
       "  -v, --verbose             Increase output to stderr.\n"
       "\n"
       "Example:\n"
       "  cyftools clean input.cyf cleaned_output.cyf -m -M\n"
-      "  cyftools clean input.cyf - -C\n";
+      "  cyftools clean input.cyf - -R\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
   
   CleanProcessor cleanp;
   cleanp.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  cleanp.SetParams(clean_programs, clean_meta, clean_markers, clean_cflags, clean_pflags);  
+  cleanp.SetParams(clean_programs, clean_meta, clean_markers, clean_cflags, clean_pflags,
+		   cflag_reset, pflag_reset);  
 
   // process 
   if (!table.StreamTable(cleanp, opt::infile)) {
