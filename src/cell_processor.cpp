@@ -1050,10 +1050,19 @@ int CleanProcessor::ProcessLine(Cell& cell) {
   }
   cell.cols = cols_new;
 
-  if (m_clean_cflags)
+  // clean cflags
+  if (m_clean_cflags) {
     cell.cflag = 0;
-  if (m_clean_pflags)
+  } else if (m_cflag > 0) {
+    cell.cflag &= ~m_cflag;
+  }
+
+  // clean pflags
+  if (m_clean_pflags) {
     cell.pflag = 0;
+  } else if (m_pflag > 0) {
+    cell.pflag &= ~m_pflag;
+  }
   
   return 1;
   
@@ -1082,6 +1091,9 @@ int ROIProcessor::ProcessLine(Cell& cell) {
 	print_line = true;
       } else if (roikey(polygon, "umor")) {
 	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);
+	print_line = true;
+      } else if (roikey(polygon, "ormal")) {
+	SET_FLAG(cell.cflag, NORMAL_FLAG);
 	print_line = true;
       } else if (roikey(polygon, "cd3panck_error")) {
 	if (IS_FLAG_SET(cell.pflag, ORION_PANCK))

@@ -317,14 +317,14 @@ km_plot <- function(rd, parm, parm.name, parm.labels,
     return(dt.plot)
   
   # plot the K-M curves
-  g <- ggplot(dt.plot[time < 2400], aes(x = time/365, y = surv, color = strata)) +
+  g <- ggplot(dt.plot[time < 3000], aes(x = time/365, y = surv, color = strata)) +
     geom_ribbon(aes(ymin = lower,ymax = upper, fill=strata),alpha = 0.15, linetype=0, show.legend=FALSE) +
     geom_step(aes(color=strata), linewidth=1) +
-    geom_point(data = dt.plot[censor == 1][time < 2400], aes(x=time/365,y=surv), shape="+", size=3, color="black") + 
+    geom_point(data = dt.plot[censor == 1][time < 3000], aes(x=time/365,y=surv), shape="+", size=3, color="black") + 
     labs(x = "\nYears", y = ifelse(TRUE,"Progression-Free Survival\n (probability)","Overall Survival (probability)\n")) + theme_bw() + 
     ggtitle(hr.lab) + 
     scale_color_manual(name=parm.name,values=parm.vals,labels=parm.labels) + 
-    scale_x_continuous(breaks=s<-seq(0,6), labels=s, expand=c(0,0)) + 
+    scale_x_continuous(breaks=s<-seq(0,8), labels=s, expand=c(0,0)) + 
     scale_fill_manual(values=parm.vals, guide="none") + 
     #annotate("text", x = hr.x, y = hr.y,label=hr.lab,hjust = 1, vjust = 1) + 
     scale_y_continuous(limits=c(0,1), breaks= s<-seq(0, 1, by = 0.2), labels = s, expand=c(0,0)) +
@@ -761,8 +761,10 @@ compare_groups <- function(rrt, var) {
 }
 
 # Function to create a beeswarm plot with significance comparisons
-create_beeswarm_plot <- function(data, x_var, y_var, withbox=FALSE) {
-  dx_combos <- list(c("tipMMR","tdpMMR"),c("tipMMR","dMMR"),c("dMMR","tdpMMR"))
+create_beeswarm_plot <- function(data, x_var, y_var, withbox=FALSE, dx_combos) {
+  #dx_combos <- list(c("tipMMR","tdpMMR"),c("tipMMR","dMMR"),c("dMMR","tdpMMR"))
+  #dx_combos <- list(c("Control","Progression"))
+  #dx_combos <- list(c("Mut","WT"))
  # dx_combos <- list(c("focal","no"))
   #dx_combos <- list(c("Pre","Post"))
   #dx_combos  <- list(c("PD","PR"),c("PD","SD"),c("SD","PR"))

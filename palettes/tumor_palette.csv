@@ -5,9 +5,8 @@
 ##     This then is the way to specify a NOT (e.g. CD3+ NOT CD4+)
 ##     would be a cell that didn't get the CD4+ color, but then on later
 ##     line does get the CD3+ color. 
-5,0,222,45,38,1,Tumor (margin)
+5,0,222,45,38,1,Tumor margin
 1,0,252,146,114,1,Tumor
-8,0,252,146,114,1,nolabel
 4,0,49,130,189,1,Stroma (margin)
 0,0,158,202,225,1,Stroma
 
