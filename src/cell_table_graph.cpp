@@ -1517,7 +1517,7 @@ int CellTable::RadialDensityKD(std::vector<cy_uint> inner, std::vector<cy_uint> 
       dc[j]->SetNumericElem(value, i);
     }
 
-    const print_interval = 100000;
+    const int print_interval = 100000;
     if (m_verbose && i % print_interval == 0) {
       countr +=print_interval;
       std::cerr << std::fixed << "...cell " << std::setw(11) << AddCommas(i) 

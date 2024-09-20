@@ -1088,12 +1088,10 @@ int ROIProcessor::ProcessLine(Cell& cell) {
 	CLEAR_FLAG(cell.cflag, TUMOR_FLAG);
 	CLEAR_FLAG(cell.cflag, MARGIN_FLAG);	
 	CLEAR_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);
+	SET_FLAG(cell.cflag, NORMAL_FLAG);	
 	print_line = true;
       } else if (roikey(polygon, "umor")) {
 	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);
-	print_line = true;
-      } else if (roikey(polygon, "ormal")) {
-	SET_FLAG(cell.cflag, NORMAL_FLAG);
 	print_line = true;
       } else if (roikey(polygon, "cd3panck_error")) {
 	if (IS_FLAG_SET(cell.pflag, ORION_PANCK))
