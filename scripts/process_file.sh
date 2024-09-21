@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Check if USE_SLURM is set and non-zero
-#USE_SLURM=1
+USE_SLURM=1
 if [[ "${USE_SLURM:-0}" -eq 1 ]]; then
     echo "Submitting jobs to SLURM..."
 else
@@ -77,6 +77,6 @@ for infile in $HOMEBASE/clean/*.cyf; do
     fi
     
     ## uncomment to run just one sample
-    exit 1
+    #exit 1
     
 done

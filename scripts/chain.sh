@@ -252,6 +252,7 @@ $flipcmd
 $roicmd
 $tlscmd
 cyftools island - - -n 5000 -T | cyftools island - - -S -n 5000 | cyftools margin -d 100 - - |
+cyftools margin -T 8 -M 64 -d 200 - - | cyftools margin -T 128 -M 256 -d 200 - - |
 $distann
 $radcmd
 cyftools delaunay -l 20 - ${output_file}"

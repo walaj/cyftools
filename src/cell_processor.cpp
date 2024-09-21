@@ -975,13 +975,13 @@ int ROIProcessor::ProcessHeader(CellHeader& header) {
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
 
   // check if ROI regions are in the header
-  for (const auto &polygon : m_rois) {
+  /*for (const auto &polygon : m_rois) {
     if (roikey(polygon, "region")) {
       Tag roi_tag(Tag::CA_TAG,"roi_region", "");
       m_header.addTag(roi_tag);
       m_roi_region = true;
     }
-  }
+    }*/
   
   m_header.SortTags();
 
@@ -1088,18 +1088,16 @@ int ROIProcessor::ProcessLine(Cell& cell) {
 	CLEAR_FLAG(cell.cflag, TUMOR_FLAG);
 	CLEAR_FLAG(cell.cflag, MARGIN_FLAG);	
 	CLEAR_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);
+	SET_FLAG(cell.cflag, NORMAL_FLAG);	
 	print_line = true;
       } else if (roikey(polygon, "umor")) {
 	SET_FLAG(cell.cflag, TUMOR_MANUAL_FLAG);
-	print_line = true;
-      } else if (roikey(polygon, "ormal")) {
-	SET_FLAG(cell.cflag, NORMAL_FLAG);
 	print_line = true;
       } else if (roikey(polygon, "cd3panck_error")) {
 	if (IS_FLAG_SET(cell.pflag, ORION_PANCK))
 	  CLEAR_FLAG(cell.pflag, ORION_CD3);
 	print_line = true;
-      } else if (roikey(polygon, "region")) {
+      } else if (roikey(polygon, "region") && false) {
 	std::regex pattern(R"(region(\d+))");
 	std::smatch matches;
 	// Check if the input string matches the pattern
