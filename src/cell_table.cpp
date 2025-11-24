@@ -962,7 +962,7 @@ int CellTable::PlotPNG(const std::string& file,
 
   //float micron_per_pixel = 1; //0.325f;
   float micron_per_pixel = 0.65f; //0.325f;  
-  const float radius_size = 20.0f * scale_factor;
+  const float radius_size = 5.0f * scale_factor;
   const float ALPHA_VAL = 1.0f; // alpha for cell circles
   constexpr float TWO_PI = 2.0 * M_PI;
   
@@ -1023,7 +1023,7 @@ int CellTable::PlotPNG(const std::string& file,
     // select the color for this cell from the palette
     Color c = select_color(cf, pf, palette);
     
-    cairo_set_source_rgba(crp, c.redf(), c.greenf(), c.bluef(), ALPHA_VAL);
+    cairo_set_source_rgba(crp, c.redf(), c.greenf(), c.bluef(), c.alphaf());
     cairo_arc(crp, x*scale_factor, y*scale_factor, radius_size, 0, TWO_PI);
     cairo_fill(crp); 
 
@@ -1058,8 +1058,8 @@ int CellTable::PlotPNG(const std::string& file,
       
       // Move to the first vertex
       auto firstVertex = *polygon.begin();
-      //cairo_move_to(crp, firstVertex.x*scale_factor*micron_per_pixel, (firstVertex.y*micron_per_pixel+legend_total_height)*scale_factor);
-      cairo_move_to(crp, firstVertex.x*scale_factor, (firstVertex.y+legend_total_height)*scale_factor);      
+      cairo_move_to(crp, firstVertex.x*scale_factor*micron_per_pixel, (firstVertex.y*micron_per_pixel+legend_total_height)*scale_factor);
+      //cairo_move_to(crp, firstVertex.x*scale_factor, (firstVertex.y+legend_total_height)*scale_factor);      
       
       // Draw lines to each subsequent vertex
       for (const auto& v : polygon) {
@@ -1068,9 +1068,9 @@ int CellTable::PlotPNG(const std::string& file,
 	//cairo_set_source_rgba(crp, 1, 0, 0, 1);
 	//cairo_arc(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel, 10, 0, TWO_PI);
 	//cairo_fill(crp);
-	
-	//cairo_line_to(crp, v.x*scale_factor*micron_per_pixel, (v.y*micron_per_pixel+legend_total_height)*scale_factor);
-	cairo_line_to(crp, v.x*scale_factor, (v.y+legend_total_height)*scale_factor);	
+	std::cerr <<" DRAWING POLY " << std::endl;
+	cairo_line_to(crp, v.x*scale_factor*micron_per_pixel, (v.y*micron_per_pixel+legend_total_height)*scale_factor);
+	//cairo_line_to(crp, v.x*scale_factor, (v.y+legend_total_height)*scale_factor);	
       }
       
       // Close the polygon
@@ -1477,10 +1477,10 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
 	
 	num_cols++;
 	// if keyword for X, Y 
-	if (s == "X_centroid" || s == "X") {
+	if (s == "X_centroid" || s == "X" || s == "Xt" ) {
 	  x_index = ind;
 	}
-	else if (s == "Y_centroid" || s == "Y") {
+	else if (s == "Y_centroid" || s == "Y" || s == "Yt" ) {
 	  y_index = ind;
 	}
 	else if (s == "CellID") {
@@ -1511,11 +1511,11 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
       // we know X_centroid isn't at 0, because we got into here with 'C' as first letter
       // so what happened is that it never found X_centroid
       if (x_index < 0) {
-	std::cerr << "Error: cyftools convert -- X_centroid not found" << std::endl;
+	std::cerr << "Error: cyftools convert -- X_centroid / X / Xt not found" << std::endl;
 	assert(false);
       }
       if (y_index < 0) {
-	std::cerr << "Error: cyftools convert -- Y_centroid not found" << std::endl;
+	std::cerr << "Error: cyftools convert -- Y_centroid / Y / Yt not found" << std::endl;
 	assert(false);
       }
       if (id_index < 0) {

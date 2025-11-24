@@ -670,7 +670,8 @@ class ViewProcessor : public CellProcessor {
 		 int round,
 		 const std::unordered_set<std::string>& include,
 		 bool tabprint,
-		 bool strict_cut
+		 bool strict_cut,
+		 bool list_markers
 		 ) {
     
     m_print_header = print_header;
@@ -682,6 +683,7 @@ class ViewProcessor : public CellProcessor {
     m_adjacent = adjacent;
     m_tabprint = tabprint;
     m_strict_cut = strict_cut;
+    m_list_markers = list_markers;
   }
   
   int ProcessHeader(CellHeader& header) override;
@@ -703,6 +705,8 @@ class ViewProcessor : public CellProcessor {
   bool m_print_header;
 
   bool m_strict_cut = false; // skip the CellID etc
+
+  bool m_list_markers = false;
   
   // number of integers to round output to
   int m_round;

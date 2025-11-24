@@ -1082,8 +1082,9 @@ int ROIProcessor::ProcessLine(Cell& cell) {
     // if point is in this polygon, add the polygon id number to the roi
     if (polygon.PointIn(cell.x,cell.y)) {
       
-      if (roikey(polygon, "lacklist") || roikey(polygon, "rtifact")) {
-	print_line = false;
+      if (roikey(polygon, "lacklist") || roikey(polygon, "rtifact") || roikey(polygon, "error") || roikey(polygon, "artefact")) {
+	SET_FLAG(cell.cflag, ARTIFACT_FLAG);		
+	print_line = false; 
       } else if (roikey(polygon, "ormal")) {
 	CLEAR_FLAG(cell.cflag, TUMOR_FLAG);
 	CLEAR_FLAG(cell.cflag, MARGIN_FLAG);	
@@ -1311,6 +1312,9 @@ int ViewProcessor::ProcessHeader(CellHeader& header) {
     std::cout << std::endl;
   } else if (m_adjacent) {
     ; // no print
+  } else if (m_list_markers) {
+    m_header.PrintMarkers();
+    m_header_only = true; // to signify nothing more to print for this
   }
   
   return m_header_only ? ONLY_WRITE_HEADER : HEADER_NO_ACTION;
@@ -1534,6 +1538,8 @@ int CerealProcessor::ProcessLine(const std::string& line) {
 	   m_sampleid);
 
   // used here only if m_id_index < 0
+  if (m_id_index < 0)
+    row.set_cell_id(m_cellid);
   m_cellid++;
 
   // serialize it

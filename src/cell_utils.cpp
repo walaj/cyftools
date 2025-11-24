@@ -57,20 +57,20 @@ PhenoMap phenoread(const std::string& filename) {
   size_t linenum = 0;
   while (std::getline(file, line)) {
 
+    //std::cerr << "LINE " << line << std::endl;
     // check if crevasse format
     if (line.find("Gate") != std::string::npos && linenum == 0) {
+      //std::cerr << "crevasse format" << std::endl;
       crevasse = true;
-      continue;
+      jeremiah = false;
+      continue; // skip header
     }
 
     else if (line.find("Sample") != std::string::npos && linenum == 0) {
       onetable = true;
+      jeremiah = false;
       onetable_header = tokenize_comma_delimited<StringVec>(line);
       continue;
-    }
-
-    else {
-      jeremiah = true;
     }
 
     std::istringstream lineStream(line);
@@ -94,17 +94,20 @@ PhenoMap phenoread(const std::string& filename) {
     
     // crevasse format
     else if (crevasse) {
+      //std::cerr <<" CREAVES" << std::endl;
       std::string token;
       std::getline(lineStream, token, ','); // discard first token
       std::getline(lineStream, token, ','); // read second token
+      //std::cerr << " TOKEN " << token << std::endl;
       key = token.substr(1, token.length() - 2); // Remove the quotes
       std::getline(lineStream, token, ','); // read third token
       value1 = std::stof(token);
+      //std::cerr << "value1 " << value1 << std::endl;
       value1 = std::exp(value1); // crevasse stores as log2
       value2 = 100000000;
+      //std::cerr << "value2 " << value2 << std::endl;      
       data[key] = std::make_pair(value1, value2);      
     } 
-      
     linenum++;
   }
   

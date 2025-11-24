@@ -503,8 +503,8 @@ static int forprintfunc(int argc, char** argv) {
   }
 
   if (xargs) {
-    std::cout << "find . -name \"*.cyf\" " <<
-      "| xargs -I{} -P 4 bash -c " <<
+    std::cout << "#find ../chain -name \"*.cyf\" " <<
+      "| xargs -I{} -P 8 bash -c " <<
       "'./script.sh {}'" << std::endl;
     std::cout << std::endl;
     std::cout <<
@@ -514,7 +514,7 @@ static int forprintfunc(int argc, char** argv) {
       "filename=$(basename $1)" << std::endl <<
       "base_name=$(echo $filename | cut -d \".\" -f 1)" << std::endl <<
       "echo \"...working on $base_name\"" << std::endl <<
-      "cyftools cmd $1 ${base_name}.cyf" << std::endl;
+      "cyftools png -p ~/git/cyftools/palettes/prostate_cd8.csv $1 ${base_name}.png" << std::endl;
   } else {
     std::cout << "for file in *.cyf; do" <<
       " filename=$(basename $file); " << 
@@ -2421,13 +2421,14 @@ static int roifunc(int argc, char** argv) {
 
 static int viewfunc(int argc, char** argv) {
   
-  const char* shortopts = "vn:hHRAtCx:X:";
+  const char* shortopts = "vn:hHRAtCx:X:l";
   int precision = 2;
   bool rheader = false;  // view as csv with csv header
   bool adjacent = false; // view as name:value
   bool crevasse = false; // view as output for crevasse
   bool strict_cut = false; // only print the cut field
   bool tabprint = false; // view as tab-delimited and columns justified
+  bool listmarkers = false; // list markers as newline separated
   std::string cut; // list of markers, csv separated, to cut on
   
   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -2443,12 +2444,13 @@ static int viewfunc(int argc, char** argv) {
     case 'R' : rheader = true; break;
     case 'h' : opt::header = true; break;
     case 'H' : opt::header_only = true; break;
+    case 'l' : listmarkers = true; break;
     default: die = true;
     }
   }
 
-  if (rheader + adjacent + crevasse + opt::header_only + opt::header > 1) {
-    std::cerr << "Warning: Can only chose one of A, R, h, H, C" << std::endl;
+  if (rheader + adjacent + crevasse + opt::header_only + opt::header + listmarkers > 1) {
+    std::cerr << "Warning: Can only chose one of A, R, h, H, C, l" << std::endl;
     die = true;
   }
   
@@ -2466,6 +2468,7 @@ static int viewfunc(int argc, char** argv) {
       "  -A                         Print as name:value format for viewing\n"
       "  -C                         Print as CellID,x,y,...markers... for Crevasse\n"
       "  -t                         Print tab-delimited and const space\n"
+      "  -l                         List markers as newline separated\n"
       "  -x <fields>                Comma-separated list of fields to trim output to.\n"
       "  -X <fields>                Like -x, but ONLY output those columns, no CellID, etc\n"
       "  -n <decimals>              Number of decimals to keep. Default is -1 (no change).\n"
@@ -2493,7 +2496,7 @@ static int viewfunc(int argc, char** argv) {
   
   ViewProcessor viewp;
   viewp.SetParams(opt::header, opt::header_only, rheader, adjacent, crevasse,
-		  precision, tokens, tabprint, strict_cut);
+		  precision, tokens, tabprint, strict_cut, listmarkers);
 
   table.StreamTable(viewp, opt::infile);
   
@@ -3464,7 +3467,6 @@ static int convertfunc(int argc, char** argv) {
 
   CerealProcessor cerp;
   cerp.SetParams(opt::outfile, cmd_input, sampleid);
-
   table.StreamTableCSV(cerp, opt::infile, metacols);
 
   return 0;

@@ -4,11 +4,9 @@
 ##     and you want to prioritize one (CD4), then place it first.
 ##     This then is the way to specify a NOT (e.g. CD3+ NOT CD4+)
 ##     would be a cell that didn't get the CD4+ color, but then on later
-##     line does get the CD3+ color.
-0,4160,153,216,201,1,CD3CD4
-0,64,252,146,114,1,CD4(CD3-)
-0,1024,128,0,128,1,CD20
-0,4096,255,0,255,1,CD3 other
-0,256,255,0,0,1,CD8
-#0,131072,0,255,0,0.5,PanCK
-0,0,128,128,128,0.05,Other
+##     line does get the CD3+ color. 
+0,33824,255,0,0,1,CD45CD163PDL1+
+0,66560,0,255,255,1,PanCK+PDL1+
+0,1056,0,255,0,1,CD163+PDL1+
+#0,1024,255,0,0,1,PDL1+only
+0,0,128,128,128,0.2,Other

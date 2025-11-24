@@ -1,11 +1,17 @@
 #!/bin/bash
 
 # Check if USE_SLURM is set and non-zero
-USE_SLURM=1
+USE_SLURM=0
+
+# Turn slurm off if on mac
+if [ -d "/Users/" ]; then
+    USE_SLURM=0
+fi    
+
 if [[ "${USE_SLURM:-0}" -eq 1 ]]; then
     echo "Submitting jobs to SLURM..."
 else
-    echo "Running jobs interactively..."
+    echo "Running jobs locally..."
 fi
 
 ## configuration file
@@ -17,15 +23,17 @@ source ${HOME}/git/cyftools/scripts/config.sh
 ############
 
 #### ORION CRC
-HOMEBASE=${PROJ_DATA}/orion/orion_1_74
-ROIBASE=rois
-GATEBASE=phenotype
-CHAINDIR=chain_coy
+#HOMEBASE=${PROJ_DATA}/orion/orion_1_74
+#ROIBASE=rois
+#GATEBASE=phenotype
+#CHAINDIR=chain_coy2
 
 #### PROSTATE CYCIF
-#HOMEBASE=${PROJ_DATA}/prostate
+#PROJ_HOME=/Users/jeremiahwala/Dropbox_HMS/Primary_prostate_CyCIF_TME_manuscript_2023/primary_data
+#PROJ_DATA=/Users/jeremiahwala/Dropbox_HMS/Primary_prostate_CyCIF_TME_manuscript_2023/primary_data
+#HOMEBASE=${PROJ_DATA}
 #ROIBASE=roisgu
-#GATEBASE=pheno
+#GATEBASE=gates_j
 #CHAINDIR=chain
 
 #### JHU ORION
@@ -38,20 +46,30 @@ CHAINDIR=chain_coy
 #HOMEBASE=${PROJ_DATA}/jhu/cycif
 #ROIBASE=roi
 #GATEBASE=phenotype
-#CHAINDIR=chain_coy
+#CHAINDIR=chain
 
-echo "...getting file list from $HOMEBASE"
+#### JHU CYCIF REVISION
+HOMEBASE=${PROJ_DATA}/jhu/revision
+ROIBASE=roi
+GATEBASE=phenotype
+CHAINDIR=chain
+
+mkdir -p ${HOMEBASE}/${CHAINDIR}
+
+echo "...getting file list from $HOMEBASE/clean"
 for infile in $HOMEBASE/clean/*.cyf; do    
-    
+
     ## Extract the base LSP123 name
     base=$(basename "$infile" .cyf)
-    echo "...process_file.sh: working on sample $base"
+    echo $base
     
     ## uncomment to run just the one file
-    ##if [[ $base != "LSP14483" ]]; then
-    ##    continue
-    ##fi
-    
+    if [[ $base != "LSP19194" ]]; then
+        continue
+    fi
+
+    echo "...process_file.sh: working on sample $base"
+        
     ## Get the gates from the *p columns from csv's dumped from matlab files
     #if ! command -v Rscript &> /dev/null
     #then

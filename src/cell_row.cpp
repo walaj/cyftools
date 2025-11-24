@@ -259,7 +259,7 @@ Cell::Cell(const std::string& row,
   x = 0;
   y = 0;
 
-  assert(id_index < tokens.size());
+  assert(id_index == -1 || id_index < tokens.size());
   assert(x_index < tokens.size());
   assert(y_index < tokens.size());  
   

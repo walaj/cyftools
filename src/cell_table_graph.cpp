@@ -903,7 +903,7 @@ void CellTable::CallTLS(cy_uint bcell_marker, cy_uint immune_marker,
   // dbscan params
   float epsilon = 100.0f;
   int min_size = 25;
-  clusterDBSCAN(epsilon, min_size, 50); //min_cluster_size);
+  clusterDBSCAN(epsilon, min_size, 200); //min_cluster_size);
 
   // Step 7) Clear the TLS flag and re-label TLS if part of a non-zero dbscan cluster
   ClearCFlag(MARK_FLAG + TLS_FLAG); // clear both flags
@@ -1051,8 +1051,8 @@ void CellTable::AnnotateCall(int num_neighbors, float frac,
   for (size_t i = 0; i < nobs; ++i) {
     
     // verbose printing
-    if (i % 200000 == 0 && m_verbose)
-      std::cerr << "...annoting for cell " << setw(12) << AddCommas(i) << 
+    if (i % 500000 == 0 && m_verbose)
+      std::cerr << "...annotating for cell " << setw(12) << AddCommas(i) << 
 	" K " << setw(3) << num_neighbors << " Dist: " << setw(9) << dist <<
 	" frac " << setw(4) << frac << " flag " << setw(4) << flag_to_set << 
 	std::endl;

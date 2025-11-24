@@ -143,9 +143,9 @@ else
 
     ## Optional header library for Voronoi support
     CGAL_INCDIR=$(BREWHOME)/cgal/include
-    ifneq ($(wildcard $(CGAL_INCDIR)/*),) 
-        CGAL = -I$(CGAL_INCDIR) -DHAVE_CGAL
+    ifneq ($(wildcard $(CGAL_INCDIR)/*),)
         GMP_INCDIR=$(BREWHOME)/gmp
+        CGAL = -I$(CGAL_INCDIR) -I$(GMP_INCDIR)/include #-DHAVE_CGAL
         ifneq ($(wildcard $(GMP_INCDIR)/*),)
            GMPLIB = -L$(BREWHOME)/gmp/lib -lgmp
         else
@@ -199,7 +199,7 @@ else
     OPENMP = -fopenmp
 endif
 
-CFLAGS = -O2 -g -std=c++17 $(USE64BIT) $(OPENMP) -I. -I.. \
+CFLAGS = -O2 -g -std=c++17 -Wno-deprecated-declarations $(USE64BIT) $(OPENMP) -I. -I.. \
           $(TIFF) $(KNN) $(UMAP) $(IRLBA) $(EIGEN) $(KMEANS) \
           $(OMP) $(CEREAL) $(LDA) $(HD5) \
 	  $(MLPACK) $(CAIRO) $(CGAL) $(BOOST) $(DBSCAN)

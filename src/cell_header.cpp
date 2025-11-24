@@ -218,6 +218,21 @@ void CellHeader::Print() const {
   
 }
 
+void CellHeader::PrintMarkers() const {
+
+  auto markers = GetMarkerTags();
+
+  for (size_t i = 0; i < markers.size(); ++i) {
+    std::cout << markers[i].id << std::endl;
+    //    if (i < markers.size() - 1) {
+    //  std::cout << std::endl;
+    //}
+  }
+
+  return;
+  
+}
+
 size_t CellHeader::WhichColumn(const std::string& str, uint8_t tag_type) const {
 
   // ADD: error check on tag_type to make sure allowed

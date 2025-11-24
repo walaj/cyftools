@@ -20,6 +20,16 @@ roi_file=$4
 
 source ~/git/cyftools/scripts/config.sh
 
+### for chaining or debugging
+IN="-"
+OUT="-"
+DELIM="|"
+
+#IN="tmpin.cyf"
+#OUT="tmpout.cyf"
+#DELIM="&& mv tmpout.cyf tmpin.cyf"
+
+IO="${IN} ${OUT}"
 ### PARAMS
 # num threads
 T=4
@@ -37,6 +47,7 @@ declare -A maglut=(
     [LSP10353]=1.015625
     [LSP10375]=1.015625
     [LSP10364]=1.015625
+    [LSP20122]=0.66
     )
 
 declare -A ymaxlut=(
@@ -91,17 +102,17 @@ elif contains_string "$orion41_73" "$input_file"; then
     BCELL_MARKER=1024
     IMMUNE_MARKER=14296
     roimag=0.325
-    distann="cyftools filter - - -A 8 -M | cyftools dist -i tumor - - |
- cyftools filter - - -a 4096 -M | cyftools dist -i CD3 - - |
- cyftools filter - - -a 256 -M | cyftools dist -i CD8 - - |
- cyftools filter - - -a 4352 -M | cyftools dist -i CD3CD8 - - |
- cyftools filter - - -a 32768 -M | cyftools dist -i PD1 - - |
- cyftools filter - - -a 128 -M | cyftools dist -i FOXP3 - - |
- cyftools filter - - -a 131072 -M | cyftools dist -i PDL1 - - |
- cyftools filter - - -a 133120 -M | cyftools dist -i PanCKPDL1 - - |
- cyftools filter - - -a 139264 -M | cyftools dist -i CD163PDL1 - - |
- cyftools filter - - -A 32 -M | cyftools dist -i TLS - - |
- cyftools filter - - -a 1024 -M | cyftools dist -i CD20 - - |"
+    distann="cyftools filter ${IO} -A 8 -M ${DELIM} cyftools dist ${IO} -i tumor ${DELIM}
+ cyftools filter ${IO} -a 4096 -M ${DELIM} cyftools dist ${IO} -i CD3 ${DELIM}
+ cyftools filter ${IO} -a 256 -M ${DELIM} cyftools dist ${IO} -i CD8 ${DELIM}
+ cyftools filter ${IO} -a 4352 -M ${DELIM} cyftools dist ${IO} -i CD3CD8 ${DELIM}
+ cyftools filter ${IO} -a 32768 -M ${DELIM} cyftools dist ${IO} -i PD1 ${DELIM}
+ cyftools filter ${IO} -a 128 -M ${DELIM} cyftools dist ${IO} -i FOXP3 ${DELIM}
+ cyftools filter ${IO} -a 131072 -M ${DELIM} cyftools dist ${IO} -i PDL1 ${DELIM}
+ cyftools filter ${IO} -a 133120 -M ${DELIM} cyftools dist ${IO} -i PanCKPDL1 ${DELIM}
+ cyftools filter ${IO} -a 139264 -M ${DELIM} cyftools dist ${IO} -i CD163PDL1 ${DELIM}
+ cyftools filter ${IO} -A 32 -M ${DELIM} cyftools dist ${IO} -i TLS ${DELIM}
+ cyftools filter ${IO} -a 1024 -M ${DELIM} cyftools dist ${IO} -i CD20 ${DELIM}"
 ## CRC Orion - samples 1-40
 elif contains_string "$orion1_40" "$input_file"; then
     echo "...chain.sh: detected Orion 1-40"
@@ -111,17 +122,17 @@ elif contains_string "$orion1_40" "$input_file"; then
     BCELL_MARKER=1024
     IMMUNE_MARKER=14296
     roimag=0.325
-    distann="cyftools filter - - -A 8 -M | cyftools dist -i tumor - - |
- cyftools filter - - -a 4096 -M | cyftools dist -i CD3 - - |
- cyftools filter - - -a 256 -M | cyftools dist -i CD8 - - |
- cyftools filter - - -a 4352 -M | cyftools dist -i CD3CD8 - - |
- cyftools filter - - -a 32768 -M | cyftools dist -i PD1 - - |
- cyftools filter - - -a 128 -M | cyftools dist -i FOXP3 - - |
- cyftools filter - - -a 131072 -M | cyftools dist -i PDL1 - - |
- cyftools filter - - -a 133120 -M | cyftools dist -i PanCKPDL1 - - |
- cyftools filter - - -a 139264 -M | cyftools dist -i CD163PDL1 - - |
- cyftools filter - - -A 32 -M | cyftools dist -i TLS - - |
- cyftools filter - - -a 1024 -M | cyftools dist -i CD20 - - |"
+    distann="cyftools filter ${IO} -A 8 -M ${DELIM} cyftools dist ${IO} -i tumor ${DELIM}
+ cyftools filter ${IO} -a 4096 -M ${DELIM} cyftools dist ${IO} -i CD3 ${DELIM}
+ cyftools filter ${IO} -a 256 -M ${DELIM} cyftools dist ${IO} -i CD8 ${DELIM}
+ cyftools filter ${IO} -a 4352 -M ${DELIM} cyftools dist ${IO} -i CD3CD8 ${DELIM}
+ cyftools filter ${IO} -a 32768 -M ${DELIM} cyftools dist ${IO} -i PD1 ${DELIM}
+ cyftools filter ${IO} -a 128 -M ${DELIM} cyftools dist ${IO} -i FOXP3 ${DELIM}
+ cyftools filter ${IO} -a 131072 -M ${DELIM} cyftools dist ${IO} -i PDL1 ${DELIM}
+ cyftools filter ${IO} -a 133120 -M ${DELIM} cyftools dist ${IO} -i PanCKPDL1 ${DELIM}
+ cyftools filter ${IO} -a 139264 -M ${DELIM} cyftools dist ${IO} -i CD163PDL1 ${DELIM}
+ cyftools filter ${IO} -A 32 -M ${DELIM} cyftools dist ${IO} -i TLS ${DELIM}
+ cyftools filter ${IO} -a 1024 -M ${DELIM} cyftools dist ${IO}  -i CD20 ${DELIM}"
 ## CRC CyCIF Immune panel
 elif [[ "$input_file" == *"immune"* ]]; then
     echo "...chain.sh: detected CyCIF Immune. Need radial file"
@@ -139,22 +150,23 @@ elif contains_string "$prostate" "$input_file"; then
     BCELL_MARKER=64
     IMMUNE_MARKER=268435408
     roimag=0.325    
-    distann="cyftools filter - - -A 8 -M | cyftools dist -i tumor - - |
- cyftools filter - - -a 2048 -M | cyftools dist -i CD3 - - |
- cyftools filter - - -a 4096 -M | cyftools dist -i CD8 - - |
- cyftools filter - - -a 32768 -M | cyftools dist -i PD1 - - |
- cyftools filter - - -a 16384 -M | cyftools dist -i FOXP3 - - |
- cyftools filter - - -a 4 -M | cyftools dist -i AMCAR - - |
- cyftools filter - - -a 8 -M | cyftools dist -i HMWCK - - |
- cyftools filter - - -a 65536 -M | cyftools dist -i CD57 - - |
- cyftools filter - - -A 4096 -M | cyftools dist -i GG1 - - |
- cyftools filter - - -A 8192 -M | cyftools dist -i GG2 - - |
- cyftools filter - - -A 16384 -M | cyftools dist -i GG3 - - |
- cyftools filter - - -A 32768 -M | cyftools dist -i GG4 - - |
- cyftools filter - - -A 65536 -M | cyftools dist -i GG5 - - |
- cyftools filter - - -A 131072 -M | cyftools dist -i PNI - - |
- cyftools filter - - -A 262144 -M | cyftools dist -i SV - - |
- cyftools filter - - -A 32 -M | cyftools dist -i TLS - - |"
+distann="cyftools filter ${IO} -A 8 -M ${DELIM} cyftools dist ${IO} -i tumor ${DELIM}
+cyftools filter ${IO} -a 2048 -M ${DELIM} cyftools dist ${IO} -i CD3 ${DELIM}
+cyftools filter ${IO} -a 4096 -M ${DELIM} cyftools dist ${IO} -i CD8 ${DELIM}
+cyftools filter ${IO} -a 32768 -M ${DELIM} cyftools dist ${IO} -i PD1 ${DELIM}
+cyftools filter ${IO} -a 16384 -M ${DELIM} cyftools dist ${IO} -i FOXP3 ${DELIM}
+cyftools filter ${IO} -a 4 -M ${DELIM} cyftools dist ${IO} -i AMCAR ${DELIM}
+cyftools filter ${IO} -a 8 -M ${DELIM} cyftools dist ${IO} -i HMWCK ${DELIM}
+cyftools filter ${IO} -a 65536 -M ${DELIM} cyftools dist ${IO} -i CD57 ${DELIM}
+cyftools filter ${IO} -A 4096 -M ${DELIM} cyftools dist ${IO} -i GG1 ${DELIM}
+cyftools filter ${IO} -A 8192 -M ${DELIM} cyftools dist ${IO} -i GG2 ${DELIM}
+cyftools filter ${IO} -A 16384 -M ${DELIM} cyftools dist ${IO} -i GG3 ${DELIM}
+cyftools filter ${IO} -A 32768 -M ${DELIM} cyftools dist ${IO} -i GG4 ${DELIM}
+cyftools filter ${IO} -A 65536 -M ${DELIM} cyftools dist ${IO} -i GG5 ${DELIM}
+cyftools filter ${IO} -A 131072 -M ${DELIM} cyftools dist ${IO} -i PNI ${DELIM}
+cyftools filter ${IO} -A 262144 -M ${DELIM} cyftools dist ${IO} -i SV ${DELIM}
+cyftools filter ${IO} -A 32 -M ${DELIM} cyftools dist ${IO} -i TLS ${DELIM}"
+
 ## JHU ORION    
 elif contains_string "$jhu" "$input_file"; then
     echo "...chain.sh: detected JHU project -- ORION"
@@ -164,15 +176,25 @@ elif contains_string "$jhu" "$input_file"; then
     BCELL_MARKER=64
     IMMUNE_MARKER=35824
     yoffset=0
-    roimag=1    
-    distann="cyftools filter - - -A 8 -M | cyftools dist -i tumor - - |
- cyftools filter - - -a 2048 -M | cyftools dist -i CD3 - - |
- cyftools filter - - -a 256 -M | cyftools dist -i CD8 - - |
- cyftools filter - - -a 8192 -M | cyftools dist -i PD1 - - |
- cyftools filter - - -a 18432 -M | cyftools dist -i FOXP3 - - |
- cyftools filter - - -a 32 -M | cyftools dist -i CD163 - - |
- cyftools filter - - -a 16 -M | cyftools dist -i CD68 - - |
- cyftools filter - - -a 1024 -M | cyftools dist -i PDL1 - - |"
+    roimag=1
+    distann="cyftools filter ${IO} -A 8 -M ${DELIM} cyftools dist ${IO} -i tumor ${DELIM}
+cyftools filter ${IO} -a 2048 -M ${DELIM} cyftools dist ${IO} -i CD3 ${DELIM}
+cyftools filter ${IO} -a 256 -M ${DELIM} cyftools dist ${IO} -i CD8 ${DELIM}
+cyftools filter ${IO} -a 8192 -M ${DELIM} cyftools dist ${IO} -i PD1 ${DELIM}
+cyftools filter ${IO} -a 18432 -M ${DELIM} cyftools dist ${IO} -i FOXP3 ${DELIM}
+cyftools filter ${IO} -a 32 -M ${DELIM} cyftools dist ${IO} -i CD163 ${DELIM}
+cyftools filter ${IO} -a 16 -M ${DELIM} cyftools dist ${IO} -i CD68 ${DELIM}
+cyftools filter ${IO} -a 1024 -M ${DELIM} cyftools dist ${IO} -i PDL1 ${DELIM}"
+
+## JHU REVISION
+elif contains_string "$jhu_revision" "$input_file"; then
+    echo "...chain.sh: detected JHU revision project"
+    RAD="${PROJ_HOME}/jhu/revision/radial.csv"
+    TUMOR_MARKER=4096
+    TCELL_MARKER=1024
+    BCELL_MARKER=0
+    yoffset=0
+    roimag=0.650
 ## JHU CYCIF    
 elif contains_string "$jhu_cycif" "$input_file"; then
     echo "...chain.sh: detected JHU project --CYCIF"
@@ -195,21 +217,22 @@ if [[ $input_file =~ (LSP[0-9]+) ]]; then
     # Lookup the pattern in the LUT
     if [[ -n "${ymaxlut[$PATTERN]}" ]]; then
         ymax=${ymaxlut[$PATTERN]}
-	flipcmd="cyftools flip - - -y 0 -Y $ymax |"
+	flipcmd="cyftools flip ${IO} -y 0 -Y $ymax ${DELIM}"
         echo "Found in LUT: $ymax"
     fi
 else
     echo "Warning: No LSP pattern found in the string."
 fi
 
-# Make the magnify command
+# Make the magnif
+y command
 if [[ $input_file =~ (LSP[0-9]+) ]]; then
     PATTERN=${BASH_REMATCH[1]}
     
     # Lookup the pattern in the LUT
     if [[ -n "${maglut[$PATTERN]}" ]]; then
         mag=${maglut[$PATTERN]}
-	magcmd="cyftools magnify - - -f $mag |"
+	magcmd="cyftools magnify ${IO} -f $mag ${DELIM}"
         echo "Found in magnify LUT: $mag"
     fi
 else
@@ -219,19 +242,17 @@ fi
 
 ## set the roi file
 if [[ -f "$roi_file" ]]; then
-    roicmd="cyftools roi - - -m $roimag -r $roi_file |"
-else
-    roicmd=""
+    roicmd="cyftools roi ${IO} -m $roimag -r $roi_file ${DELIM}"
 fi
 
 ## make the tls commands
 if [[ -n "$BCELL_MARKER" && -n "$IMMUNE_MARKER" ]]; then
-    tlscmd="cyftools tls - - -b $BCELL_MARKER -i $IMMUNE_MARKER -m 300 -d 35 ${V} |"
+    tlscmd="cyftools tls ${IO} -b $BCELL_MARKER -i $IMMUNE_MARKER -m 300 -d 35 ${V} ${DELIM}"
 fi
 
 ## make the radial density command
 if [ -f "$RAD" ]; then
-    radcmd="cyftools radialdens ${V} - - -t ${T} -f ${RAD} |"
+    radcmd="cyftools radialdens ${IO} -t ${T} -f ${RAD} ${V} ${DELIM}"
 fi
 
 ##########
@@ -243,21 +264,41 @@ if [[ ! -f "$input_file" ]]; then
     exit 1
 else
     echo "...running: cyftools chain on ${base}"
-    cmd="cyftools check $input_file - |
-$magcmd
-cyftools pheno ${V} - -t $pheno_file - |
-cyftools filter - - -a $TUMOR_MARKER ${V} -M |
-cyftools annotate - - -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 |
-$flipcmd
-$roicmd
-$tlscmd
-cyftools island - - -n 5000 -T | cyftools island - - -S -n 5000 | cyftools margin -d 100 - - |
-cyftools margin -T 8 -M 64 -d 200 - - | cyftools margin -T 128 -M 256 -d 200 - - |
-$distann
-$radcmd
-cyftools delaunay -l 20 - ${output_file}"
-    
-    echo "$cmd" | tr '\n' ' '
-    echo ""
-    eval "$cmd"
+cmd="cyftools check $input_file ${OUT} ${DELIM}
+${magcmd:+$magcmd}
+cyftools pheno ${IO} -t $pheno_file ${DELIM}
+cyftools filter ${IO} -a $TUMOR_MARKER ${V} -M ${DELIM}
+cyftools annotate ${IO} -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 ${DELIM}
+${flipcmd:+$flipcmd}
+${roicmd:+$roicmd}
+${tlscmd:+$tlscmd}
+${distann:+$distann}
+${radcmd:+$radcmd}
+cyftools delaunay ${IN} ${output_file} -l 20"
+
+cmd_noisland="cyftools check $input_file ${OUT} ${DELIM}
+${magcmd:+$magcmd}
+cyftools pheno ${IO} -t $pheno_file ${DELIM}
+cyftools filter ${IO} -a $TUMOR_MARKER ${V} -M ${DELIM}
+cyftools annotate ${IO} -f 0.33 -k 25 -d 10000 -t ${T} ${V} -F 1 ${DELIM}
+${flipcmd:+$flipcmd}
+${roicmd:+$roicmd}
+${distann:+$distann}
+${radcmd:+$radcmd}
+cyftools delaunay ${IN} ${output_file} -l 20"
+
+short_cmd="cyftools check $input_file ${OUT} ${DELIM}
+${magcmd:+$magcmd}
+cyftools pheno ${IO} -t $pheno_file ${DELIM}
+cyftools filter ${IO} -a $TUMOR_MARKER ${V} -M ${DELIM}
+${roicmd:+$roicmd}
+${tlscmd:+$tlscmd}
+cyftools margin ${IO} ${V} -T 8 -M 64 -d 200 ${DELIM} cyftools margin ${IN} ${V} -T 128 -M 256 -d 200 ${output_file}"
+
+echo "$cmd" | tr '\n' ' '
+echo ""
+eval "$cmd"
+
+echo ${output_file}
+
 fi

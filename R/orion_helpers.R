@@ -334,6 +334,9 @@ km_plot <- function(rd, parm, parm.name, parm.labels,
   
 }
 
+
+
+
 #' Frequency Histogram
 #'
 #' This function generates a frequency histogram given a data table and two parameter names.
@@ -761,7 +764,7 @@ compare_groups <- function(rrt, var) {
 }
 
 # Function to create a beeswarm plot with significance comparisons
-create_beeswarm_plot <- function(data, x_var, y_var, withbox=FALSE, dx_combos) {
+create_beeswarm_plot <- function(data, x_var, y_var, withbox=FALSE, dx_combos=NA, fill_var=NA) {
   #dx_combos <- list(c("tipMMR","tdpMMR"),c("tipMMR","dMMR"),c("dMMR","tdpMMR"))
   #dx_combos <- list(c("Control","Progression"))
   #dx_combos <- list(c("Mut","WT"))
@@ -771,16 +774,16 @@ create_beeswarm_plot <- function(data, x_var, y_var, withbox=FALSE, dx_combos) {
   #dx_combos <- list(c("High","Low"))
   #dx_combos <- list(c("Mut","WT"))
   
+  if (is.na(fill_var))
+    fill_var = x_var
+  
   g <- ggplot(data, aes_string(x = x_var, y = y_var)) 
   
   g <- g + ggbeeswarm::geom_quasirandom(
-      shape = 21, color = "white",
-      alpha = 1, size = 1.5,
-      aes(fill = .data[[x_var]])
+      shape = 21, color = "black",
+      alpha = 1, size = 2,
+      aes(fill = .data[[fill_var]])
     ) +
-    #scale_fill_manual(values = jhu_colors) + 
-    #scale_fill_manual(values = pMMR_colors) +
-    #scale_fill_manual(values = gleason_colors) +
     theme_bw() +
     theme(
       legend.position = "none",
@@ -788,16 +791,18 @@ create_beeswarm_plot <- function(data, x_var, y_var, withbox=FALSE, dx_combos) {
       panel.grid.minor = element_blank(),
       axis.title = element_text(size = 10, face = "bold"),
       axis.text = element_text(size = 10)
-    ) +
-    stat_compare_means(comparisons = dx_combos, label = "p.signif",
+    )
+  if (!is.na(dx_combos)) {
+    g <- g + ggpubr::stat_compare_means(comparisons = dx_combos, label = "p.signif",
                        method="wilcox.test") # Add significance levels
+  }
 
   if (withbox)
     g <- g + geom_boxplot(width = 0.2,                                                                                                                                                  
                           outlier.shape = NA,                                                                                                                                           
                           alpha = 0.5,
                           fill=NA,
-                          color="black")
+                          color="red")
   g
 }
 
@@ -811,3 +816,324 @@ sig_display <- function(p) {
     return("**")
   return("***")
 }
+
+
+cycif_point_plot <- function(
+    dt,
+    field,
+    max_points = 100000,
+    palette = "YlOrRd",     # any RColorBrewer palette name
+    seed = NULL,            # set for reproducible subsampling
+    point_size = 0.2,
+    alpha = 0.8,
+    na_color = "grey80"
+) {
+  # ---- deps & input checks ----
+  if (!requireNamespace("data.table", quietly = TRUE))
+    stop("Package 'data.table' is required.")
+  if (!requireNamespace("ggplot2", quietly = TRUE))
+    stop("Package 'ggplot2' is required.")
+  if (!requireNamespace("RColorBrewer", quietly = TRUE))
+    stop("Package 'RColorBrewer' is required.")
+  
+  if (!data.table::is.data.table(dt))
+    stop("'dt' must be a data.table.")
+  
+  req_cols <- c("x", "y")
+  if (!all(req_cols %in% names(dt)))
+    stop("Data must contain columns: ", paste(req_cols, collapse = ", "), ".")
+  
+  if (!is.character(field) || length(field) != 1L)
+    stop("'field' must be a single column name (character).")
+  if (!field %in% names(dt))
+    stop("Column '", field, "' not found in data.")
+  
+  # type checks for coordinates
+  if (!is.numeric(dt[["x"]]) || !is.numeric(dt[["y"]]))
+    stop("'x' and 'y' must be numeric.")
+  
+  # check palette validity
+  pal_info <- RColorBrewer::brewer.pal.info
+  if (!palette %in% rownames(pal_info))
+    stop("Palette '", palette, "' is not a valid RColorBrewer palette.")
+  
+  # ---- prepare data (copy to avoid by-reference changes) ----
+  dat <- data.table::copy(dt)
+  
+  # drop rows with missing x/y
+  dat <- dat[stats::complete.cases(x, y)]
+  
+  # subsample if needed
+  n <- nrow(dat)
+  if (n == 0L) stop("No rows with non-missing x and y.")
+  if (n > max_points) {
+    if (!is.null(seed)) set.seed(seed)
+    idx <- sample.int(n, max_points)
+    dat <- dat[idx]
+    message("Subsampled ", n, " → ", max_points, " points.")
+  }
+  
+  # determine scale type based on 'field'
+  col_vec <- dat[[field]]
+  is_discrete <- is.factor(col_vec) || is.logical(col_vec) || is.character(col_vec)
+  
+  # If character or logical, coerce to factor for discrete handling
+  if (is.logical(col_vec) || is.character(col_vec)) {
+    dat[[field]] <- as.factor(col_vec)
+    col_vec <- dat[[field]]
+  }
+  
+  # ---- build plot ----
+  library(ggplot2)
+  
+  p <- ggplot(dat, aes(x = .data$x, y = .data$y)) +
+    coord_fixed() +
+    theme_minimal(base_size = 12) +
+    theme(
+      panel.grid = element_blank()
+    )
+  
+  if (is_discrete) {
+    # discrete palette sizing
+    n_lvls <- nlevels(col_vec)
+    maxcols <- pal_info[palette, "maxcolors"]
+    
+    if (n_lvls <= maxcols) {
+      p <- p +
+        geom_point(aes(color = .data[[field]]), size = point_size, alpha = alpha, stroke = 0) +
+        scale_color_brewer(palette = palette, na.value = na_color)
+    } else {
+      # extend palette with colorRampPalette while honoring base Brewer colors
+      base_cols <- RColorBrewer::brewer.pal(maxcols, palette)
+      extended <- grDevices::colorRampPalette(base_cols)(n_lvls)
+      p <- p +
+        geom_point(aes(color = .data[[field]]), size = point_size, alpha = alpha, stroke = 0) +
+        scale_color_manual(values = extended, na.value = na_color)
+      message(
+        "Factor has ", n_lvls, " levels; extended '", palette,
+        "' palette to match."
+      )
+    }
+    p <- p + labs(color = field, x = "x", y = "y")
+    
+  } else if (is.numeric(col_vec)) {
+    # continuous scale using distiller (ColorBrewer continuous)
+    p <- p +
+      geom_point(aes(color = .data[[field]]), size = point_size, alpha = alpha, stroke = 0) +
+      scale_color_distiller(palette = palette, direction = 1, na.value = na_color) +
+      labs(color = field, x = "x", y = "y")
+  } else {
+    stop("Unsupported type for '", field, "'. Provide numeric or factor/character/logical.")
+  }
+  
+  return(p)
+}
+
+cycif_convex_hull <- function(
+    dt,
+    outline_size = 0.6,
+    point_size = 0.5,
+    point_alpha = 0.6
+) {
+  # ---- deps & checks ----
+  if (!requireNamespace("data.table", quietly = TRUE))
+    stop("Package 'data.table' is required.")
+  if (!requireNamespace("ggplot2", quietly = TRUE))
+    stop("Package 'ggplot2' is required.")
+  
+  if (!data.table::is.data.table(dt))
+    stop("'dt' must be a data.table.")
+  
+  if (!all(c("x","y") %in% names(dt)))
+    stop("Input must contain numeric columns 'x' and 'y'.")
+  
+  if (!is.numeric(dt[["x"]]) || !is.numeric(dt[["y"]]))
+    stop("'x' and 'y' must be numeric.")
+  
+  # ---- clean & prep ----
+  dat <- data.table::copy(dt)
+  dat <- dat[stats::complete.cases(x, y)]
+  if (nrow(dat) == 0L) stop("No rows with non-missing 'x' and 'y'.")
+  
+  # drop exact duplicate coordinates (convex hull is unchanged by duplicates)
+  dat <- unique(dat, by = c("x","y"))
+  n <- nrow(dat)
+  
+  # helper: polygon area via shoelace
+  polygon_area <- function(x, y) {
+    if (length(x) < 3L) return(0)
+    x2 <- c(x[-1], x[1])
+    y2 <- c(y[-1], y[1])
+    abs(sum(x * y2 - y * x2)) / 2
+  }
+  
+  # Determine hull indices (ordered around the hull)
+  if (n >= 3L) {
+    hull_idx <- grDevices::chull(dat[["x"]], dat[["y"]])
+  } else {
+    hull_idx <- seq_len(n)  # 1 or 2 points: "hull" is those points
+  }
+  
+  hull_dt <- dat[hull_idx]
+  data.table::set(hull_dt, j = "vertex_id", value = seq_len(nrow(hull_dt))) # label order
+  
+  # Compute area
+  hull_area <- polygon_area(hull_dt[["x"]], hull_dt[["y"]])
+  
+  # ---- plotting ----
+  # Close the hull path for drawing a closed outline (repeat first vertex at end)
+  if (nrow(hull_dt) >= 2L) {
+    hull_closed <- data.table::rbindlist(list(hull_dt, hull_dt[1L]), use.names = TRUE)
+  } else {
+    hull_closed <- data.table::copy(hull_dt)
+  }
+  
+  library(ggplot2)
+  p <- ggplot(dat, aes(x = .data$x, y = .data$y)) +
+    geom_point(size = point_size, alpha = point_alpha, stroke = 0) +
+    {
+      if (nrow(hull_closed) >= 2L)
+        geom_path(data = hull_closed, aes(x = .data$x, y = .data$y),
+                  inherit.aes = FALSE, linewidth = outline_size, color = "black")
+      else NULL
+    } +
+    coord_fixed() +
+    theme_minimal(base_size = 12) +
+    theme(panel.grid = element_blank()) +
+    labs(x = "x", y = "y")
+  
+  # ---- return ----
+  list(
+    hull_points = hull_dt[],  # ordered vertices of the convex hull
+    area = hull_area,         # numeric scalar
+    plot = p                  # ggplot object
+  )
+}
+
+# Lightweight union-of-disks area (no double-counting), memory-friendly
+cycif_disc_union_area <- function(
+    dt,
+    radius = 20,
+    method = c("mc", "grid"),
+    # MC controls
+    samples = 200000,            # fewer = coarser, faster, less memory
+    chunk_size = 50000,          # processed at a time to limit memory
+    seed = NULL,
+    # Grid controls (only used if method="grid" or NN pkgs unavailable)
+    cell_size = NULL             # default: radius (very coarse, very light)
+) {
+  # ---- checks ----
+  if (!requireNamespace("data.table", quietly = TRUE))
+    stop("Package 'data.table' is required.")
+  if (!data.table::is.data.table(dt)) stop("'dt' must be a data.table.")
+  if (!all(c("x","y") %in% names(dt))) stop("Input must contain columns 'x' and 'y'.")
+  if (!is.numeric(dt[["x"]]) || !is.numeric(dt[["y"]])) stop("'x' and 'y' must be numeric.")
+  if (!is.numeric(radius) || length(radius) != 1L || radius <= 0) stop("'radius' must be a positive number.")
+  
+  method <- match.arg(method)
+  dat <- data.table::copy(dt)[stats::complete.cases(x, y)]
+  if (nrow(dat) == 0L) stop("No rows with non-missing 'x' and 'y'.")
+  
+  # Bounding box expanded so disks are fully contained
+  xr <- range(dat$x); yr <- range(dat$y)
+  xmin <- xr[1] - radius; xmax <- xr[2] + radius
+  ymin <- yr[1] - radius; ymax <- yr[2] + radius
+  box_area <- (xmax - xmin) * (ymax - ymin)
+  
+  # Helper: simple return wrapper
+  ret <- function(area, method_used, extra = list()) {
+    c(list(area = as.numeric(area),
+           method_used = method_used,
+           radius = radius,
+           bounding_box = c(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+           box_area = box_area),
+      extra)
+  }
+  
+  # ---- Monte Carlo estimator (preferred; very light) ----
+  if (method == "mc") {
+    engine <- if (requireNamespace("RANN", quietly = TRUE)) {
+      "RANN"
+    } else if (requireNamespace("FNN", quietly = TRUE)) {
+      "FNN"
+    } else {
+      "grid-fallback"  # No NN package; fall back to grid
+    }
+    
+    if (engine != "grid-fallback") {
+      if (!is.null(seed)) set.seed(seed)
+      if (!is.numeric(samples) || samples < 1) stop("'samples' must be >= 1.")
+      if (!is.numeric(chunk_size) || chunk_size < 1) stop("'chunk_size' must be >= 1.")
+      X <- as.matrix(dat[, .(x, y)])
+      
+      inside <- 0L
+      done <- 0L
+      while (done < samples) {
+        m <- min(chunk_size, samples - done)
+        Q <- cbind(stats::runif(m, xmin, xmax),
+                   stats::runif(m, ymin, ymax))
+        d <- if (engine == "RANN") {
+          RANN::nn2(X, Q, k = 1)$nn.dists[, 1]
+        } else {
+          FNN::get.knnx(X, Q, k = 1)$nn.dist[, 1]
+        }
+        inside <- inside + sum(d <= radius)
+        done <- done + m
+      }
+      p <- inside / samples
+      area <- box_area * p
+      
+      # Rough 95% CI on area (binomial → proportion → scale by box_area)
+      se_p <- sqrt(max(p * (1 - p), 1e-12) / samples)
+      ci_p <- p + c(-1, 1) * 1.96 * se_p
+      ci_area <- pmax(0, pmin(1, ci_p)) * box_area
+      
+      return(ret(area, paste0("mc/", engine),
+                 list(coverage_fraction = p,
+                      samples_used = samples,
+                      ci95_area = ci_area)))
+    }
+    
+    # fall through to grid method when no NN package is available
+    method <- "grid"
+  }
+  
+  # ---- Ultra-light grid dilation (approximates circles with squares) ----
+  # Bias: tends to overestimate vs true circles (coarser = faster = more bias).
+  if (is.null(cell_size)) cell_size <- radius # very coarse, minimal RAM
+  if (!is.numeric(cell_size) || length(cell_size) != 1L || cell_size <= 0)
+    stop("'cell_size' must be a positive number.")
+  
+  s <- ceiling(radius / cell_size)  # dilation radius in grid cells (Chebyshev metric)
+  # Anchor grid to data min to keep indices small
+  x0 <- min(dat$x); y0 <- min(dat$y)
+  gx <- floor((dat$x - x0) / cell_size)
+  gy <- floor((dat$y - y0) / cell_size)
+  
+  # Unique seed cells (points may share cells)
+  seeds <- unique(data.table::data.table(gx = gx, gy = gy))
+  
+  # Record covered cells in a small hash map (environment) to avoid big matrices
+  covered <- new.env(parent = emptyenv())
+  dxs <- seq.int(-s, s)
+  dys <- seq.int(-s, s)
+  
+  # Loop over unique seed cells (fast in practice; avoids expanding per-point)
+  for (i in seq_len(nrow(seeds))) {
+    gx0 <- seeds$gx[i]; gy0 <- seeds$gy[i]
+    for (dx in dxs) {
+      gxk <- gx0 + dx
+      for (dy in dys) {
+        covered[[paste0(gxk, ":", gy0 + dy)]] <- TRUE
+      }
+    }
+  }
+  covered_count <- length(ls(covered, all.names = TRUE))
+  area_grid <- covered_count * (cell_size ^ 2)
+  
+  return(ret(area_grid, paste0("grid_squares(cell_size=", cell_size, ", s=", s, ")"),
+             list(cells_covered = covered_count,
+                  note = "Grid squares approximate circles; expect upward bias that shrinks as 'cell_size' decreases.")))
+}
+
+

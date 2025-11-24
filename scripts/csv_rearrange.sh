@@ -19,6 +19,9 @@ dataLSP12617.csv,dataLSP12619.csv,dataLSP12621.csv,dataLSP12623.csv,dataLSP12625
 dataLSP12633.csv,dataLSP12635.csv,dataLSP12637.csv,dataLSP12639.csv,dataLSP12641.csv,dataLSP12643.csv,dataLSP12645.csv,dataLSP12647.csv,\
 dataLSP12649.csv,dataLSP12651.csv,dataLSP12653.csv,dataLSP12655.csv,dataLSP12657.csv"
 
+jhu_revision="LSP19084.csv,LSP19094.csv,LSP19159.csv,LSP19160.csv,LSP19194.csv,LSP19204.csv,LSP19234.csv,LSP19244.csv,\"
+LSP19325.csv,LSP19340.csv,LSP19384.csv,LSP20047.csv,LSP20052.csv,LSP20122.csv,LSP20137.csv"
+
 base=$(basename "$input_file" .csv)
 
 ## install with "pip install csvkit"
@@ -38,6 +41,9 @@ elif [[ "$input_file" == *"immune"* ]]; then
 elif [[ $prostate == *"$base"* ]]; then
     echo "...csv_rearrange.sh: Prostate detected"
     csvcut -c "Xt,Yt,Hoechst1,Ki67,AMCAR,HMWCK,CD19,SMA,CD20,CD11b,CD68,CD163,CD4,CD3d,CD8a,TCF1,FOXP3,PD1,CD57,CD11c,GranzymeB,CD15,HLADR,CD103,CD31,pTBK1,HLAA,CD24,CD44,CD206" $input_file > $rar_file
+elif [[ $jhu_revision == *"$base"* ]]; then
+    echo "...csv_rearrange.sh: JHU revision detected"
+    csvcut -c "Xt,Yt,DNA1,bg488,bg555,bg647,DNA2,MX1,SLAM6,GZMB,DNA3,CD45RO,CD3d,CD8a,panCK,DNA4,TCF1,LAG3,PDL1,aSMA,DNA5,TIM3,tBET,CD134,MPO,DNA6,EGFR,CD11c,CD103,Ki67" $input_file > $rar_file
 else
     echo "Warning: Unknown file"
 fi

@@ -19,6 +19,8 @@ typedef K::Point_2 Point;
 
 #ifdef HAVE_BOOST
 #include <boost/functional/hash.hpp>
+#include <boost/multiprecision/gmp.hpp>
+#include <boost/multiprecision/cpp_int.hpp> // If you're using cpp_int
 #endif
 
 

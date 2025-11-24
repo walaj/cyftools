@@ -95,6 +95,8 @@ class CellHeader {
 
   void Print() const;
 
+  void PrintMarkers() const;  
+
   bool validate() const;
 
   size_t WhichColumn(const std::string& str, uint8_t tag_type) const;
