@@ -1058,8 +1058,8 @@ int CellTable::PlotPNG(const std::string& file,
       
       // Move to the first vertex
       auto firstVertex = *polygon.begin();
-      cairo_move_to(crp, firstVertex.x*scale_factor*micron_per_pixel, (firstVertex.y*micron_per_pixel+legend_total_height)*scale_factor);
-      //cairo_move_to(crp, firstVertex.x*scale_factor, (firstVertex.y+legend_total_height)*scale_factor);      
+      //cairo_move_to(crp, firstVertex.x*scale_factor*micron_per_pixel, (firstVertex.y*micron_per_pixel+legend_total_height)*scale_factor);
+      cairo_move_to(crp, firstVertex.x*scale_factor, (firstVertex.y+legend_total_height)*scale_factor);      
       
       // Draw lines to each subsequent vertex
       for (const auto& v : polygon) {
@@ -1068,9 +1068,8 @@ int CellTable::PlotPNG(const std::string& file,
 	//cairo_set_source_rgba(crp, 1, 0, 0, 1);
 	//cairo_arc(crp, v.first*scale_factor*micron_per_pixel, v.second*scale_factor*micron_per_pixel, 10, 0, TWO_PI);
 	//cairo_fill(crp);
-	std::cerr <<" DRAWING POLY " << std::endl;
-	cairo_line_to(crp, v.x*scale_factor*micron_per_pixel, (v.y*micron_per_pixel+legend_total_height)*scale_factor);
-	//cairo_line_to(crp, v.x*scale_factor, (v.y+legend_total_height)*scale_factor);	
+	//cairo_line_to(crp, v.x*scale_factor*micron_per_pixel, (v.y*micron_per_pixel+legend_total_height)*scale_factor);
+	cairo_line_to(crp, v.x*scale_factor, (v.y+legend_total_height)*scale_factor);	
       }
       
       // Close the polygon

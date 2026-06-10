@@ -49,8 +49,14 @@ source ${HOME}/git/cyftools/scripts/config.sh
 #CHAINDIR=chain
 
 #### JHU CYCIF REVISION
-HOMEBASE=${PROJ_DATA}/jhu/revision
-ROIBASE=roi
+#HOMEBASE=${PROJ_DATA}/jhu/revision
+#ROIBASE=roi
+#GATEBASE=phenotype
+#CHAINDIR=chain
+
+## NEOADJUVANT PROSTATE
+HOMEBASE=${PROJ_DATA}/met
+ROIBASE=${PROJ_DATA}=roi
 GATEBASE=phenotype
 CHAINDIR=chain
 
@@ -59,15 +65,15 @@ mkdir -p ${HOMEBASE}/${CHAINDIR}
 echo "...getting file list from $HOMEBASE/clean"
 for infile in $HOMEBASE/clean/*.cyf; do    
 
+    ## uncomment to run just the one file
+#if [[ ! "$base" =~ ^(LSP17711|LSP17708|LSP20071)$ ]]; then
+#    continue
+#fi    
+
     ## Extract the base LSP123 name
     base=$(basename "$infile" .cyf)
     echo $base
     
-    ## uncomment to run just the one file
-    if [[ $base != "LSP19194" ]]; then
-        continue
-    fi
-
     echo "...process_file.sh: working on sample $base"
         
     ## Get the gates from the *p columns from csv's dumped from matlab files

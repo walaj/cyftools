@@ -200,7 +200,16 @@ elif contains_string "$jhu_cycif" "$input_file"; then
     echo "...chain.sh: detected JHU project --CYCIF"
     RAD=${PROJ_HOME}/jhu/cycif/radial.csv
     TUMOR_MARKER=1024
-    roimag=1    
+    roimag=1
+    ## NEOADJUVANT PROSTATE
+elif contains_string "$neo_prostate" "$input_file"; then
+    echo "...chain.sh: detected neoadjuvant prostate project"
+    RAD=${PROJ_HOME}/met/radial.csv
+    TUMOR_MARKER=64
+    roimag=1
+    TCELL_MARKER=1024
+    BCELL_MARKER=2097152
+    IMMUNE_MARKER=34361852928 
 else
     echo "...header.sh: Warning: $input_file doesn't fit into cycif, prostate, orion, etc"
     exit 1

@@ -792,7 +792,7 @@ create_beeswarm_plot <- function(data, x_var, y_var, withbox=FALSE, dx_combos=NA
       axis.title = element_text(size = 10, face = "bold"),
       axis.text = element_text(size = 10)
     )
-  if (!is.na(dx_combos)) {
+  if (length(dx_combos) || !is.na(dx_combos)) {
     g <- g + ggpubr::stat_compare_means(comparisons = dx_combos, label = "p.signif",
                        method="wilcox.test") # Add significance levels
   }
@@ -802,7 +802,7 @@ create_beeswarm_plot <- function(data, x_var, y_var, withbox=FALSE, dx_combos=NA
                           outlier.shape = NA,                                                                                                                                           
                           alpha = 0.5,
                           fill=NA,
-                          color="red")
+                          color="black")
   g
 }
 
