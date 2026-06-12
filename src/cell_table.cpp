@@ -376,14 +376,14 @@ size_t CellTable::CellCount() const {
 
 void CellTable::SetupOutputWriter(const std::string& file) {
 
-  // set the output to file or stdout
+  // set the output to file or stdout (cereal or CYF, per cyf::useCyfOutput())
   if (file == "-") {
-    m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(std::cout);
+    m_archive = std::make_unique<OutArchive>(std::cout);
   } else {
     m_os = std::make_unique<std::ofstream>(file, std::ios::binary);
-    m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(*m_os);
+    m_archive = std::make_unique<OutArchive>(*m_os);
   }
-  
+
 }
 
 #ifdef HAVE_TIFFLIB
@@ -1358,17 +1358,18 @@ int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
     inputStream = fileStream.get();
   }
 
-  cereal::PortableBinaryInputArchive inputArchive(*inputStream);
+  InArchive inputArchive(*inputStream);
 
-  // First read the CellHeader
+  // First read the CellHeader (auto-detects cereal vs CYF from the stream magic)
   try {
     inputArchive(m_header);
   } catch (const std::bad_alloc& e) {
     // Handle bad_alloc exception
     std::cerr << "Memory allocation failed during deserialization: " << e.what() << std::endl;
     return 1;  // or handle the error appropriately for your program
-  } catch (const cereal::Exception& e) {
+  } catch (const std::exception& e) {
     // Handle exception if any error occurs while deserializing header
+    // (covers both cereal::Exception and CYF bad-magic/version)
     std::cerr << "Error while deserializing header: " << e.what() << std::endl;
     return 1;  // or handle the error appropriately for your program
   }
@@ -1384,18 +1385,14 @@ int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
     ;  // the processor already handled the header, nothing to do here
   }
 
-  // now read the Cell objects
+  // now read the Cell objects. next() returns false at clean end-of-stream and
+  // throws on a truncated/corrupt CYF stream (cereal still signals EOF internally).
   Cell cell;
-  while (true) {
-    try {
-      m_count++;            
-      if (m_verbose && (m_count % 500000 == 0 || m_count == 1))
-	std::cerr << "...reading cell " << AddCommas(m_count) << std::endl;
-      inputArchive(cell);
-    } catch (const cereal::Exception& e) {
-      // Catch exception thrown on EOF or any other errors
-      break;
-    }
+  while (inputArchive.next(cell)) {
+
+    m_count++;
+    if (m_verbose && (m_count % 500000 == 0 || m_count == 1))
+      std::cerr << "...reading cell " << AddCommas(m_count) << std::endl;
 
     // process the cell and output if needed (returns 1)
     int val = proc.ProcessLine(cell);

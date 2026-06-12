@@ -3,6 +3,8 @@
 #include <string>
 #include <unordered_set>
 
+#include "cyf_field.h"   // CyfValueType: typed-column schema
+
 #include <cereal/archives/binary.hpp>
 #include <cereal/types/vector.hpp>
 #include <cereal/types/string.hpp> 
@@ -18,6 +20,7 @@ class Tag {
   static const uint8_t PG_TAG = 4; // program tag
   static const uint8_t VN_TAG = 5; // version tag
   static const uint8_t SA_TAG = 6; // sample tag
+  static const uint8_t FL_TAG = 7; // flag-bit definition tag (self-describing cflag/pflag bits)
   
   uint8_t type;
   std::string id;
@@ -38,7 +41,8 @@ class Tag {
     case PG_TAG: typen = "PG"; break;
     case VN_TAG: typen = "VN"; break;
     case SA_TAG: typen = "SA"; break;
-    default: typen = "UNKNOWN TAG TYPE"; 
+    case FL_TAG: typen = "FL"; break;
+    default: typen = "UNKNOWN TAG TYPE";
     }
     return (typen);
   }
@@ -49,7 +53,15 @@ class Tag {
   Tag(const std::string& line);
 
   bool isData() const { return type == Tag::MA_TAG || type == Tag::CA_TAG; }
-  
+
+  // ---- typed-column schema accessors (parsed on demand from `data`) ----
+  // Extract a "KEY:VALUE" sub-field from the tab-delimited data blob; "" if absent.
+  std::string GetField(const std::string& key) const;
+  // Declared value type of this column (from TY:), defaulting to Float ('f').
+  CyfValueType ValueType() const;
+  // Category levels for a TY:A column (from LV:, comma-separated); empty otherwise.
+  std::vector<std::string> CategoryLevels() const;
+
   friend std::ostream& operator<<(std::ostream& os, const Tag& tag);
 
   template <class Archive>
@@ -76,7 +88,9 @@ class CellHeader {
 
   Tag GetVersionTags() const;
 
-  std::vector<Tag> GetSampleTags() const;  
+  std::vector<Tag> GetSampleTags() const;
+
+  std::vector<Tag> GetFlagTags() const;
 
   std::vector<Tag> GetMetaTags() const;
 
@@ -93,6 +107,11 @@ class CellHeader {
   // Function to add a Tag to the header
   void addTag(const Tag& tag);
 
+  // Append a tag preserving exact order (no sort, no dedup, no warnings).
+  // Used by the CYF codec to rebuild a header from on-disk text without
+  // disturbing the data-column ordering that record values are bound to.
+  void appendRawTag(const Tag& tag) { tags.push_back(tag); }
+
   void Print() const;
 
   void PrintMarkers() const;  
@@ -100,6 +119,10 @@ class CellHeader {
   bool validate() const;
 
   size_t WhichColumn(const std::string& str, uint8_t tag_type) const;
+
+  // The value type of each data column (MA+CA tags, in header order). This is the
+  // schema that drives typed record encode/decode. All-float for legacy headers.
+  std::vector<CyfValueType> ColumnTypes() const;
 
   void CleanProgramTags();
   

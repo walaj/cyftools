@@ -1,5 +1,12 @@
 #include "polygon.h"
 
+Polygon::Polygon(const std::vector<JPoint>& vec) {
+  Id = -1;
+  Name = "na";
+  type = "na";
+  vertices = vec;
+}
+
 std::vector<JPoint> parse_vertices(const std::string& vertex_str) {
     std::vector<JPoint> vertices;
     std::istringstream vertex_stream(vertex_str);

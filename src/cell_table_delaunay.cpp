@@ -17,27 +17,15 @@ typedef CGAL::Delaunay_triangulation_2<K> DelaunayData;
 typedef K::Point_2 Point;
 #endif
 
-#ifdef HAVE_BOOST
-#include <boost/functional/hash.hpp>
-#include <boost/multiprecision/gmp.hpp>
-#include <boost/multiprecision/cpp_int.hpp> // If you're using cpp_int
-#endif
-
-
 namespace std {
     template<> struct hash<JPoint> {
         std::size_t operator()(const JPoint& p) const {
             std::size_t hx = std::hash<float>{}(p.x);
             std::size_t hy = std::hash<float>{}(p.y);
-
-#ifdef HAVE_BOOST
-            std::size_t seed = 0;
-            boost::hash_combine(seed, hx);
-            boost::hash_combine(seed, hy);
+            // local hash_combine (was boost::hash_combine; Boost no longer needed)
+            std::size_t seed = hx;
+            seed ^= hy + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
             return seed;
-#else
-            return hx ^ (hy << 1);  // Shift hy 1 bit to the left and XOR it with hx.
-#endif
         }
     };
 }

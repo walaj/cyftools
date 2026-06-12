@@ -13,12 +13,10 @@ USE64BIT=-DUSE_64_BIT
 CEREAL = -I../external/cereal/include ## header only
 
 ## Required header-only libraries for UMAP functionality (all are required)
-## Could theoretically have KNN only if want KNN graphs but not umap
-UMAP =  -I../external/umappp/include -I../external/CppIrlba/include -DHAVE_UMAPPP -DKNNCOLLE_NO_KMKNN -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
-KNN = -I../external/knncolle/include -DHAVE_KNNCOLLE
-
-## Very optional header-only libraries for alternative neighor finding algorithms (e.g. in UMAP, etc)
-KMEANS = -I../external/CppKmeans/include -DHAVE_KMEANS
+## knncolle: header-only KNN search for island / dist / tls (Eigen-free).
+## (UMAP and its umappp/CppIrlba/CppKmeans deps were removed.)
+KNN = -I../external/knncolle/include -DHAVE_KNNCOLLE -DKNNCOLLE_NO_KMKNN -DKNNCOLLE_NO_HNSW -DKNNCOLLE_NO_ANNOY
+NANOFLANN =   ## nanoflann.hpp is vendored in src/ (found via -I.), replaces mlpack
 
 ######################################
 ####### OTHER OPTIONAL LIBARARIES ####
@@ -200,17 +198,17 @@ else
 endif
 
 CFLAGS = -O2 -g -std=c++17 -Wno-deprecated-declarations $(USE64BIT) $(OPENMP) -I. -I.. \
-          $(TIFF) $(KNN) $(UMAP) $(IRLBA) $(EIGEN) $(KMEANS) \
-          $(OMP) $(CEREAL) $(LDA) $(HD5) \
-	  $(MLPACK) $(CAIRO) $(CGAL) $(BOOST) $(DBSCAN)
+          $(TIFF) $(KNN) $(NANOFLANN) $(EIGEN) \
+          $(OMP) $(CEREAL) $(LDA) \
+	  $(CAIRO) $(DBSCAN)
 
-LDFLAGS = $(OMPL) $(LDALIB) $(HD5LIB) $(KDLIB) ${TIFFLD} $(MLPACKLIB) \
-          $(CAIROLIB) $(GMPLIB)
+LDFLAGS = $(OMPL) $(LDALIB) $(KDLIB) ${TIFFLD} -lz \
+          $(CAIROLIB)
 
 # Specify the source files
 SRCS = cyftools.cpp \
        cell_table.cpp \
-       cell_table_mlpack.cpp \
+       cell_table_cluster.cpp \
        cell_table_delaunay.cpp \
        cell_table_graph.cpp \
        cell_table_lda.cpp \
@@ -221,6 +219,8 @@ SRCS = cyftools.cpp \
        cell_utils.cpp \
        cell_processor.cpp \
        cell_row.cpp \
+       cyf_io.cpp \
+       bgzf.cpp \
        tiff_reader.cpp \
        tiff_writer.cpp \
        tiff_header.cpp \
@@ -249,8 +249,14 @@ $(EXEC): $(OBJS)
 %.o: %.cpp
 	$(CC) $(CFLAGS) -c $<
 
+# Lightweight self-test for the CYF codec + cereal/CYF adapter.
+# Needs only cereal (no mlpack/CGAL/TIFF/etc.), so it builds fast and in isolation.
+cyf-test:
+	$(CC) -std=c++17 $(USE64BIT) -I. -I../external/cereal/include \
+	  cyf_test.cpp cyf_io.cpp cell_header.cpp bgzf.cpp -lz -o cyf_test && ./cyf_test
+
 # Clean up
 clean:
-	rm -f $(OBJS) $(EXEC)
+	rm -f $(OBJS) $(EXEC) cyf_test
 
-.PHONY: all clean
+.PHONY: all clean cyf-test

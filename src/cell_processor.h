@@ -14,6 +14,8 @@
 #include <cereal/types/vector.hpp>
 #include <cereal/archives/portable_binary.hpp>
 
+#include "cell_archive.h"  // OutArchive: writes cereal or CYF behind one interface
+
 // operation type for SelectProcessor
 enum optype {
   GREATER_THAN,
@@ -48,14 +50,15 @@ class CellProcessor {
 
   virtual int ProcessLine(Cell& cell) = 0;
 
-  void SetupOutputStream() { 
+  void SetupOutputStream() {
 
-    // set the output to file or stdout
+    // set the output to file or stdout. Format (cereal vs CYF) is selected by
+    // cyf::useCyfOutput(); OutArchive forwards to the chosen backend.
     if (m_output_file == "-") {
-      m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(std::cout);
+      m_archive = std::make_unique<OutArchive>(std::cout);
     } else {
       m_os = std::make_unique<std::ofstream>(m_output_file, std::ios::binary);
-      m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(*m_os);
+      m_archive = std::make_unique<OutArchive>(*m_os);
     }
    assert(m_archive);
   }
@@ -87,7 +90,7 @@ protected:
   
   // common archiver objects
   std::unique_ptr<std::ofstream> m_os;
-  std::unique_ptr<cereal::PortableBinaryOutputArchive> m_archive;
+  std::unique_ptr<OutArchive> m_archive;
 
   // increase verbosity
   bool m_verbose = false;
@@ -897,7 +900,7 @@ private:
   CellHeader m_header;
   
   std::unique_ptr<std::ofstream> m_os;
-  std::unique_ptr<cereal::PortableBinaryOutputArchive> m_archive;
+  std::unique_ptr<OutArchive> m_archive;
 
 };
 

@@ -19,6 +19,7 @@ std::ostream& operator<<(std::ostream& os, const Tag& tag) {
   case Tag::PG_TAG: ttype = "PG"; break;
   case Tag::VN_TAG: ttype = "VN"; break;
   case Tag::SA_TAG: ttype = "SA"; break;
+  case Tag::FL_TAG: ttype = "FL"; break;
   default:
     throw std::runtime_error("Unknown tag type with uint8_t value: " + std::to_string(tag.type));
   }
@@ -59,7 +60,8 @@ std::vector<Tag> CellHeader::GetInfoTags() const {
   std::vector<Tag> info_tags;
   for (const auto& t : tags)
     if (t.type == Tag::GA_TAG || t.type == Tag::PG_TAG ||
-	t.type == Tag::VN_TAG || t.type == Tag::SA_TAG)
+	t.type == Tag::VN_TAG || t.type == Tag::SA_TAG ||
+	t.type == Tag::FL_TAG)
       info_tags.push_back(t);
       
   return info_tags;
@@ -205,8 +207,19 @@ std::vector<Tag> CellHeader::GetSampleTags() const {
   for (const auto& t : tags)
     if (t.type == Tag::SA_TAG)
       sample_tags.push_back(t);
-  
+
   return sample_tags;
+}
+
+std::vector<Tag> CellHeader::GetFlagTags() const {
+
+  // return only the @FL flag-bit definition tags
+  std::vector<Tag> flag_tags;
+  for (const auto& t : tags)
+    if (t.type == Tag::FL_TAG)
+      flag_tags.push_back(t);
+
+  return flag_tags;
 }
 
 
@@ -269,6 +282,7 @@ Tag::Tag(const std::string& line) {
     else if (token.substr(1) == "PG") { type = Tag::PG_TAG; }
     else if (token.substr(1) == "SA") { type = Tag::SA_TAG; }
     else if (token.substr(1) == "VN") { type = Tag::VN_TAG; }
+    else if (token.substr(1) == "FL") { type = Tag::FL_TAG; }
     else { throw std::runtime_error("Tag of type" + token.substr(1) + "not an allowed tag"); }
     
     ++it;
@@ -287,6 +301,56 @@ Tag::Tag(const std::string& line) {
       data = data + field + ":" + value;
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Typed-column schema accessors. The `data` blob is the tab-delimited remainder
+// of a header line ("TY:f\tCH:1\tLV:a,b,c"), so sub-fields are parsed from it on
+// demand. Columns with no TY: field default to Float, keeping legacy (all-float)
+// headers fully backward compatible.
+// ---------------------------------------------------------------------------
+
+std::string Tag::GetField(const std::string& key) const {
+  size_t start = 0;
+  while (start <= data.size()) {
+    size_t end = data.find('\t', start);
+    std::string tok = (end == std::string::npos) ? data.substr(start)
+                                                  : data.substr(start, end - start);
+    size_t colon = tok.find(':');
+    if (colon != std::string::npos && tok.substr(0, colon) == key)
+      return tok.substr(colon + 1);
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return "";
+}
+
+CyfValueType Tag::ValueType() const {
+  std::string ty = GetField("TY");
+  if (ty.empty()) return CyfValueType::Float;   // legacy default: everything is float
+  return cyfTypeFromCode(ty[0]);
+}
+
+std::vector<std::string> Tag::CategoryLevels() const {
+  std::vector<std::string> levels;
+  std::string lv = GetField("LV");
+  if (lv.empty()) return levels;
+  size_t start = 0;
+  while (true) {
+    size_t comma = lv.find(',', start);
+    if (comma == std::string::npos) { levels.push_back(lv.substr(start)); break; }
+    levels.push_back(lv.substr(start, comma - start));
+    start = comma + 1;
+  }
+  return levels;
+}
+
+std::vector<CyfValueType> CellHeader::ColumnTypes() const {
+  std::vector<CyfValueType> types;
+  for (const auto& t : tags)
+    if (t.type == Tag::MA_TAG || t.type == Tag::CA_TAG)
+      types.push_back(t.ValueType());
+  return types;
 }
 
 void CellHeader::CleanProgramTags() {

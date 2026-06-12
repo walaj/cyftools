@@ -19,10 +19,9 @@
 #include <cereal/archives/portable_binary.hpp>
 #include <cereal/archives/json.hpp>
 
-#ifdef HAVE_MLPACK
-#include <mlpack/core.hpp>
-#include <mlpack/methods/range_search/range_search.hpp>
-#endif
+#include "cell_archive.h"  // OutArchive / InArchive: cereal-or-CYF I/O
+
+#include "cyf_kdtree.h"   // header-only KD-tree (nanoflann), replaces mlpack RangeSearch
 
 // forward declarations
 class Polygon;
@@ -56,8 +55,6 @@ public:
   //////
   // Table IO
   //////
-  void BuildTable(const std::string& file);
-
   void StreamTableCSV(CerealProcessor& proc, const std::string& file, const std::string& metac);
 
   int StreamTable(CellProcessor& proc, const std::string& file);
@@ -66,7 +63,6 @@ public:
 
   void OutputTable();
   
-  void HDF5Write(const std::string& file) const;
 
   //////
   // Plotting
@@ -113,12 +109,6 @@ public:
   //////
   void BuildKDTree();
 
-  void UMAP(int num_neighbors);
-  
-  void UMAPPlot(const std::string& file, int width, int height) const;
-  
-  void KNN_spatial(int num_neighbors, int dist);  
-
   void Delaunay(const std::string& pdf_delaunay,
 		const std::string& pdf_voronoi,
 	        int limit);
@@ -135,7 +125,6 @@ public:
   void IslandFill(size_t n, int flag_from, bool invert_from,
 		  int flag_to, bool invert_to);
   
-  void MoranI(const std::vector<cy_uint>& flags);
 
   void Distances(const std::string& id);
 
@@ -163,9 +152,6 @@ public:
 #ifdef HAVE_TIFFLIB
   void Convolve(TiffWriter* otoif, int boxwidth, float microns_per_pixel);
 #endif
-  
-  // ML ops
-  void GMM_EM();
 
   //////
   // Null model ops
@@ -250,15 +236,13 @@ public:
 
   // IO
   std::unique_ptr<std::ofstream> m_os;
-  std::unique_ptr<cereal::PortableBinaryOutputArchive> m_archive;
+  std::unique_ptr<OutArchive> m_archive;
 
   CellHeader m_header;
 
   LDAModel* m_ldamodel = nullptr;
 
-#ifdef HAVE_MLPACK
-  mlpack::RangeSearch<mlpack::EuclideanDistance> * ml_kdtree = nullptr;
-#endif
+  std::unique_ptr<cyf::KDTree2D> m_kdtree;
 
 
   

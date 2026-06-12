@@ -10,6 +10,12 @@
 #include <stack>
 #include <unordered_set>
 
+#ifdef HAVE_OMP
+#include <omp.h>   // omp_get_thread_num() used in the OpenMP-parallel loops
+#else
+inline int omp_get_thread_num() { return 0; }   // single-threaded stub when OpenMP is off
+#endif
+
 using StringVec = std::vector<std::string>;
 using StringSet = std::unordered_set<std::string>;
 

@@ -169,8 +169,6 @@ static int cropfunc(int argc, char** argv);
 static int subsamplefunc(int argc, char** argv);
 static int log10func(int argc, char** argv);
 static int cutfunc(int argc, char** argv);
-static int umapfunc(int argc, char** argv);
-static int radiusfunc(int argc, char** argv);
 static int filterfunc(int argc, char** argv);
 static int flagsetfunc(int argc, char** argv); 
 static int phenofunc(int argc, char** argv);
@@ -274,8 +272,6 @@ int main(int argc, char **argv) {
     return(viewfunc(argc, argv));
   } else if (opt::module == "cat") {
     return (catfunc(argc, argv));
-  } else if (opt::module == "umap") {
-    val = umapfunc(argc, argv);
   } else if (opt::module == "filter") {
     val = filterfunc(argc, argv);
   } else if (opt::module == "flip") {
@@ -344,7 +340,7 @@ static int magnifyfunc(int argc, char** argv) {
   const char* shortopts = "vf:";
 
   float factor = 1;
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;      
@@ -377,7 +373,7 @@ static int magnifyfunc(int argc, char** argv) {
 static int checkfunc(int argc, char** argv) {
 
   const char* shortopts = "v"; 
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
       std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true;
@@ -426,7 +422,7 @@ static int flipfunc(int argc, char** argv) {
   int xmax = DEFAULT;
   int ymax = DEFAULT;
   const char* shortopts = "vx:y:X:Y:"; // : means theres and argument. No colon = flag
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
       std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true;
@@ -494,7 +490,7 @@ static int forprintfunc(int argc, char** argv) {
 
   bool xargs = false;
   const char* shortopts = "xp";
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
       std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'x' : xargs=true; break;
@@ -551,7 +547,7 @@ static int distfunc(int argc, char** argv) {
 
   std::string id;
   const char* shortopts = "vi:";
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -599,7 +595,7 @@ static int tlsfunc(int argc, char** argv) {
   int dist_max = 100;
   
   const char* shortopts = "vm:d:b:i:";
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -650,7 +646,7 @@ static int tlsfunc(int argc, char** argv) {
 static int rescalefunc(int argc, char** argv) {
   
   const char* shortopts = "v";
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -686,7 +682,7 @@ static int flagsetfunc(int argc, char** argv) {
   cy_uint pflag_clear = 0;
   cy_uint cflag_clear = 0;  
   
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -730,7 +726,7 @@ static int reheaderfunc(int argc, char** argv) {
   StringVec rename;
   StringVec sample;
   std::string str;
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'r' : arg >> str; rename.push_back(str); break;
@@ -800,7 +796,7 @@ static int islandfunc(int argc, char** argv) {
   bool stroma_fill = false;
   int n = 100;
 
-    for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -859,7 +855,7 @@ static int marginfunc(int argc, char** argv) {
   cy_uint tumor_flag = TUMOR_FLAG;
   cy_uint margin_flag = MARGIN_FLAG;
   
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -913,7 +909,7 @@ static int dbscanfunc(int argc, char** argv) {
 
   const char* shortopts = "ve:s:c:";
   
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -969,7 +965,7 @@ static int syntheticfunc(int argc, char** argv) {
 
   const char* shortopts = "vs:m:w:l:p:n:e:";
   
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -1028,7 +1024,7 @@ static int jaccardfunc(int argc, char** argv) {
   bool subset_score = false;
 
   const char* shortopts = "vjsS";
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -1074,7 +1070,7 @@ static int cellcountfunc(int argc, char** argv) {
   const char* shortopts = "va:";
   std::vector<uint64_t> additional_flags;
   std::string tmp_string;
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -1122,7 +1118,7 @@ static int scatterfunc(int argc, char** argv) {
   int height = 1000;
 
   const char* shortopts = "vw:l:s:";
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -1180,7 +1176,7 @@ static int hallucinatefunc(int argc, char** argv) {
 
   const char* shortopts = "vn:s:";
   int n_phenotypes = 10;
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -1242,7 +1238,7 @@ static int scramblefunc(int argc, char** argv) {
   const char* shortopts = "vPs:p";
   bool lock_flags = false;
   bool phenotype_only = false; // scramble only the phenotype flags, leaving cell flags intact
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'P' : lock_flags = true; break;
@@ -1296,7 +1292,7 @@ static int convolvefunc(int argc, char** argv) {
   int width = 200;
   std::string intiff;
   float microns_per_pixel = 0;
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'i' : arg >> intiff; break;
@@ -1374,81 +1370,6 @@ static int convolvefunc(int argc, char** argv) {
   
 }
 
-static int umapfunc(int argc, char** argv) {
-  const char* shortopts = "vt:D:k:w:l:";
-  int n = 15;
-  int width = 1000;
-  int height = 1000;
-  std::string pdf_file;
-  
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
-    std::istringstream arg(optarg != NULL ? optarg : "");
-    switch (c) {
-    case 'v' : opt::verbose = true; break;
-    case 't' : arg >> opt::threads; break;
-    case 'D' : arg >> pdf_file; break;      
-    case 'k' : arg >> n; break;
-    case 'w' : arg >> width; break;
-    case 'l' : arg >> height; break;
-    default: die = true;
-    }
-  }
-
-  if (die || in_out_process(argc, argv)) {
-    
-    const char *USAGE_MESSAGE = 
-      "Usage: cyftools umap <input.cyf> <output.cyf file> [options]\n"
-      "  Construct the UMAP (in marker space) and output to a .cyf file with added umap1 and umap2 columns.\n"
-      "\n"
-      "Arguments:\n"
-      "  <input.cyf>           Input .cyf file path or '-' to stream from stdin.\n"
-      "  <output.cyf file>          Output .cyf file path with umap1 and umap2 columns added.\n"
-      "\n"
-      "Options:\n"
-      "  -k <int>                  Number of neighbors. Default: 15.\n"
-      "  -t <int>                  Number of threads. Default: 1.\n"
-      "  -D <file>                 Optional output to PDF.\n"
-      "  -w <int>                  Width of the PDF. Default: 1000.\n"
-      "  -l <int>                  Length of the PDF. Default: 1000.\n"
-      "  -v, --verbose             Increase output to stderr.\n"
-      "\n"
-      "Example:\n"
-      "  cyftools umap input.cyf output_umap.cyf -k 15 -t 2 -D output.pdf -w 1200 -l 800\n";
-    std::cerr << USAGE_MESSAGE;
-    return 1;
-  }
-
-  // build the table
-  // but don't have to convert columns
-  // since we don't use pre-existing Graph or Flags for this
-  build_table();
-
-  table.SetupOutputWriter(opt::outfile);
-  
-  // build the umap in marker-space
-  if (!pdf_file.empty() && table.HasColumn("umap1")) {
-    std::cerr << "...umap already exists. Skipping build and outputing PDF." << std::endl;
-    std::cerr << "...if you want to rebuild UMAP, call without -D flag and then try again" << std::endl;
-  } else if (!table.HasColumn("umap1")) {
-    table.UMAP(n);
-  } else {
-    std::cerr << "Warning: Overwriting prior umap" << std::endl;
-    table.UMAP(n);    
-  }
-
-  // pdf
-  if (!pdf_file.empty()) {
-    if (opt::verbose)
-      std::cerr << "...outputting UMAP pdf" << std::endl;
-    table.UMAPPlot(pdf_file, width, height); 
-  } else {
-    
-    // print it
-    table.OutputTable();
-  }
-  
-  return 0;
-}
 
 static int ldacreatefunc(int argc, char** argv) {
 
@@ -1458,7 +1379,7 @@ static int ldacreatefunc(int argc, char** argv) {
   int n_topics = 10;
   int n_iterations = 10;
   
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -1560,7 +1481,7 @@ static int ldarunfunc(int argc, char** argv) {
   int topic_highlight = 0;
   float cont_cutoff = 0.10f;
   
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -1640,7 +1561,7 @@ static int plotpngfunc(int argc, char** argv) {
   std::string module;
   std::string title;
   std::string palette;
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -1752,7 +1673,7 @@ static int plotpngfunc(int argc, char** argv) {
    float x = 0;
    float y = 0;
 
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -1814,7 +1735,7 @@ static int cleanfunc(int argc, char** argv) {
   cy_uint cflag_reset = -1;
   cy_uint pflag_reset = -1; 
   
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -1879,7 +1800,7 @@ static int catfunc(int argc, char** argv) {
 
   const char* shortopts = "v";
   std::string samples;
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2037,7 +1958,7 @@ static int cutfunc(int argc, char** argv) {
   const char* shortopts = "vx:";
   std::string cut; // list of markers, csv separated, to cut on
   
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2097,7 +2018,7 @@ static int meanfunc(int argc, char** argv) {
 
   std::string group_by;
   const char* shortopts = "vb:";  
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2157,7 +2078,7 @@ static int tumorfunc(int argc, char** argv) {
   // not really used yet, so not exposed explicitly
   //bool build_tree_with_marked_only = false; 
   
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2214,7 +2135,7 @@ static int tumorfunc(int argc, char** argv) {
 static int log10func(int argc, char** argv)  {
 
   const char* shortopts = "vn:";
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2253,7 +2174,7 @@ static int dividefunc(int argc, char** argv)  {
   std::string numerator, denominator;
   float div_zero = -1;
   
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2310,7 +2231,7 @@ static void parseRunOptions(int argc, char** argv) {
   if (! (opt::module == "debug" || opt::module == "subsample" ||
 	 opt::module == "plot"  || opt::module == "roi" ||
 	 opt::module == "histogram" || opt::module == "log10" ||
-	 opt::module == "crop"  || opt::module == "umap" ||
+	 opt::module == "crop"  ||
 	 opt::module == "count" || opt::module == "clean" ||
 	 opt::module == "annotate" || opt::module == "convolve" ||
 	 opt::module == "flagset" || opt::module == "markcheck" || 
@@ -2352,7 +2273,7 @@ static int roifunc(int argc, char** argv) {
   const char* shortopts = "vr:m:";
   bool blacklist = true;
   float micron_per_pixel = 0;
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2431,7 +2352,7 @@ static int viewfunc(int argc, char** argv) {
   bool listmarkers = false; // list markers as newline separated
   std::string cut; // list of markers, csv separated, to cut on
   
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2508,7 +2429,7 @@ static int histogramfunc(int argc, char** argv) {
   int n_bins = 50;
   int w_bins = 50;
   
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2544,7 +2465,7 @@ static int plotfunc(int argc, char** argv) {
   int length = 50;
   int width = 50;
   
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2578,7 +2499,7 @@ static int plotfunc(int argc, char** argv) {
 
 static int headfunc(int argc, char** argv) {
   const char* shortopts = "vn:";
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2631,7 +2552,7 @@ static int headfunc(int argc, char** argv) {
    int samplenum = -1;
    std::string tmpstring;
    std::string samplestring;
-   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+   for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
      std::istringstream arg(optarg != NULL ? optarg : "");
      switch (c) {
      case 'v' : opt::verbose = true; break;
@@ -2689,7 +2610,7 @@ static int headfunc(int argc, char** argv) {
    const char* shortopts = "vn:s:r:";
   float rate = 0;
 
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2747,7 +2668,7 @@ static int pearsonfunc(int argc, char** argv) {
   const char* shortopts = "vjs";
   bool sorted = false;
   bool csv_print = false;
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2782,7 +2703,7 @@ static int pearsonfunc(int argc, char** argv) {
 static int cropfunc(int argc, char** argv) {
   const char* shortopts = "vc:";
   std::string cropstring;
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2845,7 +2766,7 @@ static int spatialfunc(int argc, char** argv) {
   int n = 10;
   int d = -1;
 
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -2887,7 +2808,7 @@ static int spatialfunc(int argc, char** argv) {
  // static int trimfunc(int argc, char** argv) {
  //   const char* shortopts = "v";
    
- //   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+ //   for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
  //     std::istringstream arg(optarg != NULL ? optarg : "");
  //     switch (c) {
  //     case 'v': opt::verbose = true; break;
@@ -2950,7 +2871,7 @@ static int spatialfunc(int argc, char** argv) {
    std::vector<SelectionUnit> selections;
    selections.push_back(SelectionUnit());
    
-   for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+   for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
      std::istringstream arg(optarg != NULL ? optarg : "");
      switch (c) {
      case 'v': opt::verbose = true; break;
@@ -3111,7 +3032,7 @@ static int phenofunc(int argc, char** argv) {
   std::string file;
   float scale = 1;
   float random_scale = 0;
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -3184,7 +3105,7 @@ static int radialdensfunc(int argc, char** argv) {
   bool normalize_global = false; // normalize to cells count in slide
   std::string file;
 
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -3348,7 +3269,7 @@ static void cyftools_cat(const StringVec& inputFiles, const std::string& outputF
 
   std::string file;
 
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -3395,7 +3316,7 @@ static void cyftools_cat(const StringVec& inputFiles, const std::string& outputF
  
 int debugfunc(int argc, char** argv) {
   const char* shortopts = "v";
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -3424,7 +3345,7 @@ static int convertfunc(int argc, char** argv) {
   std::string units;
   std::string microns_to_pixels;
 
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 's' : arg >> sampleid; break;
@@ -3477,7 +3398,7 @@ static int delaunayfunc(int argc, char** argv) {
   std::string delaunay;
   std::string voronoi;
   int limit = -1;
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 't' : arg >> opt::threads; break;
@@ -3531,7 +3452,7 @@ static int sortfunc(int argc, char** argv) {
   bool xy = false;
   std::string field;
   bool reverse = false;
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'y' : xy = true; break;
@@ -3589,7 +3510,7 @@ static int sortfunc(int argc, char** argv) {
 static int countfunc(int argc, char** argv) {
   
   const char* shortopts = "v";
-  for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
@@ -3719,10 +3640,3 @@ static bool out_only_process(int argc, char** argv) {
   return opt::outfile.empty();
 
 }
-
- Polygon::Polygon(const std::vector<JPoint>& vec) {
-   Id = -1;
-   Name = "na";
-   type = "na";
-   vertices = vec;
- }

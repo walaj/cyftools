@@ -3,6 +3,7 @@
 #include "cell_utils.h"
 #include "cell_flag.h"
 #include "cell_selector.h"
+#include "cyf_flags.h"   // standard @FL flag-bit declarations
 
 #include "cell_row.h"
 
@@ -1508,15 +1509,18 @@ int CerealProcessor::ProcessHeader(CellHeader& header) {
   m_header = header;
 
   m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
-  
+
+  // declare the standard cflag bit meanings so the file is self-describing
+  cyf::addStandardFlagTags(m_header);
+
   assert(!m_filename.empty());
 
-  // set the output to file or stdout
+  // set the output to file or stdout (cereal or CYF, per cyf::useCyfOutput())
   if (m_filename == "-") {
-    m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(std::cout);
+    m_archive = std::make_unique<OutArchive>(std::cout);
   } else {
     m_os = std::make_unique<std::ofstream>(m_filename, std::ios::binary);
-    m_archive = std::make_unique<cereal::PortableBinaryOutputArchive>(*m_os);
+    m_archive = std::make_unique<OutArchive>(*m_os);
   }
 
   m_header.SortTags();
