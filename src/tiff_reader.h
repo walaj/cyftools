@@ -1,3 +1,4 @@
+#include <cstdint>
 #ifndef TIFF_READER_H
 #define TIFF_READER_H
 

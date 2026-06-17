@@ -1,3 +1,4 @@
+#include <cstdint>
 #ifdef HAVE_TIFFLIB
 #ifndef TIFF_COPY_H
 #define TIFF_COPY_H

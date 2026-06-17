@@ -84,22 +84,24 @@ from stdin / to stdout so commands can be piped.
 one column per marker):
 
 ```sh
-cyftools convert cells.csv cells.bcyf -s 1       # -s = sample id
+cyftools convert cells.csv cells.byf -s 1       # -s = sample id
 ```
 
-cyftools has two file forms, mirroring SAM/BAM: **`.cyf`** is the human-readable
-tab-delimited text form (the SAM analog), and **`.bcyf`** is the BGZF-compressed
-binary form (the BAM analog — compact, and readable by `zcat`/`bgzip`). Reads
-auto-detect the form, so you don't have to tell the tools which is which.
+cyftools picks the output form from the file extension, mirroring SAM/BAM:
+**`.cyf`** is the human-readable tab-delimited text form (the SAM analog) and
+**`.byf`** is the BGZF-compressed binary form (the BAM analog — compact, and
+readable by `zcat`/`bgzip`). Reads auto-detect the form, so you don't have to
+tell the tools which is which. A third extension, **`.ocyf`**, denotes the legacy
+serialized form: it is read-only (for migrating old files) and is never written.
 
 **Look at it:**
 
 ```sh
-cyftools view -H cells.bcyf                        # header only (markers, provenance)
-cyftools view -R cells.bcyf | head                 # first rows as CSV
-cyftools count cells.bcyf                           # number of cells
-cyftools summary cells.bcyf                         # per-column min/max/mean
-cyftools view -l cells.bcyf                         # list marker names
+cyftools view -H cells.byf                        # header only (markers, provenance)
+cyftools view -R cells.byf | head                 # first rows as CSV
+cyftools count cells.byf                           # number of cells
+cyftools summary cells.byf                         # per-column min/max/mean
+cyftools view -l cells.byf                         # list marker names
 ```
 
 **Pipe commands together** (the samtools idiom — `-` is stdin/stdout):
@@ -115,9 +117,9 @@ cyftools convert cells.csv - -s 1 \
 **Subset columns and cells:**
 
 ```sh
-cyftools cut cells.bcyf slim.cyf -x CD4,CD8,PD-1   # keep only these columns
-cyftools head -n 1000 cells.bcyf first1k.cyf       # first 1000 cells
-cyftools crop cells.bcyf box.cyf ...               # spatial crop to a bounding box
+cyftools cut cells.byf slim.cyf -x CD4,CD8,PD-1   # keep only these columns
+cyftools head -n 1000 cells.byf first1k.cyf       # first 1000 cells
+cyftools crop cells.byf box.cyf ...               # spatial crop to a bounding box
 ```
 
 **Combine samples:**
@@ -129,25 +131,26 @@ cyftools cat sampleA.cyf sampleB.cyf > cohort.cyf
 **Transform values / call phenotypes:**
 
 ```sh
-cyftools log10 cells.bcyf logged.cyf               # log10 marker intensities
-cyftools pheno cells.bcyf phenotyped.cyf ...        # gate markers into phenotype flags
+cyftools log10 cells.byf logged.cyf               # log10 marker intensities
+cyftools pheno cells.byf phenotyped.cyf ...        # gate markers into phenotype flags
 ```
 
 **Spatial analysis:**
 
 ```sh
-cyftools radialdens cells.bcyf dens.cyf ...         # neighbor density in radial rings
-cyftools margin cells.bcyf margin.cyf ...           # tumor/stroma boundary cells
-cyftools filter cells.bcyf - -M | cyftools dbscan - clusters.cyf   # cluster marked cells
-cyftools tls cells.bcyf tls.cyf                      # call tertiary lymphoid structures
-cyftools delaunay cells.bcyf graph.cyf ...           # Delaunay neighbor graph
+cyftools radialdens cells.byf dens.cyf ...         # neighbor density in radial rings
+cyftools margin cells.byf margin.cyf ...           # tumor/stroma boundary cells
+cyftools filter cells.byf - -M | cyftools dbscan - clusters.cyf   # cluster marked cells
+cyftools tls cells.byf tls.cyf                      # call tertiary lymphoid structures
+cyftools delaunay cells.byf graph.cyf ...           # Delaunay neighbor graph
 ```
 
 Run any command with no arguments to see its full help.
 
-> **Writing CYF vs. the legacy format.** During the format migration, output defaults to
-> the legacy (cereal) encoding; set `export CYFTOOLS_FORMAT=cyf` to write the new CYF
-> format. Reads auto-detect either format. See [`docs/CYF_INTEGRATION.md`](docs/CYF_INTEGRATION.md).
+> **Output form follows the extension.** Write `out.cyf` for text or `out.byf` for BGZF
+> binary; stdout (`-`) defaults to binary. The legacy `.ocyf` form is read-only — reads
+> auto-detect it, but writing `.ocyf` is refused. To migrate an old file, just convert it:
+> `cyftools clean old.ocyf new.byf`. See [`docs/CYF_INTEGRATION.md`](docs/CYF_INTEGRATION.md).
 
 ---
 
@@ -178,11 +181,11 @@ Every command reads a CYF stream and (mostly) writes one, so they compose. Group
 ## The CYF format in one paragraph
 
 A CYF file is a header followed by a stream of cell records. The header is a set of
-SAM-style tagged lines: `@VN` (version), `@SA` (sample), `@MA` (marker columns),
+SAM-style tagged lines: `@HD` (header/version), `@SA` (sample), `@MA` (marker columns),
 `@CA` (metadata columns), `@GA` (graph columns), `@FL` (flag-bit meanings), and `@PG`
 (the provenance chain). Each record carries an `id`, `x`/`y` coordinates, two 64-bit
 flag registers (`cflag`, `pflag`), and one typed value per data column. There are two
-on-disk forms (the SAM/BAM two-tier model): **`.cyf`** text and **`.bcyf`** binary, the
+on-disk forms (the SAM/BAM two-tier model): **`.cyf`** text and **`.byf`** binary, the
 latter being the explicit little-endian record stream wrapped in **BGZF** (blocked gzip,
 so it's `zcat`-readable and carries the virtual offsets needed for future indexing). The
 layout is readable from the spec by any language (a Python reference reader lives in

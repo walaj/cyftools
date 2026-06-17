@@ -1,5 +1,6 @@
 #include "cyf_io.h"
 
+#include <charconv>
 #include <cstdlib>
 #include <cstring>
 #include <sstream>
@@ -7,20 +8,19 @@
 
 namespace cyf {
 
-bool& useCyfOutput() {
-  static bool v = [] {
-    const char* e = std::getenv("CYFTOOLS_FORMAT");
-    return e && std::string(e) == "cyf";
-  }();
-  return v;
-}
-
-bool& useBgzfOutput() {
-  static bool v = [] {
-    const char* e = std::getenv("CYFTOOLS_BGZF");
-    return !(e && std::string(e) == "0");   // default ON
-  }();
-  return v;
+OutFormat formatForPath(const std::string& path) {
+  auto ends_with = [&](const char* suf) {
+    const std::string s(suf);
+    return path.size() >= s.size() &&
+           path.compare(path.size() - s.size(), s.size(), s) == 0;
+  };
+  if (ends_with(".byf")) return OutFormat::Binary;
+  if (ends_with(".cyf"))  return OutFormat::Text;
+  if (ends_with(".ocyf"))
+    throw std::runtime_error(
+        "refusing to write legacy cereal format: '" + path +
+        "' (.ocyf is read-only); convert to .cyf (text) or .byf (binary)");
+  return OutFormat::Binary;   // default for stdout '-' and unknown extensions
 }
 
 // ============================================================ LE primitives
@@ -174,9 +174,11 @@ static uint8_t tagTypeFromCode(const std::string& code) {
   if (code == "CA") return Tag::CA_TAG;
   if (code == "GA") return Tag::GA_TAG;
   if (code == "PG") return Tag::PG_TAG;
-  if (code == "VN") return Tag::VN_TAG;
+  if (code == "HD") return Tag::HD_TAG;
   if (code == "SA") return Tag::SA_TAG;
   if (code == "FL") return Tag::FL_TAG;
+  if (code == "IM") return Tag::IM_TAG;
+  if (code == "RO") return Tag::RO_TAG;
   throw std::runtime_error("CYF: unknown header tag class '" + code + "'");
 }
 
@@ -453,6 +455,74 @@ bool detectCyf(std::istream& src, std::unique_ptr<std::istream>& out) {
   auto buf = std::unique_ptr<std::streambuf>(new PrefixStreambuf(prefix, src));
   out.reset(new OwningIStream(std::move(buf)));
   return is_cyf;
+}
+
+bool detectText(std::istream& src, std::unique_ptr<std::istream>& out) {
+  char pre[1];
+  src.read(pre, 1);
+  std::streamsize n = src.gcount();
+  bool is_text = (n == 1 && pre[0] == '@');
+  auto buf = std::unique_ptr<std::streambuf>(new PrefixStreambuf(std::string(pre, (std::size_t)n), src));
+  out.reset(new OwningIStream(std::move(buf)));
+  return is_text;
+}
+
+// ============================================================ text form
+// The shortest decimal that round-trips a float (std::to_chars, C++17).
+static std::string fstr(float v) {
+  char buf[32];
+  auto r = std::to_chars(buf, buf + sizeof(buf), v);
+  return std::string(buf, r.ptr);
+}
+static void rstripCR(std::string& s) { if (!s.empty() && s.back() == '\r') s.pop_back(); }
+
+void CyfTextWriter::writeHeader(const CellHeader& h) {
+  m_ndcol = h.GetDataTags().size();
+  m_os << renderHeaderText(h);          // @-lines, tab-delimited, @HD first
+}
+
+void CyfTextWriter::writeCell(const Cell& c) {
+  m_os << c.id << '\t' << fstr(c.x) << '\t' << fstr(c.y) << '\t'
+       << (uint64_t)c.cflag << '\t' << (uint64_t)c.pflag;
+  for (float v : c.cols) m_os << '\t' << fstr(v);
+  m_os << '\n';
+}
+
+bool CyfTextReader::readHeader(CellHeader& h) {
+  std::string headerText, line;
+  while (std::getline(m_is, line)) {
+    rstripCR(line);
+    if (!line.empty() && line[0] == '@') { headerText += line; headerText += '\n'; }
+    else { m_pending = line; m_has_pending = true; break; }   // first data record
+  }
+  h = parseHeaderText(headerText);
+  m_ndcol = h.GetDataTags().size();
+  return true;
+}
+
+CyfTextReader::Status CyfTextReader::readCell(Cell& c) {
+  std::string line;
+  if (m_has_pending) { line = m_pending; m_has_pending = false; }
+  else { if (!std::getline(m_is, line)) return END; rstripCR(line); }
+  if (line.empty()) return END;
+
+  std::vector<std::string> f;
+  std::string cur;
+  std::istringstream ls(line);
+  while (std::getline(ls, cur, '\t')) f.push_back(cur);
+  if (f.size() < 5) return BADFORMAT;
+
+  try {
+    c.id    = std::stoull(f[0]);
+    c.x     = std::stof(f[1]);
+    c.y     = std::stof(f[2]);
+    c.cflag = (cy_uint)std::stoull(f[3]);
+    c.pflag = (cy_uint)std::stoull(f[4]);
+    c.cols.clear();
+    c.cols.reserve(f.size() - 5);
+    for (std::size_t i = 5; i < f.size(); ++i) c.cols.push_back(std::stof(f[i]));
+  } catch (const std::exception&) { return BADFORMAT; }
+  return OK;
 }
 
 } // namespace cyf

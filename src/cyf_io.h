@@ -50,17 +50,18 @@ static constexpr uint64_t      EOF_SENTINEL_ID = 0x00464F4501465943ULL;
 std::string  renderHeaderText(const CellHeader& h);
 CellHeader   parseHeaderText(const std::string& text);
 
-// Process-global output-format switch. Default false => write cereal (legacy);
-// true => write CYF. Initialized once from the environment variable
-// CYFTOOLS_FORMAT (value "cyf" selects CYF). Mutable so a CLI flag can set it.
-// Reading is always format-agnostic (auto-detected via detectCyf), so this only
-// affects what new files are written as.
-bool& useCyfOutput();
+// The two writable on-disk forms. Binary is always BGZF-framed (the .byf / BAM
+// analog); Text is the tab-delimited .cyf (SAM analog). The legacy cereal form is
+// read-only (see InArchive) and is never written.
+enum class OutFormat { Text, Binary };
 
-// BGZF-compress CYF binary output (the .bcyf / BAM analog). Default true; set env
-// CYFTOOLS_BGZF=0 to write the uncompressed binary instead. Only applies when CYF
-// output is selected; reads always auto-detect compression from the gzip magic.
-bool& useBgzfOutput();
+// Select the output format from a path's extension:
+//   .cyf  -> Text      .byf -> Binary
+//   .ocyf -> throws    (legacy cereal is read-only; convert to .cyf or .byf)
+//   anything else (incl. "-"/stdout) -> Binary (the default)
+// Reading is always content-detected (text '@', BGZF magic, CYF magic, else
+// cereal), so the input extension is advisory only.
+OutFormat formatForPath(const std::string& path);
 
 // ---------------------------------------------------------------- Writer
 class CyfWriter {
@@ -134,5 +135,37 @@ private:
 //
 // The returned istream keeps a reference to `src`; `src` must outlive *out.
 bool detectCyf(std::istream& src, std::unique_ptr<std::istream>& out);
+
+// ---------------------------------------------------------------- text form
+// The CYF text format (the SAM analog): the @-line header followed by one
+// tab-delimited record per line — id, x, y, cflag, pflag, then one field per data
+// column (header order). Round-trips with the binary form.
+
+class CyfTextWriter {
+public:
+  explicit CyfTextWriter(std::ostream& os) : m_os(os) {}
+  void writeHeader(const CellHeader& h);
+  void writeCell(const Cell& c);
+private:
+  std::ostream& m_os;
+  std::size_t   m_ndcol = 0;
+};
+
+class CyfTextReader {
+public:
+  enum Status { OK, END, BADFORMAT };
+  explicit CyfTextReader(std::istream& is) : m_is(is) {}
+  bool   readHeader(CellHeader& h);
+  Status readCell(Cell& c);
+private:
+  std::istream& m_is;
+  std::size_t   m_ndcol = 0;
+  std::string   m_pending;       // first record line, read while scanning the header
+  bool          m_has_pending = false;
+};
+
+// True if `src` begins with '@' (the CYF text header). Replays the peeked bytes
+// into *out, like detectCyf.
+bool detectText(std::istream& src, std::unique_ptr<std::istream>& out);
 
 } // namespace cyf

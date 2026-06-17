@@ -1,3 +1,4 @@
+#include <cstdint>
 #ifndef CELL_GRAPH_H
 #define CELL_GRAPH_H
 

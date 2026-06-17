@@ -1,0 +1,20 @@
+{
+  "_comment": "Optional cohort viewer preferences. All keys optional. Load alongside a cohort.json via ?config=cohort.config.json (or drag it onto the page).",
+
+  "group_colors": {
+    "tdpMMR": "#beaed4",
+      "tipMMR": "#5ab4ac",
+      "dMMR": "#fdc086"
+  },
+
+  "default_metric": "density",
+
+  "default_compartment": "Tumor",
+
+  "export": {
+    "format": "png",
+    "width": 1100,
+    "height": 700,
+    "scale": 2
+  }
+}

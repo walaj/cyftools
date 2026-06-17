@@ -35,3 +35,10 @@ spadf
 *.cdl
 *.spa
 build
+
+# viewer / packs / python artifacts
+*.cyfv
+*.byf
+__pycache__/
+*.pyc
+cyfview-cache/

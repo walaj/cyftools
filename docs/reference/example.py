@@ -2,7 +2,7 @@ import cyf, struct, math
 
 # ---- Build a small, representative sample -------------------------------
 header = cyf.Header([
-    cyf.Tag("VN", {"VN": "1.0", "SO": "unsorted"}),
+    cyf.Tag("HD", {"VN": "1.0", "SO": "unsorted"}),
     cyf.Tag("SA", {"ID": "S1", "SM": "tonsil_01", "PA": "Orion"}),
     # markers (float columns)
     cyf.Tag("MA", {"ID": "DAPI", "TY": "f", "CH": "1"}),
@@ -13,7 +13,7 @@ header = cyf.Header([
     # graph: a typed array column (neighbor ids)
     cyf.Tag("GA", {"ID": "knn_ids", "TY": "B", "KD": "knn", "K": "3"}),
     # self-describing flags (replaces the #define soup)
-    cyf.Tag("FL", {"RG": "cflag", "BI": "0", "ID": "TUMOR"}),
+    cyf.Tag("FL", {"RG": "cflag", "BI": "0", "ID": "TUMOR"}),  # self-describing flag bit
     cyf.Tag("FL", {"RG": "pflag", "BI": "1", "ID": "CD3pos"}),
     # provenance chain
     cyf.Tag("PG", {"ID": "pg1", "PN": "cyftools", "VN": "2.0", "CL": "convert in.csv"}),

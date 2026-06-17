@@ -17,22 +17,22 @@ std::ostream& operator<<(std::ostream& os, const Tag& tag) {
   case Tag::CA_TAG: ttype = "CA"; break;
   case Tag::GA_TAG: ttype = "GA"; break;
   case Tag::PG_TAG: ttype = "PG"; break;
-  case Tag::VN_TAG: ttype = "VN"; break;
+  case Tag::HD_TAG: ttype = "HD"; break;
   case Tag::SA_TAG: ttype = "SA"; break;
   case Tag::FL_TAG: ttype = "FL"; break;
+  case Tag::IM_TAG: ttype = "IM"; break;
+  case Tag::RO_TAG: ttype = "RO"; break;
   default:
     throw std::runtime_error("Unknown tag type with uint8_t value: " + std::to_string(tag.type));
   }
   os << "@" << ttype;
 
-  if (ttype != "PG")
+  if (!tag.id.empty())
     os << "\tID:" << tag.id;
-  
-  //if (ttype == "MA" || ttype == "CA")
-  //  os << "\tIN:" << tag.i;
-  
-  os << "\t" << tag.data;
-  
+
+  if (!tag.data.empty())
+    os << "\t" << tag.data;
+
   return os;
 }
 
@@ -43,6 +43,27 @@ void CellHeader::ClearMeta() {
 			    [](const Tag& t) { return t.type == Tag::CA_TAG; }), 
 	     tags.end());
   
+}
+
+void CellHeader::EnsureHeaderLine(const std::string& version) {
+  for (const auto& t : tags)
+    if (t.type == Tag::HD_TAG)
+      return;                                  // already present
+  Tag hd(Tag::HD_TAG, "", "VN:" + version + "\tSO:unsorted");
+  tags.insert(tags.begin(), hd);               // front, so it is the first line
+}
+
+std::string CellHeader::GetHeaderField(const std::string& key) const {
+  for (const auto& t : tags)
+    if (t.type == Tag::HD_TAG)
+      return t.GetField(key);
+  return "";
+}
+
+void CellHeader::SetHeaderField(const std::string& key, const std::string& value) {
+  EnsureHeaderLine();
+  // @HD has an empty id, so this merges the field into the existing @HD line.
+  UpsertTag(Tag(Tag::HD_TAG, "", key + ":" + value));
 }
 
 std::vector<Tag> CellHeader::GetDataTags() const {
@@ -60,8 +81,9 @@ std::vector<Tag> CellHeader::GetInfoTags() const {
   std::vector<Tag> info_tags;
   for (const auto& t : tags)
     if (t.type == Tag::GA_TAG || t.type == Tag::PG_TAG ||
-	t.type == Tag::VN_TAG || t.type == Tag::SA_TAG ||
-	t.type == Tag::FL_TAG)
+	t.type == Tag::HD_TAG || t.type == Tag::SA_TAG ||
+	t.type == Tag::FL_TAG || t.type == Tag::IM_TAG ||
+	t.type == Tag::RO_TAG)
       info_tags.push_back(t);
       
   return info_tags;
@@ -71,6 +93,9 @@ void CellHeader::SortTags() {
 
   // we are using the order provided by the tag definitions
   std::sort(tags.begin(), tags.end(), [](const Tag &a, const Tag &b) {
+    // @HD (the format/version line) is always first
+    if ((a.type == Tag::HD_TAG) != (b.type == Tag::HD_TAG))
+      return a.type == Tag::HD_TAG;
     if (a.type != b.type)
       return a.type < b.type;
     return a.i < b.i;
@@ -158,6 +183,45 @@ void CellHeader::addTag(const Tag& tag) {
 
   // make sure tags are sorted
   SortTags();
+}
+
+void CellHeader::UpsertTag(const Tag& tag) {
+
+  // find an existing tag of the same class + id and merge into it
+  for (auto& t : tags) {
+    if (t.type == tag.type && t.id == tag.id) {
+
+      // collect KEY:VALUE tokens: existing first (order preserved), then the new
+      // ones, which override a matching KEY or append at the end.
+      std::vector<std::pair<std::string, std::string>> kv;  // (key, "KEY:VALUE")
+      auto absorb = [&kv](const std::string& blob) {
+        size_t start = 0;
+        while (start <= blob.size()) {
+          size_t end = blob.find('\t', start);
+          std::string tok = (end == std::string::npos) ? blob.substr(start)
+                                                       : blob.substr(start, end - start);
+          if (!tok.empty()) {
+            std::string key = tok.substr(0, tok.find(':'));
+            bool found = false;
+            for (auto& p : kv) if (p.first == key) { p.second = tok; found = true; break; }
+            if (!found) kv.emplace_back(key, tok);
+          }
+          if (end == std::string::npos) break;
+          start = end + 1;
+        }
+      };
+      absorb(t.data);     // existing fields
+      absorb(tag.data);   // new fields override
+
+      std::string merged;
+      for (size_t i = 0; i < kv.size(); ++i) { if (i) merged += "\t"; merged += kv[i].second; }
+      t.data = merged;
+      return;
+    }
+  }
+
+  // none matched: append a fresh tag (info tags sort by class with i = -1)
+  tags.push_back(tag);
 }
 
 std::ostream& operator<<(std::ostream& os, const CellHeader& h) {
@@ -281,8 +345,10 @@ Tag::Tag(const std::string& line) {
     else if (token.substr(1) == "CA") { type = Tag::CA_TAG; }
     else if (token.substr(1) == "PG") { type = Tag::PG_TAG; }
     else if (token.substr(1) == "SA") { type = Tag::SA_TAG; }
-    else if (token.substr(1) == "VN") { type = Tag::VN_TAG; }
+    else if (token.substr(1) == "HD") { type = Tag::HD_TAG; }
     else if (token.substr(1) == "FL") { type = Tag::FL_TAG; }
+    else if (token.substr(1) == "IM") { type = Tag::IM_TAG; }
+    else if (token.substr(1) == "RO") { type = Tag::RO_TAG; }
     else { throw std::runtime_error("Tag of type" + token.substr(1) + "not an allowed tag"); }
     
     ++it;
@@ -355,8 +421,24 @@ std::vector<CyfValueType> CellHeader::ColumnTypes() const {
 
 void CellHeader::CleanProgramTags() {
   // remove PG tags
-  tags.erase(std::remove_if(tags.begin(), tags.end(), 
-			    [](const Tag& t) { return t.type == Tag::PG_TAG; }), 
+  tags.erase(std::remove_if(tags.begin(), tags.end(),
+			    [](const Tag& t) { return t.type == Tag::PG_TAG; }),
 	     tags.end());
-  
+
+}
+
+size_t CellHeader::RemoveRoiTags(const std::string& name_filter, long sample_filter) {
+  const size_t before = tags.size();
+  tags.erase(std::remove_if(tags.begin(), tags.end(),
+    [&](const Tag& t) {
+      if (t.type != Tag::RO_TAG) return false;
+      if (!name_filter.empty() && t.GetField("NM").find(name_filter) == std::string::npos)
+        return false;
+      if (sample_filter >= 0) {
+        try { if (std::stol(t.GetField("SA")) != sample_filter) return false; }
+        catch (...) { return false; }
+      }
+      return true;   // matches -> remove
+    }), tags.end());
+  return before - tags.size();
 }

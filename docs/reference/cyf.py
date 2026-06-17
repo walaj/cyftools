@@ -21,7 +21,7 @@ FIXED = {
 
 # ---------------------------------------------------------------- header model
 class Tag:
-    def __init__(self, cls, fields):  # cls in {VN,SA,MA,CA,GA,FL,PG}; fields = dict (ordered)
+    def __init__(self, cls, fields):  # cls in {HD,SA,MA,CA,GA,FL,PG}; fields = dict (ordered)
         self.cls = cls
         self.fields = dict(fields)
     def to_text(self):

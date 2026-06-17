@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>cyfview — CYF viewer</title>
+<script src="https://unpkg.com/deck.gl@9.0.38/dist.min.js"></script>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#c9d1d9; --accent:#58a6ff; --gate:#ffd60a; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+              font:13px/1.45 -apple-system,Segoe UI,Roboto,sans-serif; overflow:hidden; }
+  #deck-canvas { position:absolute; inset:0; width:100%; height:100%; }
+  #panel { position:absolute; top:0; right:0; width:424px; height:100%; overflow-y:auto;
+           background:var(--panel); border-left:1px solid var(--line); padding:14px; z-index:5; }
+  #panel h1 { font-size:15px; margin:0 0 2px; } #panel .sub { color:#8b949e; font-size:11px; margin-bottom:12px; }
+  .sec { border-top:1px solid var(--line); padding:11px 0; }
+  .sec h2 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#8b949e; margin:0 0 8px; }
+  label { display:block; margin:5px 0 3px; color:#8b949e; font-size:11px; }
+  select,input[type=text],input[type=number] { width:100%; background:#0d1117; color:var(--fg);
+           border:1px solid var(--line); border-radius:6px; padding:5px 7px; font-size:12px; }
+  input[type=range] { width:100%; }
+  .row { display:flex; gap:6px; align-items:center; } .row > * { flex:1; }
+  button { background:#21262d; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:6px 9px; cursor:pointer; font-size:12px; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#06101f; border-color:var(--accent); font-weight:600; }
+  button.tg.on { background:var(--accent); color:#06101f; border-color:var(--accent); }
+  button.tg.gate.on { background:var(--gate); color:#1a1500; border-color:var(--gate); }
+  canvas.plot { display:block; width:100%; background:#0d1117; border:1px solid var(--line); border-radius:6px; margin-top:6px; }
+  .grp { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:#6e7681; margin:9px 0 3px; }
+  .chrow { display:flex; align-items:center; gap:8px; padding:4px 5px; border-radius:6px; cursor:pointer; }
+  .chrow:hover { background:#1c2230; } .chrow.sel { background:#1f2937; outline:1px solid var(--line); }
+  .chrow input { flex:0 0 auto; } .chrow .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gdot { width:8px; height:8px; border-radius:50%; background:var(--gate); flex:0 0 auto; }
+  .pf { flex:0 0 auto; font-size:13px; line-height:1; color:#6e7681; }
+  .pf.on { color:var(--gate); text-shadow:0 0 5px rgba(255,214,10,.6); }
+  .qrow { display:flex; align-items:center; gap:6px; margin:3px 0; font-size:11px; }
+  .qlab { flex:0 0 92px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .qbar { flex:1; height:11px; background:#0d1117; border:1px solid var(--line); border-radius:3px; overflow:hidden; }
+  .qbar > span { display:block; height:100%; }
+  .qval { flex:0 0 92px; text-align:right; color:#8b949e; }
+  .sw { width:13px; height:13px; border-radius:3px; flex:0 0 auto; border:1px solid #0006; }
+  .sw-row { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; } .sw-row .sw { width:18px; height:18px; cursor:pointer; }
+  .bc { background:#10151d; border:1px solid var(--line); border-radius:8px; padding:9px; margin:4px 0 8px; }
+  .roi { display:flex; align-items:center; gap:7px; padding:3px 0; } .roi input { flex:0 0 auto; }
+  .roi span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .muted { color:#8b949e; font-size:11px; } .hint { color:#6e7681; font-size:10px; margin-top:5px; }
+  #drop { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; z-index:10; background:rgba(13,17,23,.85); text-align:center; }
+  #drop.hidden { display:none; } #drop .big { font-size:20px; font-weight:600; }
+  #tooltip { position:absolute; z-index:20; pointer-events:none; background:#000a; color:#fff; border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:11px; white-space:pre; display:none; }
+  #stat { color:#8b949e; font-size:11px; }
+</style>
+</head>
+<body>
+<canvas id="deck-canvas"></canvas>
+<div id="tooltip"></div>
+
+<div id="drop">
+  <div class="big">cyfview</div>
+  <div class="muted">drop a <b>.byf</b> file here, or</div>
+  <button class="primary" onclick="document.getElementById('file').click()">Choose .byf file</button>
+  <input id="file" type="file" accept=".byf,.cyf,.ocyf,.cyfv,application/octet-stream" style="display:none" />
+  <div class="hint">tip: <code>python3 viewer/view.py cells.byf</code> opens a file directly</div>
+</div>
+
+<div id="panel">
+  <h1>cyfview</h1>
+  <div class="sub" id="stat">no file loaded</div>
+
+  <div class="sec">
+    <h2>Channels &nbsp;<span class="muted" id="chCount">0 / 5</span></h2>
+    <div id="chList"></div>
+    <div class="hint">click a channel to expand · white handles = color window · <span style="color:var(--gate)">yellow</span> = gate (cells above get a ring)</div>
+  </div>
+
+  <div class="sec">
+    <h2>2D flow gate</h2>
+    <div class="row"><select id="xMarker"></select><select id="yMarker"></select></div>
+    <div class="row" style="margin-top:5px">
+      <button id="x2log" class="tg on">log x</button><button id="y2log" class="tg on">log y</button>
+      <button id="snap2" title="snap both gates to the baked phenotype gate">&phi; snap</button></div>
+    <canvas id="flow" class="plot" width="392" height="288" style="cursor:crosshair"></canvas>
+    <div class="muted">drag the crosshair (= the two channel gates); <span style="color:var(--gate)">dashed</span> = baked phenotype gate</div>
+    <div class="row" style="margin-top:8px"><label style="flex:0 0 auto;margin:0">ring on map:</label>
+      <select id="quadMode" style="flex:1">
+        <option value="dp">double-positive (X+ Y+)</option>
+        <option value="xp">X+ only</option>
+        <option value="yp">Y+ only</option>
+        <option value="single">any single-positive</option>
+        <option value="dn">double-negative (X&minus; Y&minus;)</option>
+        <option value="diff">changed vs &phi;-gate (differential)</option>
+        <option value="off">nothing</option>
+      </select></div>
+    <div id="quad" style="margin-top:9px"></div>
+  </div>
+
+  <div class="sec">
+    <h2>Regions (@RO)</h2>
+    <div class="roi"><input type="checkbox" id="roiAll" checked onchange="toggleAllRoi()"><span><b>show all</b></span></div>
+    <div id="rois"></div>
+    <div class="muted" id="noroi" style="display:none">none in this file</div>
+
+    <div id="roi-xform" style="display:none; margin-top:10px; border-top:1px solid var(--line); padding-top:9px;">
+      <div class="grp">Align ROIs (live preview — does not change the file)</div>
+      <div class="row">
+        <div><label>scale</label><input id="rxscale" type="number" step="any" value="1"></div>
+        <div><label>x offset</label><input id="rxox" type="number" step="any" value="0"></div>
+        <div><label>y offset</label><input id="rxoy" type="number" step="any" value="0"></div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="rxfx" class="tg">flip x</button>
+        <button id="rxfy" class="tg">flip y</button>
+        <button id="rxreset">reset</button>
+      </div>
+      <div class="hint" id="rxhint"></div>
+      <label style="margin-top:7px">bake into the .byf (edit the in/out names):</label>
+      <textarea id="rxcmd" readonly rows="2" style="width:100%; background:#0d1117; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:5px 7px; font:11px/1.4 Menlo,Consolas,monospace; resize:vertical;"></textarea>
+      <div class="row" style="margin-top:5px"><button id="rxcopy" class="primary" style="flex:0 0 auto">copy command</button><span class="hint" id="rxcopied" style="flex:1"></span></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>cflag region overlay</h2>
+    <div class="muted">paint a semi-transparent region from a cflag combo (AND-ed). cflag = region flags.</div>
+    <div id="cflagChips" style="display:flex; flex-wrap:wrap; gap:5px; margin-top:7px;"></div>
+    <div class="muted" id="nocflag" style="display:none">no cflag bits declared in this file</div>
+    <label style="margin-top:8px">paint radius: <span id="regrv">20</span></label>
+    <input id="regRadius" type="range" min="1" max="200" step="1" value="20">
+    <label>opacity: <span id="regov">0.30</span></label>
+    <input id="regOpacity" type="range" min="0.05" max="1" step="0.05" value="0.3">
+    <div class="row" style="margin-top:7px"><span class="hint" id="regInfo" style="flex:1"></span>
+      <button id="regClear" style="flex:0 0 auto">clear</button></div>
+  </div>
+
+  <div class="sec">
+    <h2>Display</h2>
+    <label>point size: <span id="psv">2.0</span></label>
+    <input id="psize" type="range" min="0.5" max="8" step="0.5" value="2" oninput="psv.textContent=(+this.value).toFixed(1); render()">
+    <label>opacity: <span id="pov">0.9</span></label>
+    <input id="popacity" type="range" min="0.05" max="1" step="0.05" value="0.9" oninput="pov.textContent=(+this.value).toFixed(2); refresh()">
+    <label>gate ring size: <span id="rsv">6</span></label>
+    <input id="ringSize" type="range" min="2" max="16" step="1" value="6" oninput="rsv.textContent=this.value; render()">
+    <div class="row" style="margin-top:9px"><button onclick="fitView()">Reset view</button>
+      <button onclick="document.getElementById('file').click()">Load file…</button></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+let DATA=null, POS=null, COLORS=null, COLORVER=0, MM={}, deckgl=null;
+let RX={ scale:1, ox:0, oy:0, fx:false, fy:false }, RXVER=0;   // ROI alignment transform (preview)
+let REGSEL=new Set(), REGION=null, REGVER=0;   // painted cflag-region overlay
+const REGION_COLOR=[90,180,255];
+// fallback cflag names (cysift.h vocabulary) when the file has no @FL cflag tags
+const CFLAG_NAMES={0:'Tumor',1:'Mark',2:'Margin',3:'TumorManual',4:'Tcell',5:'TLS',
+  6:'MarginManual',7:'Normal',8:'NormalMargin',9:'Artifact',12:'Gleason1',13:'Gleason2',
+  14:'Gleason3',15:'Gleason4',16:'Gleason5',17:'Perineural',18:'SeminalVes',21:'BuildGraph'};
+let GBUF=null, GCOUNT=0, GVER=0;       // gated-cell overlay buffer
+let viewState={ target:[0,0,0], zoom:0 };
+const $ = id => document.getElementById(id);
+const EPS=1e-6, HB=96, FB=150;
+
+// ---------- CYFV loader (docs/VIEWER_PACK.md, v3) ----------
+function loadCyfv(buf){
+  const dv=new DataView(buf);
+  const magic=String.fromCharCode(dv.getUint8(0),dv.getUint8(1),dv.getUint8(2),dv.getUint8(3));
+  if (magic!=="CYFV") throw new Error("not a CYFV pack (bad magic)");
+  const ver=dv.getUint16(4,true), N=Number(dv.getBigUint64(8,true)), M=dv.getUint32(16,true);
+  let o=20, names=[];
+  for (let i=0;i<M;i++){ const l=dv.getUint16(o,true); o+=2; names.push(new TextDecoder().decode(new Uint8Array(buf,o,l))); o+=l; }
+  let kinds=new Array(M).fill('M');
+  if (ver>=3){ for(let i=0;i<M;i++){ kinds[i]=String.fromCharCode(dv.getUint8(o)); o++; } }
+  o=(o+7)&~7;
+  const id=new BigUint64Array(buf,o,N); o+=N*8;
+  const x=new Float32Array(buf,o,N); o+=N*4;
+  const y=new Float32Array(buf,o,N); o+=N*4;
+  const cflag=new BigUint64Array(buf,o,N); o+=N*8;
+  const pflag=new BigUint64Array(buf,o,N); o+=N*8;
+  const markers={}; for (const n of names){ markers[n]=new Float32Array(buf,o,N); o+=N*4; }
+  const nRoi=dv.getUint32(o,true); o+=4; const rois=[];
+  for (let r=0;r<nRoi;r++){
+    const il=dv.getUint16(o,true);o+=2; const rid=new TextDecoder().decode(new Uint8Array(buf,o,il));o+=il;
+    const nl=dv.getUint16(o,true);o+=2; const nm=new TextDecoder().decode(new Uint8Array(buf,o,nl));o+=nl;
+    const np=dv.getUint32(o,true);o+=4; const pts=new Float32Array(buf.slice(o,o+np*8));o+=np*8;
+    const ring=[]; for (let k=0;k<np;k++) ring.push([pts[2*k],pts[2*k+1]]);
+    rois.push({ id:rid, name:nm, ring, visible:true });
+  }
+  const readFlags=()=>{ const fl=[]; const k=dv.getUint32(o,true); o+=4;
+    for(let i=0;i<k;i++){ const l=dv.getUint16(o,true);o+=2; const nm=new TextDecoder().decode(new Uint8Array(buf,o,l));o+=l; const bit=dv.getUint8(o);o++; fl.push({name:nm,bit}); } return fl; };
+  const pflags = ver>=4 ? readFlags() : [];
+  const cflags = ver>=5 ? readFlags() : [];
+  return { N, names, kinds, id, x, y, cflag, pflag, markers, rois, pflags, cflags };
+}
+
+// ---------- helpers ----------
+function colMinMax(a){ let mn=Infinity,mx=-Infinity; for(let i=0;i<a.length;i++){const v=a[i]; if(v<mn)mn=v; if(v>mx)mx=v;} return {min:mn,max:mx}; }
+function fmt(v){ return Math.abs(v)>=100? Math.round(v): (+(+v).toFixed(4)); }
+function tlog(v,on){ return on? Math.log10(Math.max(v,EPS)) : v; }
+function tinv(t,on){ return on? Math.pow(10,t) : t; }
+function fillMarkerSel(sel){ sel.innerHTML=''; DATA.names.forEach(n=> sel.appendChild(new Option(n,n))); }
+function hex2rgb(h){ const n=parseInt(h.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+function rgb2hex(c){ return '#'+c.map(v=>Math.round(v).toString(16).padStart(2,'0')).join(''); }
+function domainOf(m,log){ const r=MM[m]; let lo=tlog(log&&r.min<=0?EPS:r.min,log), hi=tlog(r.max,log); if(hi<=lo)hi=lo+1; return [lo,hi]; }
+const VIR=[[68,1,84],[59,82,139],[33,144,140],[93,201,99],[253,231,37]];
+function cmap(t){ t=Math.max(0,Math.min(1,t)); const s=t*(VIR.length-1),i=Math.floor(s),f=s-i; const a=VIR[i],b=VIR[Math.min(i+1,VIR.length-1)]; return [a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f,a[2]+(b[2]-a[2])*f]; }
+const binCache={};
+function getBins(m,log){ const key=m+'|'+log; if(binCache[key]) return binCache[key];
+  const arr=DATA.markers[m]; const [d0,d1]=domainOf(m,log), sp=(d1-d0)||1, bins=new Float32Array(HB);
+  for(let i=0;i<arr.length;i++){ let t=(tlog(arr[i],log)-d0)/sp; if(t<0)t=0; else if(t>=1)t=0.999999; bins[(t*HB)|0]++; }
+  return binCache[key]={bins,d0,d1}; }
+function autoWindow(m){ const arr=DATA.markers[m], {min,max}=MM[m], B=1024, sp=(max-min)||1, h=new Float32Array(B);
+  for(let i=0;i<arr.length;i++){ let t=(arr[i]-min)/sp; if(t<0)t=0; else if(t>=1)t=0.999999; h[(t*B)|0]++; }
+  const n=arr.length; let c=0, lo=min, hi=max, got=false; const plo=0.01*n, phi=0.99*n;
+  for(let b=0;b<B;b++){ c+=h[b]; if(!got&&c>=plo){ lo=min+b/B*sp; got=true; } if(c>=phi){ hi=min+(b+1)/B*sp; break; } }
+  if(hi<=lo) hi=lo+(sp/B||1); return [lo,hi]; }
+
+// ---------- channel model ----------
+const CHCOLORS=[[80,180,255],[80,225,120],[255,90,90],[230,210,70],[210,110,235],[80,225,225],[255,150,60],[235,235,235]];
+let channels=[];   // {name,kind,on,color[3],low,high,log,gateOn,gate,_win}
+let selCh=-1; const MAXON=5;
+let x2log=true, y2log=true, flowMeta=null, flowImg=null;
+function nOn(){ return channels.reduce((a,c)=>a+(c.on?1:0),0); }
+function chByName(nm){ return channels.find(c=>c.name===nm); }
+function xCh(){ return chByName($('xMarker').value); }
+function yCh(){ return chByName($('yMarker').value); }
+// lazily compute a channel's contrast window + phenotype gate, defaulting the gate
+// to the pflag-baked value (or the window high). Run once per channel.
+function ensureChannel(c){ if(!c||c._init) return; c._init=true;
+  computePflagGate(c); const [lo,hi]=autoWindow(c.name); c.low=lo; c.high=hi;
+  c.gate=(c.pgate&&c.pgate.value!=null)? c.pgate.value : hi; }
+// the phenotype gate: lowest marker value among cells whose pflag bit is set
+function computePflagGate(c){ if(c.pbit<0){ c.pgate=null; return; }
+  const mask=1n<<BigInt(c.pbit), arr=DATA.markers[c.name], pf=DATA.pflag; let mn=Infinity, n=0;
+  for(let i=0;i<DATA.N;i++){ if(pf[i]&mask){ n++; const v=arr[i]; if(v<mn)mn=v; } }
+  c.pgate = n? { value:mn, n } : { value:null, n:0 }; }
+function updatePInfo(c){ const el=$('chPInfo'); if(!el) return;
+  if(c.pbit<0){ el.textContent='set a pflag bit to read its gate'; return; }
+  if(!c.pgate||c.pgate.value==null){ el.textContent='no cells with bit '+c.pbit; return; }
+  el.innerHTML=`pheno gate <b style="color:var(--gate)">${fmt(c.pgate.value)}</b> · ${c.pgate.n.toLocaleString()} cells`; }
+
+// ---------- additive recolor ----------
+function recolor(){
+  if (!DATA) return; const N=DATA.N; COLORS=new Uint8Array(N*4); COLORVER++;
+  const baseA=Math.round((+$('popacity').value)*255);
+  const ch=channels.filter(c=>c.on).map(c=>{ const a0=tlog(c.low,c.log), a1=tlog(c.high,c.log); return { col:c.color, arr:DATA.markers[c.name], lo:a0, sp:(a1-a0)||1, log:c.log }; });
+  for (let i=0;i<N;i++){ let r,g,b;
+    if (ch.length===0){ r=58; g=66; b=80; }
+    else { r=g=b=0; for (const c of ch){ let t=(tlog(c.arr[i],c.log)-c.lo)/c.sp; if(t<0)t=0; else if(t>1)t=1; r+=c.col[0]*t; g+=c.col[1]*t; b+=c.col[2]*t; } if(r>255)r=255; if(g>255)g=255; if(b>255)b=255; }
+    const o=i*4; COLORS[o]=r;COLORS[o+1]=g;COLORS[o+2]=b;COLORS[o+3]=baseA; }
+}
+// The spatial overlay (yellow rings) is driven by the 2D plot: pick a quadrant
+// population relative to the X/Y crosshair gates, or 'diff' = cells that change
+// class as the crosshair moves off the baked phenotype (pflag) gate.
+function buildGated(){
+  if(!DATA) return; if(!GBUF) GBUF=new Float32Array(DATA.N*2);
+  let n=0; const sel=$('quadMode'); const mode=sel?sel.value:'dp';
+  const xc=xCh(), yc=yCh();
+  if(mode!=='off' && xc && yc){
+    ensureChannel(xc); ensureChannel(yc);
+    const ax=DATA.markers[xc.name], ay=DATA.markers[yc.name], xg=xc.gate, yg=yc.gate;
+    const diff=mode==='diff';
+    const bx=(diff&&xc.pgate)?xc.pgate.value:null, by=(diff&&yc.pgate)?yc.pgate.value:null;
+    for(let i=0;i<DATA.N;i++){
+      const X=ax[i]>=xg, Y=ay[i]>=yg; let hit=false;
+      if(diff){ const bX=bx!=null?ax[i]>=bx:X, bY=by!=null?ay[i]>=by:Y; hit=(X!==bX)||(Y!==bY); }
+      else if(mode==='dp') hit=X&&Y;
+      else if(mode==='xp') hit=X&&!Y;
+      else if(mode==='yp') hit=!X&&Y;
+      else if(mode==='single') hit=X!==Y;
+      else if(mode==='dn') hit=!X&&!Y;
+      if(hit){ GBUF[2*n]=DATA.x[i]; GBUF[2*n+1]=DATA.y[i]; n++; } }
+  }
+  GCOUNT=n; GVER++;
+}
+// quadrant counts for the 2D plot's two markers, relative to their crosshair gates
+function drawQuad(){
+  if(!DATA) return; const xc=xCh(), yc=yCh(); const box=$('quad'); if(!box) return;
+  if(!xc||!yc){ box.innerHTML=''; return; }
+  const xg=xc.gate, yg=yc.gate, ax=DATA.markers[xc.name], ay=DATA.markers[yc.name], N=DATA.N;
+  let dp=0,xp=0,yp=0,dn=0;
+  for(let i=0;i<N;i++){ const X=ax[i]>=xg, Y=ay[i]>=yg; if(X&&Y)dp++; else if(X)xp++; else if(Y)yp++; else dn++; }
+  const mx=Math.max(dp,xp,yp,dn,1);
+  const rows=[[`${xc.name}+ ${yc.name}+`,dp,'#ffd60a'],[`${xc.name}+ only`,xp,rgb2hex(xc.color)],
+              [`${yc.name}+ only`,yp,rgb2hex(yc.color)],['neither',dn,'#5a6270']];
+  box.innerHTML=rows.map(([lab,n,col])=>`<div class="qrow"><span class="qlab" title="${lab}">${lab}</span>`+
+    `<span class="qbar"><span style="width:${(n/mx*100).toFixed(1)}%;background:${col}"></span></span>`+
+    `<span class="qval">${n.toLocaleString()} · ${(n/N*100).toFixed(1)}%</span></div>`).join('');
+}
+let _rq=false;
+function refresh(){ recolor(); buildGated(); drawQuad(); render(); }
+function scheduleRefresh(){ if(_rq) return; _rq=true; requestAnimationFrame(()=>{ _rq=false; refresh(); }); }
+
+// ---------- spatial layers ----------
+function roiColor(i){ const p=[[255,214,10],[255,123,114],[126,231,135],[121,192,255],[255,160,255]]; return p[i%p.length]; }
+function makeLayers(){
+  if (!DATA) return [];
+  const layers=[];
+  // painted cflag region (a translucent backdrop under the cells)
+  if (REGION && REGION.canvas) layers.push(new deck.BitmapLayer({
+    id:'cflag-region', image:REGION.canvas, bounds:REGION.bounds,
+    opacity:+$('regOpacity').value, updateTriggers:{ image:REGVER } }));
+  layers.push(new deck.ScatterplotLayer({ id:'cells',
+    data:{ length:DATA.N, attributes:{ getPosition:{value:POS,size:2}, getFillColor:{value:COLORS,size:4,normalized:true} }},
+    radiusUnits:'pixels', getRadius:+$('psize').value, radiusMinPixels:0.4, radiusMaxPixels:60, stroked:false, pickable:true,
+    updateTriggers:{ getFillColor:COLORVER, getRadius:+$('psize').value } }));
+  const vis=DATA.rois.filter(r=>r.visible);
+  if (vis.length) layers.push(new deck.PolygonLayer({ id:'rois', data:vis,
+    getPolygon:d=>d.ring.map(roiXformPt),   // live alignment transform (preview)
+    stroked:true, filled:true,
+    getFillColor:[220,40,40,55],          // semi-transparent red fill
+    getLineColor:[120,0,0],               // dark red outline connecting the polygon dots
+    getLineWidth:1.8, lineWidthUnits:'pixels',
+    updateTriggers:{ getPolygon:RXVER } }));
+  if (GCOUNT>0) layers.push(new deck.ScatterplotLayer({ id:'gated',
+    data:{ length:GCOUNT, attributes:{ getPosition:{ value:GBUF.subarray(0,GCOUNT*2), size:2 } }},
+    radiusUnits:'pixels', getRadius:+$('ringSize').value, radiusMinPixels:2, stroked:true, filled:false,
+    getLineColor:[255,214,10], getLineWidth:1.5, lineWidthUnits:'pixels',
+    updateTriggers:{ getPosition:GVER, getRadius:+$('ringSize').value } }));
+  return layers;
+}
+function render(){ if (deckgl) deckgl.setProps({ layers: makeLayers() }); }
+
+// ---------- zoom/pan clamp ----------
+let VB=null;
+function viewport(){ return { W:Math.max(window.innerWidth-424,50), H:Math.max(window.innerHeight,50) }; }
+function fitZoom(){ const {W,H}=viewport(); return Math.log2(Math.min(W/VB.w, H/VB.h)); }
+// bound only the zoom (free pan); ~21 zoom levels around the framing -> generous but finite
+function clampZoom(vs){ if(!VB || !vs || typeof vs.zoom!=='number') return vs;
+  const z=Math.max(VB.ZMIN, Math.min(VB.ZMAX, vs.zoom));
+  return { ...vs, zoom:z, minZoom:VB.ZMIN, maxZoom:VB.ZMAX }; }
+function fitView(){ if(!DATA) return; const bx=colMinMax(DATA.x), by=colMinMax(DATA.y);
+  VB={ w:Math.max(bx.max-bx.min,1), h:Math.max(by.max-by.min,1) };
+  const fit=fitZoom(); VB.ZMIN=fit-3; VB.ZMAX=fit+18;
+  viewState={ target:[(bx.min+bx.max)/2,(by.min+by.max)/2,0], zoom:fit-0.12, minZoom:VB.ZMIN, maxZoom:VB.ZMAX };
+  deckgl.setProps({ viewState }); }
+
+// ---------- channel UI ----------
+function renderChannels(){
+  const box=$('chList'); let html='';
+  const groups=[['M','Markers'],['C','Calculated']];
+  for (const [k,title] of groups){
+    const items=channels.map((c,i)=>({c,i})).filter(o=>o.c.kind===k);
+    if(!items.length) continue;
+    html+=`<div class="grp">${title}</div>`;
+    for (const {c,i} of items){
+      html+=`<div class="chrow${i===selCh?' sel':''}" data-row="${i}">`+
+        `<input type="checkbox" ${c.on?'checked':''} data-on="${i}">`+
+        `<span class="sw" style="background:${rgb2hex(c.color)}"></span>`+
+        `<span class="name">${c.name}</span>`+
+        (c.pbit>=0?`<span class="pf${c.gateFromPflag?' on':''}" title="phenotype available (pflag bit ${c.pbit})${c.gateFromPflag?' — gate set from it':''}">&phi;</span>`:'')+
+        (c.gateOn?'<span class="gdot" title="gated"></span>':'')+`</div>`;
+      if(i===selCh) html+=bcHTML(c);
+    }
+  }
+  box.innerHTML=html;
+  $('chCount').textContent=nOn()+' / '+MAXON;
+  box.querySelectorAll('[data-on]').forEach(el=> el.onchange=e=>{ e.stopPropagation(); toggleChannel(+el.dataset.on, el.checked); });
+  box.querySelectorAll('[data-row]').forEach(el=> el.onclick=e=>{ if(e.target.tagName==='INPUT')return; const i=+el.dataset.row; selCh=(selCh===i?-1:i); renderChannels(); });
+  if(selCh>=0) wireBC();
+}
+function bcHTML(c){
+  return `<div class="bc">
+    <div class="row"><span class="muted" style="flex:1">${c.name} — window &amp; gate</span>
+      <input type="color" id="chColor" value="${rgb2hex(c.color)}" style="flex:0 0 30px;height:22px;padding:1px;background:#0d1117;border:1px solid var(--line);border-radius:6px">
+      <button id="chLogB" class="tg ${c.log?'on':''}" style="flex:0 0 38px">log</button></div>
+    <div id="swatches" class="sw-row"></div>
+    <canvas id="chHist" class="plot" width="392" height="90" style="cursor:ew-resize"></canvas>
+    <div class="row" style="margin-top:4px">
+      <div><label>low</label><input id="chLow" type="number" step="any" value="${fmt(c.low)}"></div>
+      <div><label>high</label><input id="chHigh" type="number" step="any" value="${fmt(c.high)}"></div>
+      <div><label>gate</label><input id="chGate" type="number" step="any" value="${fmt(c.gate)}"></div></div>
+    <div class="row" style="margin-top:6px">
+      <button id="chAuto">auto window</button>
+      <button id="chGateB" class="tg gate ${c.gateOn?'on':''}">gate ${c.gateOn?'ON':'off'}</button></div>
+    <div class="row" style="margin-top:8px;align-items:flex-end">
+      <div style="flex:0 0 60px"><label>pflag bit</label><input id="chPbit" type="number" min="0" max="63" value="${c.pbit>=0?c.pbit:''}" placeholder="—"></div>
+      <div style="flex:1" class="muted" id="chPInfo">—</div>
+      <button id="chSnap" class="tg gate" style="flex:0 0 auto" title="snap the gate to the phenotype's lowest marker value">&phi; snap</button>
+    </div>
+  </div>`;
+}
+function toggleChannel(i,on){
+  if (on && nOn()>=MAXON && !channels[i].on){ alert('Up to '+MAXON+' channels on at once.'); renderChannels(); return; }
+  channels[i].on=on;
+  if (on) ensureChannel(channels[i]);
+  if (on) selCh=i;
+  renderChannels(); refresh();
+}
+function wireBC(){
+  const c=channels[selCh];
+  const sw=$('swatches'); sw.innerHTML='';
+  CHCOLORS.forEach(col=>{ const b=document.createElement('span'); b.className='sw'; b.style.background=rgb2hex(col);
+    b.onclick=()=>{ c.color=col.slice(); $('chColor').value=rgb2hex(col); renderChannels(); refresh(); }; sw.appendChild(b); });
+  $('chColor').oninput=()=>{ c.color=hex2rgb($('chColor').value); drawChHist(); refresh(); };
+  $('chLogB').onclick=()=>{ c.log=!c.log; renderChannels(); refresh(); };
+  $('chLow').oninput =()=>{ c.low=+$('chLow').value; drawChHist(); scheduleRefresh(); };
+  $('chHigh').oninput=()=>{ c.high=+$('chHigh').value; drawChHist(); scheduleRefresh(); };
+  $('chGate').oninput=()=>{ c.gate=+$('chGate').value; c.gateOn=true; c.gateFromPflag=false; drawChHist(); scheduleRefresh(); };
+  $('chAuto').onclick=()=>{ const [lo,hi]=autoWindow(c.name); c.low=lo; c.high=hi; $('chLow').value=fmt(lo); $('chHigh').value=fmt(hi); drawChHist(); refresh(); };
+  $('chGateB').onclick=()=>{ c.gateOn=!c.gateOn; renderChannels(); refresh(); };
+  ensureChannel(c); computePflagGate(c); updatePInfo(c);
+  $('chPbit').oninput=()=>{ const v=$('chPbit').value.trim(); c.pbit = v===''?-1:Math.max(0,Math.min(63,Math.floor(+v)||0));
+    computePflagGate(c); updatePInfo(c); drawChHist(); };
+  $('chSnap').onclick=()=>{ if(!c.pgate||c.pgate.value==null){ alert(c.pbit<0?'Enter a pflag bit first.':'No cells have pflag bit '+c.pbit+'.'); return; }
+    c.gate=c.pgate.value; c.gateOn=true; c.gateFromPflag=true; renderChannels(); refresh(); };
+  $('chHist').onmousedown=chDown;
+  drawChHist();
+}
+function drawChHist(){
+  if(selCh<0) return; const c=channels[selCh];
+  const {bins,d0,d1}=getBins(c.name,c.log), cv=$('chHist'), ctx=cv.getContext('2d'), W=cv.width, H=cv.height, sp=(d1-d0)||1;
+  ctx.clearRect(0,0,W,H); let mx=0; for(const b of bins) if(b>mx)mx=b; const lm=Math.log10(mx+1)||1;
+  const lo=tlog(c.low,c.log), hi=tlog(c.high,c.log), gt=tlog(c.gate,c.log), hx=t=>(t-d0)/sp*W;
+  for(let i=0;i<HB;i++){ const h=(Math.log10(bins[i]+1)/lm)*(H-3), x=i/HB*W, w=W/HB+0.6, v0=d0+i/HB*sp;
+    ctx.fillStyle=(v0>=lo&&v0<=hi)?rgb2hex(c.color):'#39414d'; ctx.fillRect(x,H-h,w,h); }
+  ctx.strokeStyle='#fff'; ctx.lineWidth=1.5;
+  [lo,hi].forEach(t=>{ const x=Math.max(1,Math.min(W-1,hx(t))); ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); });
+  const gx=Math.max(1,Math.min(W-1,hx(gt)));
+  ctx.strokeStyle=c.gateOn?'#ffd60a':'#7a6a18'; ctx.lineWidth=2; ctx.setLineDash(c.gateOn?[]:[3,3]);
+  ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,H); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle=c.gateOn?'#ffd60a':'#7a6a18'; ctx.beginPath(); ctx.moveTo(gx-5,0); ctx.lineTo(gx+5,0); ctx.lineTo(gx,7); ctx.fill();
+  if(c.pgate && c.pgate.value!=null){ const px=Math.max(1,Math.min(W-1,hx(tlog(c.pgate.value,c.log))));
+    ctx.strokeStyle='rgba(255,214,10,.55)'; ctx.lineWidth=1; ctx.setLineDash([2,3]); ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,H); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='rgba(255,214,10,.85)'; ctx.font='9px sans-serif'; ctx.fillText('φ', px+2, H-2); }
+}
+let chDrag=null;
+function chPos(e){ const cv=$('chHist'), r=cv.getBoundingClientRect(); return (e.clientX-r.left)/r.width*cv.width; }
+function chVal(px){ const c=channels[selCh], {d0,d1}=getBins(c.name,c.log), W=$('chHist').width; return tinv(d0+px/W*(d1-d0),c.log); }
+function chDown(e){ if(selCh<0) return; const c=channels[selCh], {d0,d1}=getBins(c.name,c.log), sp=(d1-d0)||1, W=$('chHist').width, px=chPos(e);
+  const xlo=(tlog(c.low,c.log)-d0)/sp*W, xhi=(tlog(c.high,c.log)-d0)/sp*W, xg=(tlog(c.gate,c.log)-d0)/sp*W;
+  const dl=Math.abs(px-xlo), dh=Math.abs(px-xhi), dg=Math.abs(px-xg);
+  chDrag=(dg<=dl&&dg<=dh)?'gate':(dl<=dh?'lo':'hi'); chMove(e); }
+function chMove(e){ if(!chDrag||selCh<0) return; const c=channels[selCh]; let px=chPos(e); px=Math.max(0,Math.min($('chHist').width,px)); const v=chVal(px);
+  if(chDrag==='lo') c.low=Math.min(v,c.high);
+  else if(chDrag==='hi') c.high=Math.max(v,c.low);
+  else { c.gate=v; c.gateFromPflag=false; if(!c.gateOn){ c.gateOn=true; const b=$('chGateB'); if(b){ b.classList.add('on'); b.textContent='gate ON'; } } }
+  if($('chLow')) { $('chLow').value=fmt(c.low); $('chHigh').value=fmt(c.high); $('chGate').value=fmt(c.gate); }
+  drawChHist(); scheduleRefresh(); }
+window.addEventListener('mousemove', e=>{ if(chDrag) chMove(e); });
+window.addEventListener('mouseup', ()=>{ if(chDrag==='gate'){ chDrag=null; renderChannels(); } else chDrag=null; });
+
+// ---------- 2D flow plot ----------
+const FML=36, FMR=8, FMT=6, FMB=26;   // 2D flow plot margins: left,right,top,bottom
+function tickFmt(v){ const a=Math.abs(v); if(a>=10000) return (v/1000).toFixed(a>=100000?0:1)+'k'; if(a>=1000) return Math.round(v).toString(); return fmt(v); }
+function axisTicks(d0,d1,log,n){ n=n||4; const out=[]; for(let i=0;i<=n;i++){ const t=d0+(d1-d0)*i/n; out.push({pos:i/n, val:tinv(t,log)}); } return out; }
+function buildFlow(){
+  const mx=$('xMarker').value, my=$('yMarker').value, key=mx+'|'+my+'|'+x2log+'|'+y2log; if(flowMeta && flowMeta.key===key) return;
+  const ax=DATA.markers[mx], ay=DATA.markers[my], [x0,x1]=domainOf(mx,x2log), [y0,y1]=domainOf(my,y2log), sx=(x1-x0)||1, sy=(y1-y0)||1, grid=new Float32Array(FB*FB);
+  for(let i=0;i<ax.length;i++){ const tx=(tlog(ax[i],x2log)-x0)/sx, ty=(tlog(ay[i],y2log)-y0)/sy; if(tx<0||tx>=1||ty<0||ty>=1) continue; grid[((ty*FB)|0)*FB+((tx*FB)|0)]++; }
+  let mc=0; for(const v of grid) if(v>mc)mc=v; const lm=Math.log10(mc+1)||1, img=new ImageData(FB,FB);
+  for(let gy=0;gy<FB;gy++) for(let gx=0;gx<FB;gx++){ const v=grid[gy*FB+gx], c=v?cmap(Math.log10(v+1)/lm):[13,17,23], p=((FB-1-gy)*FB+gx)*4; img.data[p]=c[0];img.data[p+1]=c[1];img.data[p+2]=c[2];img.data[p+3]=255; }
+  flowImg=img; flowMeta={key,mx,my,x0,x1,y0,y1,sx,sy};
+}
+function drawFlow(){ const mx=$('xMarker').value, my=$('yMarker').value; if(!mx||!my) return; buildFlow();
+  const cv=$('flow'), ctx=cv.getContext('2d'), W=cv.width, H=cv.height, PW=W-FML-FMR, PH=H-FMT-FMB;
+  const off=document.createElement('canvas'); off.width=FB; off.height=FB; off.getContext('2d').putImageData(flowImg,0,0);
+  ctx.clearRect(0,0,W,H); ctx.imageSmoothingEnabled=false; ctx.drawImage(off,FML,FMT,PW,PH);
+  ctx.strokeStyle='#30363d'; ctx.lineWidth=1; ctx.strokeRect(FML,FMT,PW,PH);
+  const {x0,x1,y0,y1,sx,sy}=flowMeta;
+  ctx.fillStyle='#8b949e'; ctx.font='9px sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  for(const t of axisTicks(x0,x1,x2log)){ const px=FML+t.pos*PW; ctx.strokeStyle='#30363d'; ctx.beginPath(); ctx.moveTo(px,FMT+PH); ctx.lineTo(px,FMT+PH+3); ctx.stroke(); ctx.fillText(tickFmt(t.val), px, FMT+PH+12); }
+  ctx.textAlign='right'; ctx.textBaseline='middle';
+  for(const t of axisTicks(y0,y1,y2log)){ const py=FMT+PH-t.pos*PH; ctx.strokeStyle='#30363d'; ctx.beginPath(); ctx.moveTo(FML-3,py); ctx.lineTo(FML,py); ctx.stroke(); ctx.fillText(tickFmt(t.val), FML-5, py); }
+  ctx.fillStyle='#c9d1d9'; ctx.font='10px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.fillText(mx+(x2log?' (log)':''), FML+PW/2, H-1);
+  ctx.save(); ctx.translate(8, FMT+PH/2); ctx.rotate(-Math.PI/2); ctx.fillText(my+(y2log?' (log)':''), 0, 0); ctx.restore();
+  // threshold crosshair (≥ gate = positive) for the two channels, + dashed pflag reference
+  const xc=chByName(mx), yc=chByName(my); ensureChannel(xc); ensureChannel(yc);
+  if(xc&&yc){
+    const rx=v=>Math.max(FML,Math.min(FML+PW,FML+(tlog(v,x2log)-x0)/sx*PW));
+    const ry=v=>Math.max(FMT,Math.min(FMT+PH,FMT+PH-(tlog(v,y2log)-y0)/sy*PH));
+    const cx=rx(xc.gate), cy=ry(yc.gate);
+    ctx.fillStyle='rgba(255,214,10,.07)'; ctx.fillRect(cx,FMT,FML+PW-cx,cy-FMT);   // double-pos quadrant
+    ctx.setLineDash([3,3]); ctx.lineWidth=1; ctx.strokeStyle='rgba(255,214,10,.45)';
+    if(xc.pgate&&xc.pgate.value!=null){ const px=rx(xc.pgate.value); ctx.beginPath(); ctx.moveTo(px,FMT); ctx.lineTo(px,FMT+PH); ctx.stroke(); }
+    if(yc.pgate&&yc.pgate.value!=null){ const py=ry(yc.pgate.value); ctx.beginPath(); ctx.moveTo(FML,py); ctx.lineTo(FML+PW,py); ctx.stroke(); }
+    ctx.setLineDash([]); ctx.strokeStyle='#ffd60a'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(cx,FMT); ctx.lineTo(cx,FMT+PH); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(FML,cy); ctx.lineTo(FML+PW,cy); ctx.stroke();
+    ctx.fillStyle='#ffd60a'; ctx.beginPath(); ctx.arc(cx,cy,3,0,7); ctx.fill();
+  } }
+(function(){ let mode=null;   // 'x' | 'y' | 'both'
+  function px(e){ const cv=$('flow'), r=cv.getBoundingClientRect(); return { x:(e.clientX-r.left)/r.width*cv.width, y:(e.clientY-r.top)/r.height*cv.height }; }
+  function dataAt(p){ const cv=$('flow'), W=cv.width, H=cv.height, PW=W-FML-FMR, PH=H-FMT-FMB;
+    let dx=Math.max(0,Math.min(PW,p.x-FML)), dy=Math.max(0,Math.min(PH,p.y-FMT)); const {x0,sx,y0,sy}=flowMeta;
+    return { vx:tinv(x0+dx/PW*sx,x2log), vy:tinv(y0+(PH-dy)/PH*sy,y2log) }; }
+  $('flow').addEventListener('mousedown', e=>{ if(!flowMeta) return; e.preventDefault();
+    const xc=xCh(), yc=yCh(); if(!xc||!yc) return;
+    const cv=$('flow'), W=cv.width, H=cv.height, PW=W-FML-FMR, PH=H-FMT-FMB, {x0,sx,y0,sy}=flowMeta;
+    const cx=FML+(tlog(xc.gate,x2log)-x0)/sx*PW, cy=FMT+PH-(tlog(yc.gate,y2log)-y0)/sy*PH, p=px(e);
+    const dxp=Math.abs(p.x-cx), dyp=Math.abs(p.y-cy);
+    mode = (dxp<=10&&dyp<=10)?'both' : dxp<=10?'x' : dyp<=10?'y' : 'both'; mv(e); });
+  function mv(e){ if(!mode) return; const xc=xCh(), yc=yCh(); if(!xc||!yc){ mode=null; return; } const d=dataAt(px(e));
+    if(mode==='x'||mode==='both'){ xc.gate=d.vx; xc.gateOn=true; }
+    if(mode==='y'||mode==='both'){ yc.gate=d.vy; yc.gateOn=true; }
+    drawFlow(); if(selCh>=0 && (channels[selCh]===xc||channels[selCh]===yc)) drawChHist(); scheduleRefresh(); }
+  window.addEventListener('mousemove', e=>{ if(mode) mv(e); });
+  window.addEventListener('mouseup', ()=>{ if(mode){ mode=null; renderChannels(); } });
+})();
+$('xMarker').onchange=()=>{ flowMeta=null; ensureChannel(xCh()); drawFlow(); drawQuad(); buildGated(); render(); };
+$('yMarker').onchange=()=>{ flowMeta=null; ensureChannel(yCh()); drawFlow(); drawQuad(); buildGated(); render(); };
+$('quadMode').onchange=()=>{ buildGated(); render(); };
+$('x2log').onclick=()=>{ x2log=!x2log; $('x2log').classList.toggle('on',x2log); flowMeta=null; drawFlow(); };
+$('y2log').onclick=()=>{ y2log=!y2log; $('y2log').classList.toggle('on',y2log); flowMeta=null; drawFlow(); };
+$('snap2').onclick=()=>{ const xc=xCh(), yc=yCh(); ensureChannel(xc); ensureChannel(yc); let any=false;
+  if(xc&&xc.pgate&&xc.pgate.value!=null){ xc.gate=xc.pgate.value; xc.gateOn=true; xc.gateFromPflag=true; any=true; }
+  if(yc&&yc.pgate&&yc.pgate.value!=null){ yc.gate=yc.pgate.value; yc.gateOn=true; yc.gateFromPflag=true; any=true; }
+  if(!any){ alert('No phenotype gate for these markers.'); return; }
+  drawFlow(); renderChannels(); refresh(); };
+
+// ---------- on load ----------
+function onLoaded(){
+  MM={}; DATA.names.forEach(n=> MM[n]=colMinMax(DATA.markers[n])); for(const k in binCache) delete binCache[k];
+  // pflag bit = position among the markers (@MA order): 1st marker -> bit 0, etc.
+  // CA (calculated) columns have no phenotype bit. This is the single source of
+  // truth — no separate @FL legend to drift out of sync.
+  let _mi=0;
+  channels=DATA.names.map((n,i)=>{ const kind=DATA.kinds[i]||'M'; const pbit = kind==='M' ? _mi++ : -1;
+    return { name:n, kind, on:false, color:CHCOLORS[i%CHCOLORS.length].slice(), low:MM[n].min, high:MM[n].max, log:false, gateOn:false, gate:MM[n].max, _win:false, pbit, gateFromPflag:false }; });
+  selCh = channels.length? 0 : -1;
+  if (channels.length){ ensureChannel(channels[0]); channels[0].on=true; }
+  renderChannels();
+  flowMeta=null;
+  fillMarkerSel($('xMarker')); fillMarkerSel($('yMarker'));
+  if (DATA.names.length){ $('xMarker').value=DATA.names[0]; $('yMarker').value=DATA.names[Math.min(1,DATA.names.length-1)]; ensureChannel(xCh()); ensureChannel(yCh()); drawFlow(); }
+  const rb=$('rois'); rb.innerHTML=''; $('noroi').style.display=DATA.rois.length?'none':'block';
+  DATA.rois.forEach((r,i)=>{ const d=document.createElement('div'); d.className='roi';
+    d.innerHTML=`<input type="checkbox" ${r.visible?'checked':''}><span class="sw" style="background:rgba(220,40,40,.55);border-color:#780000"></span><span title="${r.name}">${r.name||r.id}</span>`;
+    d.querySelector('input').onchange=e=>{ DATA.rois[i].visible=e.target.checked; syncRoiAll(); render(); }; rb.appendChild(d); });
+  $('stat').textContent=`${DATA.N.toLocaleString()} cells · ${DATA.names.length} markers · ${DATA.rois.length} ROIs`;
+  setupRoiXform();
+  REGSEL.clear(); REGION=null; renderCflagChips();
+  refresh(); fitView();
+}
+function syncRoiAll(){ $('roiAll').checked=DATA.rois.every(r=>r.visible); }
+function toggleAllRoi(){ const on=$('roiAll').checked; DATA.rois.forEach(r=>r.visible=on); $('rois').querySelectorAll('input').forEach(c=>c.checked=on); render(); }
+
+// ----- ROI alignment transform: live preview + bake command -----------------
+// Applies scale -> invert -> offset to each ROI vertex for display only; the
+// same transform is emitted as a `cyftools scaleroi ...` command to bake it in.
+function roiXformPt(p){
+  let x = p[0]*RX.scale, y = p[1]*RX.scale;
+  if (RX.fx) x = -x;
+  if (RX.fy) y = -y;
+  return [x + RX.ox, y + RX.oy];
+}
+const fmtN = v => Number.isInteger(v) ? String(v) : String(+v.toFixed(6));
+function roiCmd(){
+  const p = ['cyftools scaleroi in.byf out.byf'];
+  if (RX.scale !== 1) p.push('--scale '+fmtN(RX.scale));
+  if (RX.fx) p.push('--flip-x');
+  if (RX.fy) p.push('--flip-y');
+  if (RX.ox !== 0) p.push('--xoffset '+fmtN(RX.ox));
+  if (RX.oy !== 0) p.push('--yoffset '+fmtN(RX.oy));
+  return p.join(' ');
+}
+function roiXformApply(){ RXVER++; $('rxcmd').value = roiCmd(); render(); }
+function setupRoiXform(){
+  const has = DATA && DATA.rois.length>0;
+  $('roi-xform').style.display = has ? '' : 'none';
+  if (!has) return;
+  const bx=colMinMax(DATA.x), by=colMinMax(DATA.y);    // extent hint for flip offsets
+  $('rxhint').textContent =
+    `cell bounds  x [${Math.round(bx.min)}, ${Math.round(bx.max)}]  y [${Math.round(by.min)}, ${Math.round(by.max)}]`
+    + `  ·  tip: flip-y, then y offset = ${Math.round(by.max)}`;
+  $('rxcmd').value = roiCmd();
+}
+['rxscale','rxox','rxoy'].forEach(id => $(id).addEventListener('input', ()=>{
+  RX.scale = +$('rxscale').value || 1; RX.ox = +$('rxox').value || 0; RX.oy = +$('rxoy').value || 0;
+  roiXformApply();
+}));
+$('rxfx').onclick = ()=>{ RX.fx=!RX.fx; $('rxfx').classList.toggle('on',RX.fx); roiXformApply(); };
+$('rxfy').onclick = ()=>{ RX.fy=!RX.fy; $('rxfy').classList.toggle('on',RX.fy); roiXformApply(); };
+$('rxreset').onclick = ()=>{ RX={scale:1,ox:0,oy:0,fx:false,fy:false};
+  $('rxscale').value=1; $('rxox').value=0; $('rxoy').value=0;
+  $('rxfx').classList.remove('on'); $('rxfy').classList.remove('on'); roiXformApply(); };
+$('rxcopy').onclick = async ()=>{
+  try { await navigator.clipboard.writeText($('rxcmd').value); $('rxcopied').textContent='copied ✓'; }
+  catch { $('rxcmd').focus(); $('rxcmd').select(); $('rxcopied').textContent='select + copy'; }
+  setTimeout(()=>{ $('rxcopied').textContent=''; }, 1500);
+};
+
+// ----- painted cflag-region overlay -----------------------------------------
+// Pick a cflag combo (AND); paint a disc around each matching cell and union
+// them into one translucent raster (the same idea as `cyftools cohort`'s area).
+// cflag bit legend: prefer the file's @FL cflag tags; otherwise derive the bits
+// actually present in the data and name them via the standard vocabulary.
+// low 32 bits of each cell's cflag as a plain Number array (cflag bits are < 32),
+// so region masking is fast Number math instead of per-cell BigInt.
+function cflagLo(){
+  if (DATA._cflagLo) return DATA._cflagLo;
+  const cf=DATA.cflag, N=DATA.N, lo=new Uint32Array(N);
+  for (let i=0;i<N;i++) lo[i] = Number(cf[i] & 0xffffffffn) >>> 0;
+  return (DATA._cflagLo = lo);
+}
+function cflagBitList(){
+  if (DATA && DATA.cflags && DATA.cflags.length) return DATA.cflags;
+  if (!DATA) return [];
+  if (DATA._cflagBits) return DATA._cflagBits;
+  const lo=cflagLo(); let orv=0;
+  for (let i=0;i<lo.length;i++) orv |= lo[i];
+  orv>>>=0;
+  const out=[];
+  for (let b=0;b<32;b++) if ((orv>>>b)&1) out.push({ bit:b, name: CFLAG_NAMES[b]||('cflag bit '+b) });
+  return (DATA._cflagBits = out);
+}
+function renderCflagChips(){
+  const box=$('cflagChips'); box.innerHTML='';
+  const cfs=cflagBitList().slice().sort((a,b)=>a.bit-b.bit);
+  $('nocflag').style.display = cfs.length ? 'none' : 'block';
+  for (const e of cfs){
+    const b=document.createElement('button'); b.className='tg'+(REGSEL.has(e.bit)?' on':'');
+    b.textContent=e.name; b.title='cflag bit '+e.bit;
+    b.onclick=()=>{ if(REGSEL.has(e.bit)) REGSEL.delete(e.bit); else REGSEL.add(e.bit);
+      b.classList.toggle('on',REGSEL.has(e.bit)); buildRegion(); render(); };
+    box.appendChild(b);
+  }
+}
+function buildRegion(){
+  REGION=null; REGVER++;
+  if (!DATA || REGSEL.size===0){ $('regInfo').textContent=''; return; }
+  let mask=0; for (const b of REGSEL) if (b<32) mask |= (1<<b); mask>>>=0;
+  const cf=cflagLo(), X=DATA.x, Y=DATA.y, N=DATA.N;
+  let xmin=Infinity,ymin=Infinity,xmax=-Infinity,ymax=-Infinity,n=0;
+  for (let i=0;i<N;i++){ if(((cf[i]&mask)>>>0)===mask){ const x=X[i],y=Y[i];
+    if(x<xmin)xmin=x; if(x>xmax)xmax=x; if(y<ymin)ymin=y; if(y>ymax)ymax=y; n++; } }
+  if (!n){ $('regInfo').textContent='0 cells match this cflag combo'; return; }
+  const r=+$('regRadius').value||20;
+  xmin-=r; ymin-=r; xmax+=r; ymax+=r;
+  const bw=xmax-xmin, bh=ymax-ymin, MAXDIM=1400;
+  const pxsize=(Math.max(bw,bh)/MAXDIM)||1;
+  const W=Math.max(1,Math.ceil(bw/pxsize)), H=Math.max(1,Math.ceil(bh/pxsize));
+  const rpx=Math.max(1,Math.round(r/pxsize));
+  const grid=new Uint8Array(W*H), sten=[];
+  for (let dy=-rpx;dy<=rpx;dy++) for (let dx=-rpx;dx<=rpx;dx++) if (dx*dx+dy*dy<=rpx*rpx) sten.push(dx,dy);
+  for (let i=0;i<N;i++){ if(((cf[i]&mask)>>>0)!==mask) continue;
+    const cx=Math.round((X[i]-xmin)/pxsize), cy=Math.round((ymax-Y[i])/pxsize);   // image row 0 = ymax
+    for (let s=0;s<sten.length;s+=2){ const px=cx+sten[s], py=cy+sten[s+1];
+      if (px<0||px>=W||py<0||py>=H) continue; grid[py*W+px]=1; } }
+  const data=new Uint8ClampedArray(W*H*4), c=REGION_COLOR;
+  for (let p=0;p<W*H;p++) if(grid[p]){ const o=p*4; data[o]=c[0]; data[o+1]=c[1]; data[o+2]=c[2]; data[o+3]=255; }
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  cv.getContext('2d').putImageData(new ImageData(data,W,H),0,0);
+  REGION={ canvas:cv, bounds:[xmin,ymin,xmax,ymax], n };
+  $('regInfo').textContent = `${n.toLocaleString()} cells · ${W}×${H} px raster`;
+}
+$('regRadius').addEventListener('input', ()=>{ $('regrv').textContent=$('regRadius').value; buildRegion(); render(); });
+$('regOpacity').addEventListener('input', ()=>{ $('regov').textContent=(+$('regOpacity').value).toFixed(2); render(); });
+$('regClear').onclick=()=>{ REGSEL.clear(); renderCflagChips(); buildRegion(); render(); };
+
+// ---------- file handling ----------
+function loadArrayBuffer(ab){
+  DATA=loadCyfv(ab);
+  POS=new Float32Array(DATA.N*2); for(let i=0;i<DATA.N;i++){ POS[2*i]=DATA.x[i]; POS[2*i+1]=DATA.y[i]; }
+  COLORS=new Uint8Array(DATA.N*4); GBUF=new Float32Array(DATA.N*2); GCOUNT=0;
+  $('drop').classList.add('hidden'); onLoaded();
+}
+// A dropped/picked .cyfv pack loads directly. A .byf (BGZF) is handled server-side:
+//  • staged flow (handles multi-GB): ask view.py for an upload target, PUT the file
+//    straight there (a GCS bucket in the cloud, bypassing any request-size limit),
+//    then ask the server to build a render-capped pack and fetch it.
+//  • fallback: if the server has no staged API, POST the raw bytes to /convert.
+async function handleFile(file){
+  try {
+    const head = new Uint8Array(await file.slice(0,4).arrayBuffer());
+    const isPack = head[0]===67 && head[1]===89 && head[2]===70 && head[3]===86;  // "CYFV"
+    if (isPack){ loadArrayBuffer(await file.arrayBuffer()); return; }
+
+    // --- staged upload → pack → fetch ---
+    let up = null;
+    try {
+      const r = await fetch('/api/upload-url', { method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ name:file.name, size:file.size }) });
+      if (r.ok) up = await r.json();
+    } catch(_) { /* no staged API → fall back below */ }
+
+    if (up && up.id && up.put_url){
+      $('stat').textContent='uploading '+file.name+' …';
+      const putRes = await fetch(up.put_url, { method: up.method||'PUT',
+        headers: up.headers||{}, body: file });
+      if (!putRes.ok) throw new Error('upload failed (HTTP '+putRes.status+')');
+      $('stat').textContent='converting '+file.name+' …';
+      const packRes = await fetch('/api/pack', { method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id:up.id }) });
+      if (!packRes.ok) throw new Error('convert failed (HTTP '+packRes.status+')');
+      const meta = await packRes.json();
+      $('stat').textContent='loading pack …';
+      const ab = await (await fetch(meta.pack_url)).arrayBuffer();
+      loadArrayBuffer(ab);
+      if (meta.subsampled) $('stat').textContent =
+        'showing '+meta.rendered.toLocaleString()+' of '+meta.cells.toLocaleString()+' cells (subsampled to fit)';
+      return;
+    }
+
+    // --- fallback: direct convert (small files / simple server) ---
+    $('stat').textContent='converting '+file.name+' …';
+    const res = await fetch('/convert', { method:'POST', headers:{'X-Filename':file.name}, body:file });
+    if (!res.ok) throw new Error('server convert failed (HTTP '+res.status+')');
+    loadArrayBuffer(await res.arrayBuffer());
+  } catch(err){
+    console.error(err); $('stat').textContent='load failed';
+    alert('Could not load '+file.name+'\n'+err.message+
+          '\n\nLoad a .byf directly by launching:\n  python3 viewer/view.py '+file.name);
+  }
+}
+$('file').onchange=e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); };
+['dragover','drop'].forEach(ev=> document.addEventListener(ev, e=> e.preventDefault()));
+document.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+
+// ---------- deck ----------
+function tooltipFor(i){ if(i<0||!DATA) return null; const id=DATA.id[i], sid=id>>32n, cid=id&0xffffffffn;
+  let s=`cell ${cid} (sample ${sid})\nx ${DATA.x[i].toFixed(1)} y ${DATA.y[i].toFixed(1)}`;
+  channels.filter(c=>c.on).forEach(c=> s+=`\n${c.name} ${DATA.markers[c.name][i].toFixed(3)}`); return s; }
+window.addEventListener('load', ()=>{
+  deckgl=new deck.Deck({ canvas:'deck-canvas', views:new deck.OrthographicView({flipY:true}), controller:true, viewState,
+    onViewStateChange:e=>{ viewState=clampZoom(e.viewState); deckgl.setProps({viewState}); }, layers:[],
+    onHover:info=>{ const t=$('tooltip');
+      if (info&&info.layer&&info.layer.id==='cells'&&info.index>=0){ t.style.display='block'; t.style.left=(info.x+14)+'px'; t.style.top=(info.y+10)+'px'; t.textContent=tooltipFor(info.index); }
+      else t.style.display='none'; } });
+  window.addEventListener('resize', ()=>{ if(!DATA||!VB) return; const fit=fitZoom(); VB.ZMIN=fit-3; VB.ZMAX=fit+18; viewState=clampZoom(viewState); deckgl.setProps({viewState}); });
+  const pre=new URLSearchParams(location.search).get('file');
+  if (pre){ $('stat').textContent='loading '+pre+' …';
+    fetch(pre).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); }).then(loadArrayBuffer)
+      .catch(err=>{ console.error(err); $('stat').textContent='auto-load failed'; alert('Could not auto-load '+pre+'\n'+err.message); }); }
+});
+</script>
+</body>
+</html>

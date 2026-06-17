@@ -7,6 +7,8 @@
 #include <getopt.h>
 #include <ctime>
 #include <regex>
+#include <climits>   // PATH_MAX
+#include <cstdlib>   // realpath
 
 #include "cell_row.h"
 #include "cell_selector.h"
@@ -57,40 +59,54 @@ static const struct option longopts[] = {
 };
 
 
+#ifndef CYFTOOLS_VERSION
+#define CYFTOOLS_VERSION "0.0.0-dev"   // fallback; CMake passes the real PROJECT_VERSION
+#endif
+
 static const char *RUN_USAGE_MESSAGE =
 "Usage: cyftools [module] <options> \n"
-"VERSION: 0.1.0\n"
+"VERSION: " CYFTOOLS_VERSION "\n"
 " --- Information --- \n"
-"  view        - View the cell table as character data\n"
+"  view        - View the cell table (tab-delimited, SAM-style)\n"
 "  info        - Display detailed information\n"
-"  summary     - Display brief information\n"    
+"  summary     - Display brief information\n"
 "  count       - Count cells\n"
+"  validate    - Check the header has the required @HD scale tags (MP µm/px, UN units)\n"
   //"  head        - Returns first lines of a file\n"
 " --- Low-level processing ---\n"
-"  convert     - Create a .cyf format file from a CSV\n"    
+"  convert     - Create a .cyf/.byf file from a CSV\n"    
 "  cut         - Select only given markers and metas\n"
 "  reheader    - Change the header\n"
+"  addtag      - Add/update a header tag (e.g. @IM image metadata)\n"
+"  export      - Export to a packed columnar binary for a viewer (CYFV)\n"
 "  clean       - Remove classes of data (e.g. all meta)\n"
 "  cat         - Concatenate multiple files\n"
 "  sort        - Sort the cells\n"
 "  subsample   - Subsample cells randomly\n"
 "  sampleselect- Select a particular sample from a multi-sample file\n"
+"  crop        - Crop cells to a rectangular region (xlo,xhi,ylo,yhi)\n"
 "  check       - Simply read and stream without any other operations, format check and start pipelines\n"
 " --- Spatial transformations ---\n"  
 "  offset      - Offset the x-y positions of the cells\n"
 "  flip        - Flip x and/or y positions\n"
-"  magnify     - Rescale the x and y coordinates\n"    
-" --- Marker ops ---\n"  
+"  magnify     - Rescale the x and y coordinates\n"
+" --- ROI (region-of-interest polygons) ---\n"
+"  addroi      - Import ROI polygons (OMERO/QuPath CSV) into the header as @RO tags\n"
+"  scaleroi    - Transform header @RO coordinates (scale, flip, shift)\n"
+"  clearroi    - Remove @RO polygons from the header (all, or by name/sample)\n"
+"  flagroi     - Set a pflag/cflag bit on cells inside the header's @RO polygons\n"
+"  roi         - Trim cells to those inside a polygon from an ROI file\n"
+" --- Marker ops ---\n"
 "  pheno       - Phenotype cells (set the phenotype flags)\n"
-"  filter      - Mark cellsfor later processing (filtering etc)\n"  
+"  filter      - Mark cells for later processing (filtering etc)\n"
+"  flagset     - Set or clear specific cell/phenotype flag bits\n"
 "  cellcount   - Provide total slide cell count for each cell type\n"
-"  roi         - Trim cells to a region of interest within a given polygon\n"  
 "  rescale     - Rescale the marker intensities similar to scimap\n"
 " --- Numeric ---\n"
 "  mean        - Collapse to mean of each column\n"  
 "  divide      - Divide two columns\n"
 "  log10       - Apply a base-10 logarithm transformation to the data\n"
-"  jaccard     - Calculate the Jaccard similarty coeffiecient for cell flags\n"
+"  jaccard     - Calculate the Jaccard similarity coefficient for cell flags\n"
 "  pearson     - Calculate the Pearson correlation between marker intensities\n"
 "  dist        - Calculate cell-cell distances\n"  
 " --- Clustering ---\n"
@@ -98,13 +114,12 @@ static const char *RUN_USAGE_MESSAGE =
 "  tls         - Identify TLS structures\n"
 " --- PDF/PNG ---\n"
 "  png         - Plot PNG\n"
-  //"  plot       - Generate an ASCII style plot\n"
+"  plot        - Generate an ASCII-style plot\n"
   //"  histogram  - Create a histogram of the data\n"
 " --- Graph ops ---\n"
 "  delaunay    - Calculate the Delaunay triangulation\n"
-"  umap        - Construct the marker space UMAP\n"
   //"  spatial     - Construct the spatial KNN graph\n"
-"  tumor       - Set the tumor flag using KNN approach\n"
+"  annotate    - Set the tumor flag using a KNN approach\n"
 "  margin      - Set the tumor margin using KNN approach\n"
 "  island      - Remove islands of stroma within tumor\n"  
 "  radialdens  - Calculate density of cells within a radius\n"  
@@ -117,7 +132,11 @@ static const char *RUN_USAGE_MESSAGE =
 "  scramble    - Randomly permute the phenotype flags\n"
 "  scatter     - Randomly assign x and y positions throughout the slide\n"
 "  hallucinate - Randomly assign cell phenotypes\n"
-"  synth       - Various approaches for creating synthetic data\n"  
+"  synth       - Various approaches for creating synthetic data\n"
+" --- Cohort ---\n"
+"  cohort      - Summarize a cohort of files to JSON (per-region cell densities)\n"
+" --- Utility ---\n"
+"  for         - Print a shell template for batch-processing files\n"
 "\n";
 
 static int checkfunc(int argc, char** argv);
@@ -155,6 +174,7 @@ static int meanfunc(int argc, char** argv);
 static int cleanfunc(int argc, char** argv);
 static int countfunc(int argc, char** argv);
 static int convertfunc(int argc, char** argv);
+static int validatefunc(int argc, char** argv);
 static int catfunc(int argc, char** argv);
 static int radialdensfunc(int argc, char** argv);
 static int subsamplefunc(int argc, char** argv);
@@ -172,6 +192,13 @@ static int cutfunc(int argc, char** argv);
 static int filterfunc(int argc, char** argv);
 static int flagsetfunc(int argc, char** argv); 
 static int phenofunc(int argc, char** argv);
+static int addtagfunc(int argc, char** argv);
+static int addroifunc(int argc, char** argv);
+static int flagroifunc(int argc, char** argv);
+static int scaleroifunc(int argc, char** argv);
+static int clearroifunc(int argc, char** argv);
+static int exportfunc(int argc, char** argv);
+static int cohortfunc(int argc, char** argv);
 
 static void parseRunOptions(int argc, char** argv);
 
@@ -181,6 +208,12 @@ int main(int argc, char **argv) {
   if (argc < 2) {
     std::cerr << RUN_USAGE_MESSAGE;
     return 1;
+  }
+
+  // --version / -V: print the version (from CMake's PROJECT_VERSION) and exit
+  if (std::string(argv[1]) == "--version" || std::string(argv[1]) == "-V") {
+    std::cout << "cyftools " << CYFTOOLS_VERSION << std::endl;
+    return 0;
   }
 
   parseRunOptions(argc, argv);
@@ -204,6 +237,8 @@ int main(int argc, char **argv) {
   cmd_input = cmd_input + "\t -- " + timestamp;
   
   // get the module
+  try {
+
   if (opt::module == "debug") {
     val = debugfunc(argc, argv);
   } else if (opt::module == "tls") {
@@ -264,6 +299,8 @@ int main(int argc, char **argv) {
     val = magnifyfunc(argc, argv);
   } else if (opt::module == "convert") {
     val = convertfunc(argc, argv);
+  } else if (opt::module == "validate") {
+    return validatefunc(argc, argv);
   } else if (opt::module == "mean") {
     val = meanfunc(argc, argv);
   } else if (opt::module == "info") {
@@ -288,6 +325,20 @@ int main(int argc, char **argv) {
     val = delaunayfunc(argc, argv);
   } else if (opt::module == "reheader") {
     val = reheaderfunc(argc, argv);
+  } else if (opt::module == "addtag") {
+    val = addtagfunc(argc, argv);
+  } else if (opt::module == "addroi") {
+    return addroifunc(argc, argv);
+  } else if (opt::module == "flagroi") {
+    val = flagroifunc(argc, argv);
+  } else if (opt::module == "scaleroi") {
+    val = scaleroifunc(argc, argv);
+  } else if (opt::module == "clearroi") {
+    val = clearroifunc(argc, argv);
+  } else if (opt::module == "export") {
+    val = exportfunc(argc, argv);
+  } else if (opt::module == "cohort") {
+    return cohortfunc(argc, argv);
   } else if (opt::module == "synth") {
     val = syntheticfunc(argc, argv);
   } else if (opt::module == "dbscan") {
@@ -308,6 +359,11 @@ int main(int argc, char **argv) {
     hallucinatefunc(argc, argv);
   } else {
     assert(false);
+  }
+
+  } catch (const std::exception& e) {
+    std::cerr << "cyftools " << opt::module << ": " << e.what() << std::endl;
+    return 1;
   }
 
   return 0;
@@ -784,6 +840,690 @@ static int reheaderfunc(int argc, char** argv) {
   int length = is.tellg() - is.tellg(); // calculate the remaining bytes in the file
   is.seekg(is.tellg(), is.beg); // go to the current position
   */
+
+  return 0;
+}
+
+static int addtagfunc(int argc, char** argv) {
+
+  static const struct option addtag_longopts[] = {
+    {"tag",        required_argument, NULL, 't'},
+    {"sample",     required_argument, NULL, 's'},
+    {"field",      required_argument, NULL, 'f'},
+    {"group",      required_argument, NULL, 'g'},
+    {"mpp",        required_argument, NULL, 'p'},
+    {"tiff",       required_argument, NULL, 'i'},
+    {"md5",        required_argument, NULL, 'd'},
+    {"microscope", required_argument, NULL, 'm'},
+    {NULL, 0, NULL, 0}
+  };
+  const char* shortopts = "vt:s:f:g:p:i:d:m:";
+
+  std::string tagclass = "IM";   // default: @IM image/acquisition tag
+  std::string tag_id   = "0";    // the tag's ID field (sample id for @IM/@SA)
+  std::string group;             // optional sample group/category (@SA GP field)
+  std::vector<std::string> fields;
+
+  for (int c; (c = getopt_long(argc, argv, shortopts, addtag_longopts, NULL)) != -1;) {
+    std::string val = (optarg != NULL) ? std::string(optarg) : std::string();
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 't' : tagclass = val; break;
+    case 's' : tag_id = val; break;
+    case 'f' : fields.push_back(val); break;            // generic KEY:VALUE
+    case 'g' : group = val; break;                      // sample group/category
+    case 'p' : fields.push_back("MP:" + val); break;    // microns per pixel
+    case 'i' : fields.push_back("TF:" + val); break;    // source TIFF file
+    case 'd' : fields.push_back("TH:" + val); break;    // TIFF md5 / hash
+    case 'm' : fields.push_back("MS:" + val); break;    // microscope / instrument
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools addtag <in> <out> [options]\n"
+      "  Add or update one header tag, then stream all cells through unchanged.\n"
+      "  A field with an existing KEY is overwritten, so metadata can be filled in over time.\n"
+      "\n"
+      "Generic:\n"
+      "  -t, --tag <CLASS>        Tag class: IM (default), HD, SA, CA, MA, GA, FL\n"
+      "  -s, --sample <id>        Tag ID field (sample id for @IM/@SA). Default 0\n"
+      "  -f, --field <KEY:VALUE>  Set a field (repeatable)\n"
+      "  -g, --group <label>      Tag the sample's group/category (@SA GP field);\n"
+      "                           `cyftools cohort` reads it to pre-fill the group\n"
+      "\n"
+      "@IM shortcuts (set fields on the @IM tag):\n"
+      "  -p, --mpp <microns>      Microns per pixel       -> MP\n"
+      "  -i, --tiff <file>        Source TIFF filename     -> TF\n"
+      "  -d, --md5 <hash>         Source TIFF md5 / hash    -> TH\n"
+      "  -m, --microscope <str>   Microscope / instrument   -> MS\n"
+      "\n"
+      "Examples:\n"
+      "  cyftools addtag in.byf out.byf --mpp 0.325 --tiff slide.ome.tif --microscope Orion\n"
+      "  cyftools addtag in.byf out.byf --group Responder\n"
+      "  cyftools addtag in.byf out.byf -t HD -f MP:0.325 -f UN:micron   # required @HD scale tags\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // @HD has an empty id; default to it so `-t HD` merges into the existing line
+  if (tagclass == "HD" && tag_id == "0") tag_id = "";
+
+  // map the 2-letter class to a Tag type
+  uint8_t ttype;
+  if      (tagclass == "IM") ttype = Tag::IM_TAG;
+  else if (tagclass == "HD") ttype = Tag::HD_TAG;
+  else if (tagclass == "SA") ttype = Tag::SA_TAG;
+  else if (tagclass == "CA") ttype = Tag::CA_TAG;
+  else if (tagclass == "MA") ttype = Tag::MA_TAG;
+  else if (tagclass == "GA") ttype = Tag::GA_TAG;
+  else if (tagclass == "FL") ttype = Tag::FL_TAG;
+  else {
+    std::cerr << "cyftools addtag: unknown tag class '" << tagclass
+              << "' (use HD, IM, SA, CA, MA, GA, or FL)" << std::endl;
+    return 1;
+  }
+
+  AddTagProcessor proc;
+  proc.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+
+  // A bare `addtag --group X` should only touch @SA — don't also stamp an empty
+  // default @IM tag. Otherwise keep the original behavior (always set the tag).
+  if (!(!group.empty() && fields.empty() && tagclass == "IM"))
+    proc.SetParams(ttype, tag_id, fields);
+
+  if (!group.empty()) {
+    // default @SA id = input filename stem (used only if the file has no @SA tag)
+    std::string sid = opt::infile;
+    size_t s = sid.find_last_of("/\\"); if (s != std::string::npos) sid = sid.substr(s + 1);
+    size_t d = sid.find_last_of('.');   if (d != std::string::npos && d != 0) sid = sid.substr(0, d);
+    if (sid.empty() || opt::infile == "-") sid = "sample";
+    proc.SetGroup(group, sid);
+  }
+
+  if (!table.StreamTable(proc, opt::infile))
+    return 1;
+
+  return 0;
+}
+
+// Split one CSV line into fields, honoring "double-quoted" fields that may
+// contain commas; a "" inside a quoted field is a literal double-quote.
+static std::vector<std::string> splitCsvQuoted(const std::string& line) {
+  std::vector<std::string> out;
+  std::string cur;
+  bool inq = false;
+  for (size_t i = 0; i < line.size(); ++i) {
+    char c = line[i];
+    if (inq) {
+      if (c == '"') {
+        if (i + 1 < line.size() && line[i + 1] == '"') { cur += '"'; ++i; }
+        else inq = false;
+      } else cur += c;
+    } else {
+      if (c == '"') inq = true;
+      else if (c == ',') { out.push_back(cur); cur.clear(); }
+      else cur += c;
+    }
+  }
+  out.push_back(cur);
+  return out;
+}
+
+// Auto-detect the ROI file format from its header columns. Returns the format
+// name, or "" if no known format matches. Add new signatures here as formats grow.
+static std::string detectRoiFormat(const std::vector<std::string>& hdr) {
+  auto has = [&](const std::string& name) {
+    for (const auto& h : hdr) if (h == name) return true;
+    return false;
+  };
+  if (has("all_points")) return "omero";   // OMERO / QuPath-style polygon CSV
+  return "";
+}
+
+static int addroifunc(int argc, char** argv) {
+
+  static const struct option addroi_longopts[] = {
+    {"roi",       required_argument, NULL, 'r'},
+    {"format",    required_argument, NULL, 'f'},
+    {"sample",    required_argument, NULL, 's'},
+    {"add",       no_argument,       NULL, 'a'},
+    {"overwrite", no_argument,       NULL, 'O'},
+    {"scale",     required_argument, NULL, 'c'},
+    {"xoffset",   required_argument, NULL, 'x'},
+    {"yoffset",   required_argument, NULL, 'y'},
+    {"flip-x",    no_argument,       NULL, 'X'},
+    {"flip-y",    no_argument,       NULL, 'Y'},
+    {"microns",   no_argument,       NULL, 1001},   // ROI file coords are in microns
+    {"pixels",    no_argument,       NULL, 1002},   // ROI file coords are in pixels
+    {NULL, 0, NULL, 0}
+  };
+  const char* shortopts = "vr:f:s:aOc:x:y:XY";
+
+  std::string roifile;
+  std::string format;            // empty => auto-detect from the file's columns
+  std::string sample = "0";
+  bool do_add = false, do_overwrite = false, flip_x = false, flip_y = false;
+  bool roi_micron = false, roi_pixel = false;   // unit of the ROI file (exactly one required)
+  double scale = 1.0, xoff = 0.0, yoff = 0.0;
+
+  for (int c; (c = getopt_long(argc, argv, shortopts, addroi_longopts, NULL)) != -1;) {
+    std::string val = (optarg != NULL) ? std::string(optarg) : std::string();
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'r' : roifile = val; break;
+    case 'f' : format = val; break;
+    case 's' : sample = val; break;
+    case 'a' : do_add = true; break;
+    case 'O' : do_overwrite = true; break;
+    case 'c' : try { scale = std::stod(val); } catch (...) { die = true; } break;
+    case 'x' : try { xoff  = std::stod(val); } catch (...) { die = true; } break;
+    case 'y' : try { yoff  = std::stod(val); } catch (...) { die = true; } break;
+    case 'X' : flip_x = true; break;
+    case 'Y' : flip_y = true; break;
+    case 1001: roi_micron = true; break;
+    case 1002: roi_pixel  = true; break;
+    default: die = true;
+    }
+  }
+
+  if (die || roifile.empty() || (do_add && do_overwrite) ||
+      (roi_micron == roi_pixel) || in_out_process(argc, argv)) {
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools addroi <in> <out> -r <roi-file> [options]\n"
+      "  Import region-of-interest polygons into the header as @RO tags, then\n"
+      "  stream all cells through unchanged. If the file ALREADY has ROIs you must\n"
+      "  pass --add (append) or --overwrite (replace) explicitly.\n"
+      "\n"
+      "  -r, --roi <file>      ROI file to import (required)\n"
+      "      --microns         The ROI file's coordinates are in microns   (one REQUIRED)\n"
+      "      --pixels          The ROI file's coordinates are in pixels\n"
+      "                        The ROI is converted to the cells' units using the file's\n"
+      "                        @HD MP/UN so the polygons line up with the cells.\n"
+      "  -f, --format <name>   Source format (optional; auto-detected by default)\n"
+      "  -s, --sample <id>     Sample id to attach the ROIs to (default 0)\n"
+      "      --add             Append to ROIs already in the file\n"
+      "      --overwrite       Remove the file's existing ROIs first, then add\n"
+      "\n"
+      "  Coordinate transforms (per vertex, applied as unit-convert -> scale -> invert -> offset):\n"
+      "      --scale <f>       Extra scale ON TOP of the automatic unit conversion\n"
+      "      --xoffset <f>     Add <f> to every x   (--yoffset <f> for y)\n"
+      "      --yoffset <f>\n"
+      "      --flip-x          Invert x (x -> -x); with --xoffset W gives x -> W-x\n"
+      "      --flip-y          Invert y (y -> -y); with --yoffset H gives y -> H-y\n"
+      "\n"
+      "  Supported formats (auto-detected): omero - a CSV with columns\n"
+      "  Id,Name,type,all_points (others ignored); all_points is space-separated 'x,y' pairs.\n"
+      "\n"
+      "Example:\n"
+      "  cyftools addroi in.byf out.byf -r rois.csv --pixels --overwrite --flip-y --yoffset 18301\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // Read the input file's coordinate units/scale (@HD UN/MP) and convert the ROI
+  // from its declared unit to the cells' unit, so the polygons line up with cells.
+  const std::string roi_unit = roi_micron ? "micron" : "pixel";
+  double unit_k = 1.0;
+  {
+    ValidateProcessor vp;
+    vp.SetCommonParams("", cmd_input, false);
+    CellTable vt;
+    vt.StreamTable(vp, opt::infile);                 // reads only the @HD header
+    const std::string cells_unit = vp.units;         // @HD UN ("" if untagged)
+    double mpp = 0.0;
+    if (!vp.mpp.empty()) { try { mpp = std::stod(vp.mpp); } catch (...) { mpp = 0.0; } }
+
+    if (cells_unit.empty()) {
+      std::cerr << "cyftools addroi: WARNING input file has no coordinate units (@HD UN); "
+                   "assuming the ROI is already in the cell coordinate space. Tag the file "
+                   "(cyftools validate / convert -c -u) for automatic unit conversion." << std::endl;
+    } else if (roi_unit != cells_unit) {
+      if (mpp <= 0.0) {
+        std::cerr << "cyftools addroi: ROI is in " << roi_unit << " but the cells are in "
+                  << cells_unit << ", and the file has no microns/pixel (@HD MP) to convert with."
+                  << " Run cyftools validate." << std::endl;
+        return 1;
+      }
+      unit_k = (roi_unit == "pixel") ? mpp : (1.0 / mpp);   // px->µm = *MP ; µm->px = /MP
+      if (opt::verbose)
+        std::cerr << "...converting ROI " << roi_unit << " -> " << cells_unit
+                  << " (factor " << unit_k << ")" << std::endl;
+    }
+  }
+
+  // total scale = unit conversion x user --scale, applied before invert/offset
+  const double eff_scale = unit_k * scale;
+  if (scale != 1.0)
+    std::cerr << "cyftools addroi: WARNING --scale " << scale
+              << " is applied ON TOP of the automatic unit conversion." << std::endl;
+
+  std::ifstream rf(roifile);
+  if (!rf.good()) {
+    std::cerr << "cyftools addroi: cannot open ROI file: " << roifile << std::endl;
+    return 1;
+  }
+
+  std::string line;
+  if (!std::getline(rf, line)) {
+    std::cerr << "cyftools addroi: empty ROI file" << std::endl;
+    return 1;
+  }
+
+  // map the header row to column indices
+  const std::vector<std::string> hdr = splitCsvQuoted(line);
+
+  // auto-detect the format (or honor an explicit -f override); fail clearly if unknown
+  const std::string fmt = format.empty() ? detectRoiFormat(hdr) : format;
+  if (fmt != "omero") {
+    if (!format.empty())
+      std::cerr << "cyftools addroi: unsupported format '" << format << "' (supported: omero)" << std::endl;
+    else {
+      std::cerr << "cyftools addroi: could not auto-detect the ROI format in '" << roifile << "'.\n"
+                << "  Expected an OMERO/QuPath-style CSV with an 'all_points' column. Columns found:";
+      for (const auto& h : hdr) std::cerr << ' ' << h;
+      std::cerr << std::endl;
+    }
+    return 1;
+  }
+
+  auto colIndex = [&](const std::string& name) -> int {
+    for (size_t i = 0; i < hdr.size(); ++i) if (hdr[i] == name) return static_cast<int>(i);
+    return -1;
+  };
+  const int ci_id   = colIndex("Id");
+  const int ci_name = colIndex("Name");
+  const int ci_type = colIndex("type");
+  const int ci_pts  = colIndex("all_points");
+
+  // header field values may not contain a tab/newline (the line/field delimiters)
+  auto sanitize = [](std::string s) {
+    for (char& c : s) if (c == '\t' || c == '\n' || c == '\r') c = ' ';
+    return s;
+  };
+
+  // optional per-vertex coordinate transform: (unit-convert x scale) -> invert -> offset
+  const bool any_xform = (eff_scale != 1.0 || flip_x || flip_y || xoff != 0.0 || yoff != 0.0);
+  auto fmtnum = [](double v) { std::ostringstream o; o.precision(10); o << v; return o.str(); };
+  auto xformPts = [&](const std::string& raw) -> std::string {
+    if (!any_xform) return sanitize(raw);
+    std::istringstream ps(raw);
+    std::string pair, out;
+    while (ps >> pair) {
+      const size_t cc = pair.find(',');
+      if (cc == std::string::npos) continue;
+      try {
+        double x = std::stod(pair.substr(0, cc))   * eff_scale;
+        double y = std::stod(pair.substr(cc + 1))  * eff_scale;
+        if (flip_x) x = -x;
+        if (flip_y) y = -y;
+        x += xoff; y += yoff;
+        if (!out.empty()) out += " ";
+        out += fmtnum(x) + "," + fmtnum(y);
+      } catch (...) { /* skip a malformed coordinate pair */ }
+    }
+    return out;
+  };
+
+  std::vector<Tag> rois;
+  const uint8_t ro_type = Tag::RO_TAG;   // local copy (avoids ODR-use of the static const)
+  size_t row = 0;
+  while (std::getline(rf, line)) {
+    if (line.empty()) continue;
+    const std::vector<std::string> f = splitCsvQuoted(line);
+    auto get = [&](int idx) -> std::string {
+      return (idx >= 0 && idx < static_cast<int>(f.size())) ? f[idx] : std::string();
+    };
+    const std::string pts = get(ci_pts);
+    if (pts.empty() || pts == "-1") continue;   // not a polygon shape
+
+    std::string id   = (ci_id >= 0 && !get(ci_id).empty()) ? get(ci_id) : std::to_string(row);
+    std::string name = sanitize(get(ci_name));
+    std::string type = get(ci_type); if (type.empty()) type = "Polygon";
+
+    const std::string data = "NM:" + name + "\tSA:" + sample +
+                             "\tTY:" + sanitize(type) + "\tPT:" + xformPts(pts);
+    rois.emplace_back(ro_type, id, data);
+    ++row;
+  }
+
+  if (rois.empty()) {
+    std::cerr << "cyftools addroi: no polygons found in " << roifile << std::endl;
+    return 1;
+  }
+  if (opt::verbose)
+    std::cerr << "...imported " << rois.size() << " ROI(s)" << std::endl;
+
+  AddTagProcessor proc;
+  proc.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  proc.SetTags(rois);
+  proc.SetRoiMode(do_overwrite ? AddTagProcessor::ROI_OVERWRITE
+                  : do_add     ? AddTagProcessor::ROI_ADD
+                               : AddTagProcessor::ROI_REQUIRE);
+
+  if (table.StreamTable(proc, opt::infile))   // non-zero => read/IO error
+    return 1;
+  if (proc.aborted())                          // existing ROIs, no --add/--overwrite
+    return 1;
+
+  return 0;
+}
+
+static int flagroifunc(int argc, char** argv) {
+
+  const char* shortopts = "vc:p:n:s:";
+  int cbit = -1, pbit = -1;
+  std::string name_filter;
+  long sample_filter = -1;
+
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'c' : arg >> cbit; break;
+    case 'p' : arg >> pbit; break;
+    case 'n' : name_filter = (optarg ? optarg : ""); break;
+    case 's' : arg >> sample_filter; break;
+    default: die = true;
+    }
+  }
+
+  // require exactly one of -c / -p
+  if (die || (cbit < 0 && pbit < 0) || (cbit >= 0 && pbit >= 0) || in_out_process(argc, argv)) {
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools flagroi <in> <out> (-p <bit> | -c <bit>) [options]\n"
+      "  Set a flag bit on every cell inside a header @RO polygon, then stream out.\n"
+      "  Pairs with `addroi` to round-trip a viewer lasso into pflag/cflag bits.\n"
+      "\n"
+      "  -p <bit>     Set this pflag bit (0-based) for cells inside a region\n"
+      "  -c <bit>     Set this cflag bit (0-based) for cells inside a region\n"
+      "  -n <name>    Only @RO regions whose name contains <name> (default: all)\n"
+      "  -s <id>      Only @RO regions for this sample id (default: all)\n"
+      "\n"
+      "Example:\n"
+      "  cyftools flagroi in.byf out.byf -p 3 -n tumor\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  FlagRoiProcessor proc;
+  proc.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  proc.SetParams(cbit >= 0 ? 'c' : 'p', cbit >= 0 ? cbit : pbit, name_filter, sample_filter);
+
+  if (!table.StreamTable(proc, opt::infile))
+    return 1;
+
+  return 0;
+}
+
+static int scaleroifunc(int argc, char** argv) {
+
+  static const struct option scaleroi_longopts[] = {
+    {"factor",  required_argument, NULL, 'f'},
+    {"scale",   required_argument, NULL, 'f'},   // alias for --factor
+    {"xoffset", required_argument, NULL, 'x'},
+    {"yoffset", required_argument, NULL, 'y'},
+    {"flip-x",  no_argument,       NULL, 'X'},
+    {"flip-y",  no_argument,       NULL, 'Y'},
+    {NULL, 0, NULL, 0}
+  };
+  const char* shortopts = "vf:x:y:XY";
+  double factor = 1.0, xoff = 0.0, yoff = 0.0;
+  bool flipx = false, flipy = false;
+
+  for (int c; (c = getopt_long(argc, argv, shortopts, scaleroi_longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'f' : arg >> factor; break;
+    case 'x' : arg >> xoff; break;
+    case 'y' : arg >> yoff; break;
+    case 'X' : flipx = true; break;
+    case 'Y' : flipy = true; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv) || factor <= 0) {
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools scaleroi <in> <out> [options]\n"
+      "  Transform every header @RO polygon coordinate (per vertex, applied as\n"
+      "  scale -> invert -> offset), then stream cells through unchanged. The cyfview\n"
+      "  viewer emits this command after you align the ROIs by eye.\n"
+      "\n"
+      "  -f, --scale <float>    Scale factor on x/y (default 1, > 0)\n"
+      "      --xoffset <float>  Add <f> to every x   (--yoffset <f> for y)\n"
+      "      --yoffset <float>\n"
+      "      --flip-x           Invert x (x -> -x); with --xoffset W gives x -> W-x\n"
+      "      --flip-y           Invert y (y -> -y); with --yoffset H gives y -> H-y\n"
+      "  -v, --verbose          Increase output to stderr.\n"
+      "\n"
+      "Example:\n"
+      "  cyftools scaleroi in.byf out.byf --scale 0.325\n"
+      "  cyftools scaleroi in.byf out.byf --flip-y --yoffset 18301\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  ScaleRoiProcessor proc;
+  proc.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  proc.SetParams(factor, xoff, yoff, flipx, flipy);
+
+  if (table.StreamTable(proc, opt::infile))
+    return 1;
+
+  return 0;
+}
+
+static int clearroifunc(int argc, char** argv) {
+
+  const char* shortopts = "vn:s:";
+  std::string name;
+  long sample = -1;
+
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'n' : name = (optarg ? optarg : ""); break;
+    case 's' : arg >> sample; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools clearroi <in> <out> [options]\n"
+      "  Remove @RO polygons from the header, then stream all cells through\n"
+      "  unchanged. With no filter, removes ALL ROIs.\n"
+      "\n"
+      "  -n <name>      Only @RO whose name (NM) contains <name>\n"
+      "  -s <id>        Only @RO for this sample id (SA)\n"
+      "  -v, --verbose  Report how many @RO were removed.\n"
+      "\n"
+      "Example:\n"
+      "  cyftools clearroi in.byf out.byf            # remove all ROIs\n"
+      "  cyftools clearroi in.byf out.byf -n tumor   # remove only 'tumor' ROIs\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  ClearRoiProcessor proc;
+  proc.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  proc.SetParams(name, sample);
+
+  if (!table.StreamTable(proc, opt::infile))
+    return 1;
+
+  return 0;
+}
+
+static int exportfunc(int argc, char** argv) {
+
+  const char* shortopts = "v";
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv)) {
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools export <in> <out.cyfv>\n"
+      "  Export the table to a dependency-free packed columnar binary (magic CYFV)\n"
+      "  for a GPU front-end: column-major id/x/y/cflag/pflag + every marker column.\n"
+      "  See docs/VIEWER_PACK.md for the byte layout.\n"
+      "\n"
+      "Example:\n"
+      "  cyftools export cells.byf cells.cyfv\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  ExportProcessor proc;
+  proc.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  proc.SetParams(opt::outfile);
+
+  // StreamTable returns 0 on success; write the pack from the streamed columns
+  // regardless, then propagate its status.
+  const int rc = table.StreamTable(proc, opt::infile);
+  proc.finalize();
+
+  if (opt::verbose)
+    std::cerr << "...wrote viewer pack: " << opt::outfile << std::endl;
+
+  return rc;
+}
+
+// Resolve an input path to an absolute, canonical path so the cohort JSON is
+// self-contained — a viewer/tool can find the .byf from the JSON alone. Falls
+// back to the path as-passed if it can't be resolved (e.g. "-"/stdin).
+static std::string cohort_abspath(const std::string& p) {
+  if (p.empty() || p == "-") return p;
+  char buf[PATH_MAX];
+  if (realpath(p.c_str(), buf) != nullptr) return std::string(buf);
+  return p;
+}
+
+static int cohortfunc(int argc, char** argv) {
+
+  const char* shortopts = "vr:p:o:t:";
+  double radius = 20.0;          // paint disc radius, microns
+  double pixel  = 1.0;           // raster pixel size, microns
+  std::string outjson = "-";     // JSON destination; "-" = stdout
+
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    std::istringstream arg(optarg != NULL ? optarg : "");
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 'r' : arg >> radius; break;
+    case 'p' : arg >> pixel; break;
+    case 'o' : arg >> outjson; break;
+    case 't' : arg >> opt::threads; break;
+    default: die = true;
+    }
+  }
+
+  // every remaining non-flag argument is an input table (skip the module token)
+  std::vector<std::string> files;
+  optind++;
+  while (optind < argc) files.push_back(argv[optind++]);
+
+  if (die || files.empty() || radius <= 0 || pixel <= 0) {
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools cohort [options] <in1> <in2> ... \n"
+      "  Summarize a cohort of CYF tables into a single JSON. For each input and each\n"
+      "  cflag-defined compartment (plus a synthetic 'All'), the compartment area is\n"
+      "  the union of discs painted around its cells (overlaps counted once). A joint\n"
+      "  (cflag,pflag) histogram lets a viewer count any pflag combination in any\n"
+      "  compartment and divide by its area for cells/mm^2. See docs/COHORT_JSON.md.\n"
+      "\n"
+      "Options:\n"
+      "  -o <file.json>   Output JSON path (default: stdout). Progress goes to stderr.\n"
+      "  -r <microns>     Paint disc radius (default: 20).\n"
+      "  -p <microns>     Raster pixel size; larger = faster, less memory (default: 1).\n"
+      "  -t <int>         Threads for painting (default: 1).\n"
+      "  -v               Verbose.\n"
+      "\n"
+      "Example:\n"
+      "  cyftools cohort -o cohort.json *.byf\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // open output (file or stdout)
+  std::ofstream ofs;
+  std::ostream* os = &std::cout;
+  if (outjson != "-") {
+    ofs.open(outjson);
+    if (!ofs.good()) {
+      std::cerr << "cyftools cohort: cannot open output: " << outjson << std::endl;
+      return 1;
+    }
+    os = &ofs;
+  }
+  os->precision(10);
+
+  std::cerr << "cyftools cohort: " << files.size() << " file(s), radius "
+            << radius << "um, pixel " << pixel << "um, threads "
+            << opt::threads << std::endl;
+
+  // stream each file and build its per-sample JSON object. Cells are not retained
+  // across files: a fresh CohortProcessor/CellTable handles one input at a time.
+  std::vector<std::string> sample_jsons;
+  for (size_t i = 0; i < files.size(); ++i) {
+    std::cerr << "cyftools cohort: [" << (i + 1) << "/" << files.size() << "] "
+              << files[i] << std::endl;
+
+    // skip (but don't abort the cohort) on a missing/unreadable input
+    if (files[i] != "-" && !check_readable(files[i])) {
+      std::cerr << "cyftools cohort: not readable, skipping: " << files[i] << std::endl;
+      continue;
+    }
+
+    CohortProcessor proc;
+    proc.SetCommonParams(outjson, cmd_input, opt::verbose);
+    proc.SetParams(radius, pixel, static_cast<size_t>(opt::threads));
+
+    CellTable t;
+    t.setVerbose(opt::verbose);
+    t.setThreads(opt::threads);
+    if (t.StreamTable(proc, files[i])) {
+      std::cerr << "cyftools cohort: failed to read " << files[i]
+                << " - skipping" << std::endl;
+      continue;
+    }
+
+    std::ostringstream ss;
+    ss.precision(10);
+    proc.WriteSampleJSON(ss, cohort_abspath(files[i]), "    ");   // absolute path -> self-contained JSON
+    sample_jsons.push_back(ss.str());
+  }
+
+  if (sample_jsons.empty()) {
+    std::cerr << "cyftools cohort: no readable input tables" << std::endl;
+    return 1;
+  }
+
+  // emit the cohort document
+  (*os) << "{\n";
+  (*os) << "  \"tool\": \"cyftools\",\n";
+  (*os) << "  \"version\": \"" << CYFTOOLS_VERSION << "\",\n";
+  (*os) << "  \"command\": \"cohort\",\n";
+  (*os) << "  \"params\": { \"paint_radius_um\": " << radius
+        << ", \"paint_pixel_um\": " << pixel << " },\n";
+  (*os) << "  \"n_samples\": " << sample_jsons.size() << ",\n";
+  (*os) << "  \"samples\": [\n";
+  for (size_t i = 0; i < sample_jsons.size(); ++i)
+    (*os) << sample_jsons[i] << (i + 1 < sample_jsons.size() ? "," : "") << "\n";
+  (*os) << "  ]\n";
+  (*os) << "}\n";
+
+  if (outjson != "-")
+    std::cerr << "cyftools cohort: wrote " << outjson << " ("
+              << sample_jsons.size() << " sample(s))" << std::endl;
 
   return 0;
 }
@@ -1732,8 +2472,10 @@ static int cleanfunc(int argc, char** argv) {
   bool clean_cflags = false;
   bool clean_pflags = false;
   bool clean_programs = false;
-  cy_uint cflag_reset = -1;
-  cy_uint pflag_reset = -1; 
+  // 0 = clear no bits by default; -C/-P set a mask, -c/-p clear all (see ProcessLine).
+  // (Previously -1 here silently wiped every cflag/pflag on a plain `clean`.)
+  cy_uint cflag_reset = 0;
+  cy_uint pflag_reset = 0;
   
   for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -2229,13 +2971,15 @@ static void parseRunOptions(int argc, char** argv) {
 
   // make sure module is implemented
   if (! (opt::module == "debug" || opt::module == "subsample" ||
+	 opt::module == "addtag" || opt::module == "addroi" ||
+	 opt::module == "flagroi" || opt::module == "scaleroi" || opt::module == "clearroi" || opt::module == "export" ||
 	 opt::module == "plot"  || opt::module == "roi" ||
 	 opt::module == "histogram" || opt::module == "log10" ||
 	 opt::module == "crop"  ||
 	 opt::module == "count" || opt::module == "clean" ||
 	 opt::module == "annotate" || opt::module == "convolve" ||
 	 opt::module == "flagset" || opt::module == "markcheck" || 
-	 opt::module == "cat" || opt::module == "convert" ||
+	 opt::module == "cat" || opt::module == "convert" || opt::module == "validate" ||
 	 opt::module == "sort" || opt::module == "divide" || 
 	 opt::module == "pearson" || opt::module == "info" ||
 	 opt::module == "cut" || opt::module == "view" ||
@@ -2253,7 +2997,8 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "jaccard" || opt::module == "cellcount" ||
 	 opt::module == "synth" || 
 	 opt::module == "sampleselect" || opt::module == "dbscan" || 
-	 opt::module == "filter" || opt::module == "pheno")) {
+	 opt::module == "filter" || opt::module == "pheno" ||
+		 opt::module == "cohort")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
     die = true;
   }
@@ -2385,10 +3130,11 @@ static int viewfunc(int argc, char** argv) {
       "  <.cyf file>                  File path or '-' to stream from stdin.\n"
       "\n"
       "Optional Options:\n"
-      "  -R                         Print (with header) in csv format\n"
+      "  (default)                  Print tab-delimited records, SAM-style\n"
+      "  -R                         Print comma-separated (CSV) with a column-header row\n"
       "  -A                         Print as name:value format for viewing\n"
       "  -C                         Print as CellID,x,y,...markers... for Crevasse\n"
-      "  -t                         Print tab-delimited and const space\n"
+      "  -t                         Print tab-delimited with justified (padded) columns\n"
       "  -l                         List markers as newline separated\n"
       "  -x <fields>                Comma-separated list of fields to trim output to.\n"
       "  -X <fields>                Like -x, but ONLY output those columns, no CellID, etc\n"
@@ -3339,58 +4085,123 @@ int debugfunc(int argc, char** argv) {
 }
 
 static int convertfunc(int argc, char** argv) {
+  static const struct option convert_longopts[] = {
+    {"sampleid", required_argument, NULL, 's'},
+    {"mpp",      required_argument, NULL, 'c'},
+    {"units",    required_argument, NULL, 'u'},
+    {NULL, 0, NULL, 0}
+  };
   const char* shortopts = "s:vm:u:c:";
-  uint32_t sampleid = 0; //static_cast<uint32_t>(-1);
+  uint32_t sampleid = 0;
   std::string metacols;
   std::string units;
-  std::string microns_to_pixels;
+  std::string mpp;
 
-  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, convert_longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 's' : arg >> sampleid; break;
     case 'v' : opt::verbose = true; break;
     case 'm' : arg >> metacols; break;
     case 'u' : arg >> units; break;
-    case 'c' : arg >> microns_to_pixels; break;      
+    case 'c' : arg >> mpp; break;
     default: die = true;
     }
   }
 
-  /*if (sampleid == static_cast<uint32_t>(-1)) {
-    die = true;
-    }*/
-  
-  if (die || in_out_process(argc, argv)) {
-    
+  // normalize units -> "micron" / "pixel" (REQUIRED, stamped onto @HD UN)
+  std::string un;
+  { std::string u = units; for (auto& ch : u) ch = std::tolower((unsigned char)ch);
+    if      (u == "micron" || u == "microns" || u == "um") un = "micron";
+    else if (u == "pixel"  || u == "pixels"  || u == "px") un = "pixel"; }
+
+  // microns-per-pixel must be a positive number (REQUIRED, stamped onto @HD MP)
+  bool mpp_ok = false;
+  if (!mpp.empty()) { try { mpp_ok = std::stod(mpp) > 0; } catch (...) { mpp_ok = false; } }
+
+  if (die || in_out_process(argc, argv) || un.empty() || !mpp_ok) {
     const char *USAGE_MESSAGE =
-      "Usage: cyftools convert <csvfile> [.cyf file]\n"
-      "  Convert a CSV file to a .cyf formatted file or stream.\n"
+      "Usage: cyftools convert <csvfile> <out.byf> -c <mpp> -u <micron|pixel> [options]\n"
+      "  Convert a CSV to a .cyf/.byf file. Microns-per-pixel and the coordinate\n"
+      "  units are REQUIRED and recorded on the @HD header line (MP and UN), so\n"
+      "  every file is self-describing about its coordinate scale.\n"
       "\n"
-      "Arguments:\n"
-      "  <csvfile>                 Input CSV file path.\n"
-      "  [.cyf file]                 Output .cyf file path or '-' to stream as a cyf-formatted stream to stdout.\n"
+      "Required:\n"
+      "  -c, --mpp <float>           Microns per pixel (> 0).\n"
+      "  -u, --units <micron|pixel>  Units of the x/y coordinates in the CSV.\n"
       "\n"
-      "Required Options:\n"
-      "  -s, --sampleid <int>      Provide a unique sample id (>= 0).\n"
-      "\n"
-      "Optional Options:\n"
-      "  -v, --verbose             Increase output to stderr.\n"
-      "  -h,                       Optionally, supply the header text file here, rather than as appended to csv\n"
-      "  -m,                       List metadata headers as a comma-delimited string (i.e. 'Area,Size,LDA')"
+      "Optional:\n"
+      "  -s, --sampleid <int>        Unique sample id (default 0).\n"
+      "  -m <list>                   Extra non-marker columns, comma-separated (e.g. 'Area,LDA').\n"
+      "  -v, --verbose               Increase output to stderr.\n"
       "\n"
       "Example:\n"
-      "  cyftools convert input.csv output.cyf\n"
-      "  cyftools convert input.csv - -s 12345\n";
+      "  cyftools convert input.csv out.byf -c 0.325 -u pixel -s 12345\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
   CerealProcessor cerp;
   cerp.SetParams(opt::outfile, cmd_input, sampleid);
+  cerp.SetScale(mpp, un);
   table.StreamTableCSV(cerp, opt::infile, metacols);
 
   return 0;
+}
+
+static int validatefunc(int argc, char** argv) {
+  const char* shortopts = "v";
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_only_process(argc, argv)) {
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools validate <in>\n"
+      "  Check the header for the REQUIRED coordinate-scale tags on @HD:\n"
+      "    MP - microns per pixel\n"
+      "    UN - coordinate units (micron or pixel)\n"
+      "  Prints how to add them if missing. Exit 0 = valid, 1 = invalid.\n"
+      "\n"
+      "Example:\n"
+      "  cyftools validate cells.byf\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  ValidateProcessor proc;
+  proc.SetCommonParams("", cmd_input, opt::verbose);
+  CellTable t;
+  t.setVerbose(opt::verbose);
+  if (t.StreamTable(proc, opt::infile)) {
+    std::cerr << "cyftools validate: could not read " << opt::infile << std::endl;
+    return 1;
+  }
+
+  const bool mpp_ok   = !proc.mpp.empty();
+  const bool units_ok = (proc.units == "micron" || proc.units == "pixel");
+  const bool ok = mpp_ok && units_ok;
+
+  std::cerr << "cyftools validate: " << opt::infile << "\n"
+            << "  @HD  VN:" << (proc.version.empty() ? "?" : proc.version)
+            <<      "  SO:" << (proc.sort_order.empty() ? "?" : proc.sort_order) << "\n"
+            << "  microns/pixel    (MP): " << (mpp_ok ? proc.mpp : std::string("MISSING")) << "\n"
+            << "  coordinate units (UN): "
+            << (proc.units.empty() ? std::string("MISSING")
+                  : (units_ok ? proc.units : proc.units + "  (expected micron|pixel)")) << "\n";
+
+  if (ok) {
+    std::cerr << "  OK - required @HD scale tags present.\n";
+    return 0;
+  }
+
+  std::cerr << "\n  INVALID - the BYF header is missing the required @HD scale tags.\n"
+            << "  Add them (set MP to your microns-per-pixel, UN to micron or pixel):\n"
+            << "    cyftools addtag " << opt::infile << " fixed.byf -t HD -f MP:0.325 -f UN:micron\n";
+  return 1;
 }
 
 static int delaunayfunc(int argc, char** argv) {

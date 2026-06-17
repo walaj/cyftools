@@ -376,12 +376,13 @@ size_t CellTable::CellCount() const {
 
 void CellTable::SetupOutputWriter(const std::string& file) {
 
-  // set the output to file or stdout (cereal or CYF, per cyf::useCyfOutput())
+  // format follows the output extension (.cyf text, .byf binary); stdout "-" -> binary
+  const cyf::OutFormat fmt = cyf::formatForPath(file);
   if (file == "-") {
-    m_archive = std::make_unique<OutArchive>(std::cout);
+    m_archive = std::make_unique<OutArchive>(std::cout, fmt);
   } else {
     m_os = std::make_unique<std::ofstream>(file, std::ios::binary);
-    m_archive = std::make_unique<OutArchive>(*m_os);
+    m_archive = std::make_unique<OutArchive>(*m_os, fmt);
   }
 
 }
@@ -1374,6 +1375,9 @@ int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
     return 1;  // or handle the error appropriately for your program
   }
 
+  // ensure an @HD format/version line leads the header (upgrades legacy files)
+  m_header.EnsureHeaderLine();
+
   // process the header.
   // if , don't print rest
   int val = proc.ProcessHeader(m_header);
@@ -1466,61 +1470,69 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
       if (header_read)
 	throw std::runtime_error("Misformed file: header lines should all be at top of file");
       
-      StringVec header_lines = tokenize_comma_delimited<StringVec>(line);
-      
-      size_t ind = 0;
-      for (const auto& s : header_lines) {
-	
-	num_cols++;
-	// if keyword for X, Y 
-	if (s == "X_centroid" || s == "X" || s == "Xt" ) {
-	  x_index = ind;
-	}
-	else if (s == "Y_centroid" || s == "Y" || s == "Yt" ) {
-	  y_index = ind;
-	}
-	else if (s == "CellID") {
-	  id_index = ind;
-	}
-	// this is a meta/marker, add the tag
-	else { 
-	  
-	  // clean out the hyphens etc
-	  std::string s2 = clean_marker_string(s);
-	  uint8_t tag_type = (meta_items.find(s) != meta_items.end()) ? Tag::CA_TAG : Tag::MA_TAG;
-	  Tag tag(tag_type, s2, "");
-	  m_header.addTag(tag);
-	  
-	}
-	
-	// just a sanity check here
-	/*if (ind == 0 && s != "CellID") {
-	  std::cerr << "Error: cyftools convert -- saw header in csv as starting with C but its not CellID, double check?" << std::endl;
-	  assert(false);
-	} else if (ind == 1 && !(s != "Hoechst" || s != "Hoechst1")) {
-	  std::cerr << "Warning: cyftools convert -- usually assume mcmicro header is CellID,Hoechst(1),... but see here that 2nd elem is " << s << std::endl;
-	  std::cerr << "         OK to proceed, but will assume " << s << " is first marker." << std::endl;
-	  } */
-	ind++;
+      StringVec hdr = tokenize_comma_delimited<StringVec>(line);
+      const size_t ncol = hdr.size();
+
+      // Per-column conversion plan (default = ignore).
+      std::vector<uint8_t> kind(ncol, CerealProcessor::COL_IGNORE);
+      std::vector<int>     gate_bit(ncol, -1);
+
+      // Pass 1: classify non-gate columns. A marker's pflag bit = its position
+      // among @MA columns (the convention cohort/viewer use). *p (gate) columns
+      // are deferred to pass 2, which needs the complete marker set.
+      std::unordered_map<std::string,int> marker_bit;
+      std::vector<size_t> pcols;
+      int ma_index = 0;
+      int xt = -1, yt = -1, x_fb = -1, y_fb = -1;
+      for (size_t i = 0; i < ncol; ++i) {
+        const std::string& s = hdr[i];
+        if (s == "CellID")                                 { kind[i] = CerealProcessor::COL_ID; id_index = (int)i; }
+        else if (s == "Xt")                                { xt = (int)i; }
+        else if (s == "Yt")                                { yt = (int)i; }
+        else if (s == "X" || s == "X_centroid")            { x_fb = (int)i; }
+        else if (s == "Y" || s == "Y_centroid")            { y_fb = (int)i; }
+        else if (s == "tX_centroid" || s == "tY_centroid") { kind[i] = CerealProcessor::COL_IGNORE; }
+        else if (s == "Region")                            { kind[i] = CerealProcessor::COL_REGION; }
+        else if (s == "IC") {
+          kind[i] = CerealProcessor::COL_IC;
+          m_header.addTag(Tag(Tag::CA_TAG, "IC", "", (int)i));
+        }
+        else if (meta_items.find(s) != meta_items.end()) {
+          kind[i] = CerealProcessor::COL_CA;
+          m_header.addTag(Tag(Tag::CA_TAG, clean_marker_string(s), "", (int)i));
+        }
+        else if (!s.empty() && s.back() == 'p') {          // gate candidate (*p)
+          pcols.push_back(i);
+        }
+        else {                                             // marker intensity -> @MA
+          kind[i] = CerealProcessor::COL_MARKER;
+          m_header.addTag(Tag(Tag::MA_TAG, clean_marker_string(s), "", (int)i));
+          marker_bit[s] = ma_index++;
+        }
       }
 
-      // we know X_centroid isn't at 0, because we got into here with 'C' as first letter
-      // so what happened is that it never found X_centroid
-      if (x_index < 0) {
-	std::cerr << "Error: cyftools convert -- X_centroid / X / Xt not found" << std::endl;
-	assert(false);
+      // x/y: prefer Xt/Yt, else fall back to plain X/Y; the unused one stays ignored.
+      const int xi = (xt >= 0) ? xt : x_fb;
+      const int yi = (yt >= 0) ? yt : y_fb;
+      if (xi >= 0) { kind[xi] = CerealProcessor::COL_X; x_index = xi; }
+      if (yi >= 0) { kind[yi] = CerealProcessor::COL_Y; y_index = yi; }
+
+      // Pass 2: a *p column is a gate iff stripping the trailing 'p' yields a known
+      // marker; double-marker (e.g. CD8apKi_67_2p) and orphan *p are ignored.
+      for (size_t i : pcols) {
+        const std::string stem = hdr[i].substr(0, hdr[i].size() - 1);
+        auto it = marker_bit.find(stem);
+        if (it != marker_bit.end()) { kind[i] = CerealProcessor::COL_GATE; gate_bit[i] = it->second; }
       }
-      if (y_index < 0) {
-	std::cerr << "Error: cyftools convert -- Y_centroid / Y / Yt not found" << std::endl;
-	assert(false);
-      }
-      if (id_index < 0) {
-	std::cerr << "Warning: cyftools convert -- CellID not found - will just create" << std::endl;
-      }
-      
+
+      if (x_index < 0) { std::cerr << "Error: cyftools convert -- X/Xt/X_centroid not found" << std::endl; assert(false); }
+      if (y_index < 0) { std::cerr << "Error: cyftools convert -- Y/Yt/Y_centroid not found" << std::endl; assert(false); }
+      if (id_index < 0)  std::cerr << "Warning: cyftools convert -- CellID not found; auto-numbering cells" << std::endl;
+
       proc.SetXInd(x_index);
       proc.SetYInd(y_index);
       proc.SetIDInd(id_index);
+      proc.SetColumnPlan(std::move(kind), std::move(gate_bit));
       
     // non-header line (data)
     } else {

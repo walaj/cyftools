@@ -1,0 +1,3258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>cyftools phenotyper · cohort</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --panel: #fff;
+      --border: #ddd;
+      --accent: #2a73d8;
+      --muted: #777;
+      --warn: #c0392b;
+      --ok: #27ae60;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0; padding: 0;
+      background: var(--bg); color: #222;
+    }
+    header {
+      padding: 10px 16px;
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 16px;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+    header .meta { font-size: 12px; color: var(--muted); }
+    header a { color: var(--accent); text-decoration: none; font-size: 12px; }
+    header a:hover { text-decoration: underline; }
+
+    main { padding: 16px; max-width: 1500px; margin: 0 auto; }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+    .panel h2 {
+      font-size: 12px; margin: 0 0 8px 0; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.5px; color: #555;
+    }
+
+    .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+    .controls input[type="number"], .controls input[type="text"] { font-size: 12px; padding: 2px 4px; }
+    .controls input[type="number"] { width: 70px; }
+    .controls input[type="text"]   { width: 120px; }
+    .controls select { font-size: 12px; padding: 2px 4px; }
+    .controls .group-label { color: var(--muted); font-size: 11px; }
+
+    button {
+      background: var(--accent); color: #fff; border: none; border-radius: 4px;
+      padding: 6px 12px; font-size: 13px; cursor: pointer;
+    }
+    button:hover { background: #1c5fbf; }
+    button.secondary { background: #f0f0f0; color: #333; border: 1px solid var(--border); }
+    button.secondary:hover { background: #e6e6e6; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .hint { color: var(--muted); font-size: 11px; }
+
+    /* Calculation description bar */
+    .calc-desc {
+      background: #f5f9ff;
+      border: 1px solid #cfe1ff;
+      border-radius: 5px;
+      padding: 8px 12px;
+      font-size: 12.5px; color: #234;
+      margin-bottom: 12px;
+    }
+    .calc-desc b { color: #112; }
+    .calc-desc code { background: #fff; padding: 1px 5px; border-radius: 2px; font-size: 11.5px; }
+
+    /* Pairwise stats table */
+    table.stats {
+      width: auto; border-collapse: collapse; font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    table.stats th, table.stats td { padding: 4px 10px; border-bottom: 1px solid #eee; text-align: right; }
+    table.stats th:first-child, table.stats td:first-child { text-align: left; }
+    table.stats th { font-weight: 600; color: #555; background: #f5f5f5; }
+    table.stats td.p-sig    { color: #b30000; font-weight: 600; }
+    table.stats td.p-marg   { color: #d35400; font-weight: 600; }
+    table.stats td.p-ns     { color: #777; }
+
+    /* Marker checkboxes (chip style). Looks similar to the cflag chip row
+       in cyf_gater so it's instantly recognizable. */
+    .marker-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 6px 2px 4px;
+      font-size: 11px; cursor: pointer;
+      border-radius: 12px; border: 1px solid #ccc;
+      background: #fff; user-select: none;
+    }
+    .marker-chip input { margin: 0; cursor: pointer; }
+    .marker-chip.checked { background: #e7eef9; border-color: var(--accent); }
+    .marker-chip .bit-tag { color: var(--muted); font-size: 10px; }
+    /* Gate status across the cohort: a small left dot + tinted border.
+       red = bit never ON in any file, yellow = ON in some, green = ON in all,
+       grey = not computed yet. */
+    .marker-chip .gate-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+      background: #bbb; box-shadow: 0 0 0 1px rgba(0,0,0,0.12) inset;
+    }
+    .marker-chip.gate-red    { border-color: #e6a6a0; }
+    .marker-chip.gate-red    .gate-dot { background: #c0392b; }
+    .marker-chip.gate-yellow { border-color: #e3c75a; }
+    .marker-chip.gate-yellow .gate-dot { background: #d4a017; }
+    .marker-chip.gate-green  { border-color: #9bd1a3; }
+    .marker-chip.gate-green  .gate-dot { background: #2e8b57; }
+    .marker-chip.gate-unknown .gate-dot { background: #bbb; }
+    /* keep the selected-state background but let the status border show */
+    .marker-chip.checked.gate-red    { background: #fbeae8; }
+    .marker-chip.checked.gate-yellow { background: #fbf3da; }
+    .marker-chip.checked.gate-green  { background: #e6f4ea; }
+    .marker-legend { font-size: 10px; color: var(--muted); display: inline-flex; gap: 10px; align-items: center; margin-left: 8px; }
+    .marker-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 3px; vertical-align: middle; }
+
+    /* Files table */
+    table.files {
+      width: 100%; border-collapse: collapse; font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      table-layout: fixed;          /* honor explicit per-column widths (resizable) */
+    }
+    table.files th, table.files td {
+      padding: 5px 8px; border-bottom: 1px solid #eee; text-align: left;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    table.files th {
+      font-weight: 600; color: #555; background: #f5f5f5;
+      cursor: pointer; user-select: none; position: relative;
+    }
+    table.files th .sort-mark { font-size: 9px; color: #888; margin-left: 2px; }
+    table.files th:hover { background: #ececec; }
+    /* drag handle on each column's right edge */
+    table.files th .col-resizer {
+      position: absolute; top: 0; right: 0; width: 7px; height: 100%;
+      cursor: col-resize; user-select: none;
+    }
+    table.files th .col-resizer:hover { background: var(--accent); opacity: 0.5; }
+    table.files td.num { text-align: right; }
+    table.files td.status { font-weight: 600; }
+    table.files td.status.queued    { color: #888; }
+    table.files td.status.loading   { color: var(--accent); }
+    table.files td.status.parsing   { color: var(--accent); }
+    table.files td.status.computing { color: var(--accent); }
+    table.files td.status.done      { color: var(--ok); }
+    table.files td.status.cached    { color: var(--ok); }
+    table.files td.status.error     { color: var(--warn); }
+    table.files input.group-input,
+    table.files input.name-input {
+      width: 100%; font-size: 12px; padding: 2px 4px;
+      border: 1px solid #ddd; border-radius: 2px;
+    }
+    table.files input.name-input { font-family: monospace; }
+    #files-panel { overflow-x: auto; }   /* scroll if resized columns overflow */
+    table.files a.open-gater {
+      color: #234; text-decoration: none; border-bottom: 1px dashed #aaa;
+    }
+    table.files a.open-gater:hover { color: var(--accent); border-color: var(--accent); }
+    table.files tr.row-done .file-name { color: #444; }
+    /* Subtle right border between the region columns and the match columns */
+    table.files th.col-divider, table.files td.col-divider {
+      border-right: 2px solid #d9d9d9;
+    }
+
+    .progress-bar {
+      height: 6px; background: #eee; border-radius: 3px; overflow: hidden;
+      margin-top: 6px;
+    }
+    .progress-bar > div {
+      height: 100%; background: var(--accent); width: 0%;
+      transition: width 0.2s ease;
+    }
+
+    /* Plot-row layout: box plot fixed at 480px on the left, waterfall takes
+       the rest, with a generous min-width so it doesn't shrink under the
+       box plot when the window is narrow. */
+    #boxplot-wrap   { flex: 0 0 480px; }
+    #waterfall-wrap { flex: 1 1 600px; min-width: 480px; }
+    #plot-area      { width: 100%; height: 420px; }
+    #waterfall-area { width: 100%; height: 420px; }
+    .summary-line { font-size: 12px; color: #444; margin-top: 6px; }
+    code { background: #f4f4f4; padding: 1px 5px; border-radius: 2px; font-size: 11px; }
+
+    /* Save badge that flashes after group-label saves */
+    #save-flash {
+      display: none;
+      font-size: 11px; color: var(--ok); margin-left: 8px;
+    }
+    #save-flash.show { display: inline; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>cyftools phenotyper · cohort</h1>
+  <span class="meta">load a cohort.json from <code>cyftools cohort</code>, then group + compare</span>
+  <span style="flex:1"></span>
+  <a href="cyf_gater.html">single-sample view →</a>
+</header>
+
+<main>
+
+  <div class="panel">
+    <h2>Cohort + region</h2>
+    <div class="controls">
+      <button id="btn-pick-folder" type="button">Load cohort.json…</button>
+      <input type="file" id="folder-input" accept=".json,application/json" style="display:none" />
+
+      <span class="group-label" style="margin-left: 6px;">Region (cflag, AND)</span>
+      <span id="cflag-display" class="hint" style="font-family: monospace;">all cells</span>
+    </div>
+
+    <!-- Region (cflag) AND-chip row — always visible. -->
+    <div id="cflag-row" class="controls" style="margin-top: 8px; align-items: flex-start;">
+      <span class="group-label" style="padding-top: 3px;">Region bits (AND)</span>
+      <div id="cflag-checkbox-row-cohort" style="display: flex; flex-wrap: wrap; gap: 4px;"></div>
+      <span style="flex:1"></span>
+      <button id="btn-clear-cflag" type="button" class="secondary" style="font-size:11px; padding:2px 8px;"
+        title="Unselect all region bits → the region becomes EVERY cell in the sample (the whole specimen). Density then uses the whole-specimen painted area as the denominator.">Use all cells</button>
+    </div>
+
+    <!-- Per-group color pickers (shown after at least one row has a group label). -->
+    <div id="group-colors-row" class="controls" style="margin-top: 8px; display: none; align-items: center;">
+      <span class="group-label" style="padding-top: 3px;">Group colors</span>
+      <div id="group-colors-list" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+    </div>
+
+    <!-- Marker selection: AND-combine pflag bits. Bits are positional (@MA
+         header order); chip color shows where each is empirically gated. -->
+    <div id="marker-row" class="controls" style="margin-top: 8px; display: none; align-items: flex-start;">
+      <span class="group-label" style="padding-top: 3px;">Markers (AND)</span>
+      <div id="marker-checkboxes" style="display: flex; flex-wrap: wrap; gap: 4px;"></div>
+      <span style="flex:1"></span>
+      <span class="marker-legend" title="Whether each marker's pflag bit is ON in at least one cell, across the loaded cohort.">
+        <span><span class="dot" style="background:#c0392b"></span>none</span>
+        <span><span class="dot" style="background:#d4a017"></span>some</span>
+        <span><span class="dot" style="background:#2e8b57"></span>all</span>
+      </span>
+      <button id="btn-clear-markers" class="secondary" type="button" style="font-size:11px; padding:2px 8px;">Clear</button>
+    </div>
+
+    <div id="calc-desc" class="calc-desc" style="margin-top: 10px;"></div>
+
+    <div id="overall-status" class="hint" style="margin-top: 6px;">no cohort.json loaded — click “Load cohort.json…” (or drag one in). Group labels &amp; colors persist in this browser.</div>
+    <div id="mapping-warning" style="display:none; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--warn); border-radius: 6px; background: #fdecea; color: var(--warn); font-size: 12px; line-height: 1.45;"></div>
+    <div class="progress-bar" id="overall-progress" style="display:none"><div></div></div>
+  </div>
+
+  <div class="panel" id="files-panel" style="display:none">
+    <table class="files">
+      <thead>
+        <tr id="files-head"></tr>
+      </thead>
+      <tbody id="file-rows"></tbody>
+    </table>
+  </div>
+
+  <div class="panel" id="plot-panel" style="display:none">
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap: wrap;">
+      <h2 id="plot-panel-title" style="margin: 0;">By group</h2>
+      <span class="group-label">y:</span>
+      <span id="plot-metric-radios" style="display:inline-flex; gap:8px; align-items:center;"></span>
+      <label class="toggle"><input type="checkbox" id="plot-log" /> log10 y</label>
+      <span style="flex:1"></span>
+      <span id="export-r-flash" style="font-size: 11px; color: var(--ok); display: none;">✓ copied</span>
+    </div>
+    <div id="plot-row" style="margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start;">
+      <div id="boxplot-wrap" style="display: flex; flex-direction: column;">
+        <div style="display:flex; justify-content:flex-end; gap:6px; margin-bottom:4px;">
+          <button id="btn-png-box" class="secondary" type="button" title="Download this plot as PNG at the configured export size">⤓ PNG</button>
+          <button id="btn-export-r-box" class="secondary" type="button" title="Copy R/ggplot2 beeswarm + box plot script to your clipboard">→ R (box plot)</button>
+        </div>
+        <div id="plot-area"></div>
+      </div>
+      <div id="waterfall-wrap" style="display: flex; flex-direction: column;">
+        <div style="display:flex; justify-content:flex-end; gap:6px; margin-bottom:4px;">
+          <button id="btn-png-wf" class="secondary" type="button" title="Download this plot as PNG at the configured export size">⤓ PNG</button>
+          <button id="btn-export-r-wf" class="secondary" type="button" title="Copy R script with the cohort data (waterfall plotting code is a stub for now)">→ R (waterfall)</button>
+        </div>
+        <div id="waterfall-area"></div>
+      </div>
+    </div>
+    <div id="plot-summary" class="summary-line"></div>
+    <div id="stats-table-wrap" style="margin-top: 12px;"></div>
+  </div>
+
+  <!-- Fallback dialog shown when clipboard write is blocked -->
+  <div id="r-export-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:6px; padding:14px; max-width:880px; width:92%; max-height:88vh; display:flex; flex-direction:column; gap:8px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <h2 style="margin:0; font-size:14px;">R script (copy manually)</h2>
+        <span style="flex:1"></span>
+        <button id="btn-r-modal-copy" type="button">Copy</button>
+        <button id="btn-r-modal-close" class="secondary" type="button">Close</button>
+      </div>
+      <textarea id="r-modal-text" style="flex:1; min-height:60vh; font-family:Menlo,Consolas,monospace; font-size:11.5px; padding:8px; border:1px solid var(--border); border-radius:4px;" readonly></textarea>
+      <div class="hint">Clipboard API was unavailable (often the case for file:// origins). Select all + copy from the box above.</div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+(function () {
+'use strict';
+
+// ----- cysift.h cflag bit names (mirrors src/cysift.h) -------------------
+const CFLAG_NAMES = {
+  0:'TUMOR', 1:'MARK', 2:'MARGIN', 3:'TUMOR_MANUAL',
+  4:'TCELL', 5:'TLS', 6:'MARGIN_MANUAL', 7:'NORMAL',
+  8:'NORMAL_MARGIN', 9:'ARTIFACT',
+  12:'GLEASON_1', 13:'GLEASON_2', 14:'GLEASON_3', 15:'GLEASON_4', 16:'GLEASON_5',
+  17:'PERINEURAL', 18:'SEMINAL_VES', 21:'BUILD_GRAPH',
+};
+function cflagBitName(b) {
+  const fromCohort = (typeof cohortCflagBits === 'function') ? cohortCflagBits() : null;
+  if (fromCohort) { const e = fromCohort.find(x => x.bit === b); if (e) return e.name; }
+  return CFLAG_NAMES[b] !== undefined ? CFLAG_NAMES[b] : `bit ${b}`;
+}
+
+// ----- pflag bit ↔ marker mapping ---------------------------------------
+// A marker's pflag bit is NOT a fixed per-name constant. cyftools assigns
+// pflag bit `k` to the k-th @MA tag in *that file's* header (see
+// RescaleProcessor::ProcessLine in src/cell_processor.cpp and header.html), so
+// the same marker can sit on different bits in different cohorts/panels. Every
+// bit is therefore derived positionally from the header (see
+// populateMarkersFromFirstFile). We show ALL markers and indicate which are
+// actually gated empirically (any cell with that bit ON, across the cohort)
+// via red/yellow/green chip coloring — no hardcoded "gateable" name list.
+
+/**
+ * Pull a short display name out of the .cyf filename. Falls back to the
+ * basename without extension when the LSP\d+ pattern isn't there — the
+ * user can edit either case from the Name column.
+ */
+/**
+ * Returns the marker names currently selected via the marker chips, in
+ * sort-by-bit order. Empty when no markers are checked.
+ */
+function selectedMarkerNames() {
+  if (!state.markerBits || state.markerBits.length === 0) return [];
+  const nameByBit = {};
+  for (const m of state.availableMarkers) nameByBit[m.bit] = m.name;
+  return state.markerBits.slice().sort((a, b) => a - b)
+    .map(b => nameByBit[b] || `bit${b}`);
+}
+
+/** All permutations of an array (n! — fine for small N like 1-4 markers). */
+function permutationsOf(arr) {
+  if (arr.length <= 1) return [arr.slice()];
+  const out = [];
+  for (let i = 0; i < arr.length; i++) {
+    const rest = arr.slice(0, i).concat(arr.slice(i + 1));
+    for (const p of permutationsOf(rest)) out.push([arr[i], ...p]);
+  }
+  return out;
+}
+
+/**
+ * Density columns from the .cyf header that are relevant to the current
+ * marker selection. For a single marker the column's base name must match
+ * exactly; for an AND combo we try every concatenation order (so the file
+ * can have e.g. CD3CD8_50r OR CD8CD3_50r).
+ */
+function relevantDensityCols() {
+  const names = selectedMarkerNames();
+  if (!names.length) return [];
+  const cols = state.availableDensityCols || [];
+  if (names.length === 1) {
+    return cols.filter(c => c.marker === names[0]);
+  }
+  const variants = new Set(permutationsOf(names).map(p => p.join('')));
+  return cols.filter(c => variants.has(c.marker));
+}
+
+/**
+ * Rescale a metric record's mm² area from the scaling it was computed at
+ * to the user's current state.scaling.  areaPx² is intrinsic to the data,
+ * so we keep mm² = areaPx² × s² / 1e6 by multiplying by (now/then)².
+ *
+ * meanByCol values are NOT touched by this — they're cyftools-precomputed
+ * radial densities, separately rescaled by `state.densityColScale`.
+ */
+function metricAreaMm2(m) {
+  if (!m || m.areaMm2 == null) return NaN;
+  const s0 = m.scaling || 1;
+  return m.areaMm2 * (state.scaling / s0) ** 2;
+}
+function metricBboxAreaMm2(m) {
+  if (!m || m.bboxAreaMm2 == null) return NaN;
+  const s0 = m.scaling || 1;
+  return m.bboxAreaMm2 * (state.scaling / s0) ** 2;
+}
+function metricDensity(m) {
+  const a = metricAreaMm2(m);
+  return (a > 0) ? m.matchCount / a : NaN;   // NaN (blank) when area unavailable
+}
+
+function defaultDisplayName(fileName) {
+  const base = String(fileName).split('/').pop();
+  const m = base.match(/LSP\d+/i);
+  if (m) return m[0].toUpperCase();
+  return base.replace(/\.cyf$/i, '');
+}
+
+// ----- App state ---------------------------------------------------------
+const state = {
+  files: [], // see folderInput handler for shape
+  running: false,
+  aborted: false,
+  // Compute params
+  // List of cflag bit positions defining the region. AND-combined, so a
+  // cell is "in region" iff (cflag & mask) === mask where mask = OR of
+  // (1<<bit) for each bit. Empty list = "all cells" (no cflag filter).
+  cflagBits: [],
+  scaling: 1,
+  radiusPx: 20,
+  method: 'paint',          // 'paint' | 'hull'
+  // When false, loading a folder does NOT auto-start computing and setting
+  // changes do not auto-fill — the user drives compute via "Compute uncached".
+  // Flipped true once they compute explicitly (or a cache with results loads),
+  // after which setting changes auto-fill the usually-small delta.
+  autoComputeOnChange: false,
+  // List of pflag bit positions to AND-combine for the marker filter.
+  // Empty = no marker filter (Match cells == Region cells).
+  markerBits: [],
+  // Markers actually present in the loaded files (with a known bit assignment).
+  // Populated after folder pick by peeking at the first file's header.
+  availableMarkers: [], // [{ name, bit }]
+  // Local-density columns from the .cyf — names matching <marker>_<radius>r,
+  // typically produced by `cyftools radialdens`. Populated by peeking the
+  // first file's header.  Each entry: { name, marker, radius, colIdx }.
+  availableDensityCols: [],
+  // Display-time multiplier applied to all _NNr column values. Use when
+  // the source .cyf was computed with the wrong μm/pixel. Cached values
+  // are NOT modified — this is purely a render-time correction.
+  densityColScale: 1,
+  // File System Access handle for the linked cache JSON (Chrome/Edge only).
+  // In-memory only — browser security; the user re-clicks "Save to file"
+  // once per session to re-link.
+  cacheFileHandle: null,
+  // Directory handle (Chrome/Edge `showDirectoryPicker`) — also in-memory.
+  // When set, we can read .cyf and read/write cache.json without further
+  // prompts for the rest of the session.
+  dirHandle: null,
+  _cacheDirty: false,
+  // User-customized colors per group label, persisted via settings.
+  // Falls back to SET2 alphabetical-order default when missing.
+  groupColors: {},
+  // Which metric to plot/test on: 'density' (cells/mm²) or 'percent' (% in region).
+  // Persisted via settings.
+  plotMetric: 'density',
+  // Table sorting
+  sortColumn: 'name',
+  sortDir: 'asc',
+  // ----- ROI support -----
+  // µm/px used to convert ROI polygon areas (px²) to mm². One value for the
+  // whole cohort ("scale all of them"). Default = a typical 20× scan.
+  roiScale: 0.325,
+  // Parsed ROIs keyed by LSP id (e.g. "LSP12601"):
+  //   { file, regions:[{label, areaPx2, isTumor}], tumorPx2, allPx2, nTumor }
+  // In-memory only (re-picked each session, like the .cyf File objects).
+  roisByLsp: {},
+};
+
+// ===== cohort.json data layer ============================================
+//
+// `cyftools cohort` writes a precomputed summary: per sample a joint
+// (cflag,pflag) histogram plus painted compartment areas. We load that and
+// derive every metric the table/plots need with cheap masked sums — no
+// per-cell data, no recompute cost. This REPLACES the old per-.cyf pipeline
+// (cyf_reader.js / cyf_metrics.js); everything below the data layer (table,
+// box plot, waterfall, stats, R export, ROI, grouping) is unchanged.
+let COHORT = null;   // { params, samples:[raw] }
+
+/** Decimal string (possibly > 2^53) -> low 32 bits (enough for <32-bit flags). */
+function u64lo(str){
+  if (str.length <= 9) return (Number(str) >>> 0);
+  return Number(BigInt(str) & 0xffffffffn) >>> 0;
+}
+
+/** Build a sample's typed-array histogram + areas + intrinsic flag stats. */
+function buildSampleHist(s){
+  const H = s.flag_histogram || [], R = H.length;
+  const cfLo = new Uint32Array(R), pfLo = new Uint32Array(R), cnt = new Float64Array(R);
+  let pflagOr = 0, cflagOr = 0, n = 0;
+  const pflagBitCounts = new Array(32).fill(0), cflagBitCounts = new Array(32).fill(0);
+  for (let i = 0; i < R; i++){
+    const row = H[i];
+    const c = u64lo(row[0]), p = u64lo(row[1]), k = row[2];
+    cfLo[i] = c; pfLo[i] = p; cnt[i] = k; n += k;
+    pflagOr |= p; cflagOr |= c;
+    let x = p; while (x){ const b = 31 - Math.clz32(x); pflagBitCounts[b] += k; x &= ~(1 << b); }
+    let y = c; while (y){ const b = 31 - Math.clz32(y); cflagBitCounts[b] += k; y &= ~(1 << b); }
+  }
+  const areas = {}, compN = {};
+  for (const comp of (s.compartments || [])){ areas[comp.bit] = comp.area_mm2; compN[comp.bit] = comp.n_cells; }
+  return { R, cfLo, pfLo, cnt, n, areas, compN,
+           pflagOr: pflagOr >>> 0, cflagOr: cflagOr >>> 0, pflagBitCounts, cflagBitCounts };
+}
+
+/** Cells whose cflag matches the AND-mask (any pflag). */
+function histRegionCount(S, cmask){
+  let t = 0; const { R, cfLo, cnt } = S; cmask >>>= 0;
+  for (let i = 0; i < R; i++) if (((cfLo[i] & cmask) >>> 0) === cmask) t += cnt[i];
+  return t;
+}
+/** Cells matching the cflag AND-mask AND the pflag (marker) AND-mask. */
+function histMatchCount(S, cmask, pmask){
+  let t = 0; const { R, cfLo, pfLo, cnt } = S; cmask >>>= 0; pmask >>>= 0;
+  for (let i = 0; i < R; i++)
+    if (((cfLo[i] & cmask) >>> 0) === cmask && ((pfLo[i] & pmask) >>> 0) === pmask) t += cnt[i];
+  return t;
+}
+/** Painted region area (mm²), or null when not precomputed. cyftools cohort
+ *  paints each single cflag bit + "All" (-1), NOT arbitrary AND-combos. */
+function areaForRegion(S, cflagBits){
+  if (!cflagBits || cflagBits.length === 0) return (S.areas[-1] != null ? S.areas[-1] : null);
+  if (cflagBits.length === 1){ const a = S.areas[cflagBits[0]]; return (a != null ? a : null); }
+  return null;   // AND of >1 cflag bit → no painted area available
+}
+
+/** [{bit,name}] of the cohort's cflag compartments (union across samples). */
+function cohortCflagBits(){
+  if (!COHORT) return null;
+  const m = new Map();
+  for (const s of COHORT.samples) for (const e of (s.cflag_bits || [])) if (!m.has(e.bit)) m.set(e.bit, e.name);
+  return [...m.entries()].map(([bit, name]) => ({ bit, name })).sort((a, b) => a.bit - b.bit);
+}
+
+/** Recompute one sample's metrics from its histogram for the current region +
+ *  marker selection (cheap; called for every sample on any setting change). */
+function computeMetricsForEntry(entry){
+  const S = entry.hist; if (!S){ entry.metrics = null; return; }
+  const cmask = cflagMaskFromBits(state.cflagBits), pmask = bitsToMask(state.markerBits);
+  const areaMm2 = areaForRegion(S, state.cflagBits);
+  entry.metrics = {
+    count: S.n,
+    regionCount: histRegionCount(S, cmask),
+    matchCount:  histMatchCount(S, cmask, pmask),
+    areaMm2: (areaMm2 == null ? null : areaMm2),
+    scaling: state.scaling,   // = state.scaling so metricAreaMm2() rescales to identity
+    bboxAreaMm2: null, meanByCol: {},
+  };
+}
+
+/** Ingest a parsed cohort.json: build state.files + markers, compute, render. */
+function ingestCohortJson(json){
+  if (!json || !Array.isArray(json.samples)){ alert('Not a cyftools cohort JSON (missing samples[]).'); return; }
+  COHORT = { params: json.params || {}, samples: json.samples };
+  const cache = loadCache();
+
+  // marker chips come from the pflag legend (union across samples)
+  const pf = new Map();
+  for (const s of json.samples) for (const e of (s.pflag_bits || [])) if (!pf.has(e.bit)) pf.set(e.bit, e.name);
+  state.availableMarkers = [...pf.entries()].map(([bit, name]) => ({ bit, name })).sort((a, b) => a.bit - b.bit);
+  state.availableDensityCols = [];   // cohort.json carries no radial-density columns
+
+  state.files = json.samples.map(s => {
+    const name = s.file || s.sample || 'sample';
+    const key  = 's:' + (s.sample != null ? s.sample : name);
+    const hist = buildSampleHist(s);
+    return {
+      hist, key, name,
+      displayName: (cache.names && cache.names[key]) || s.sample || defaultDisplayName(name),
+      // group: a label you set locally wins; otherwise the @SA GP tag baked into
+      // cohort.json by `cyftools addtag --group` pre-fills it.
+      group: (cache.groups && cache.groups[key]) || s.group || '',
+      size: 0, modified: 0, status: 'done', metrics: null, error: null,
+      pflagOr: hist.pflagOr, pflagBitCounts: hist.pflagBitCounts,
+      cflagBitCounts: hist.cflagBitCounts, cellCount: hist.n,
+    };
+  });
+
+  // rebuild chips/markers from the cohort's own legends, then compute + show
+  buildCflagChips();
+  renderMarkerCheckboxes();
+  state.autoComputeOnChange = true;
+  refreshCachedStatusForAll();        // = recompute every sample from its histogram
+
+  // reflect the cohort's baked paint params; disable the now-inert per-cell knobs
+  const p = COHORT.params || {};
+  if (typeof p.paint_radius_um === 'number') state.radiusPx = p.paint_radius_um;
+  state.method = 'paint';
+  const paint = document.querySelector('input[name="method-radio"][value="paint"]'); if (paint) paint.checked = true;
+  const hull  = document.querySelector('input[name="method-radio"][value="hull"]');
+  if (hull){ hull.disabled = true; hull.checked = false; if (hull.parentElement) hull.parentElement.title = 'hull area needs per-cell data — not in cohort.json'; }
+  const sc = document.getElementById('scaling-input');
+  if (sc){ sc.value = (p.paint_pixel_um != null ? p.paint_pixel_um : 1); sc.disabled = true; sc.title = 'baked into cohort.json (cyftools cohort -p); area is already in mm²'; }
+  const ds = document.getElementById('density-scale-input'); if (ds) ds.disabled = true;
+  if (computeBtn)   computeBtn.style.display = 'none';
+  if (recomputeBtn) recomputeBtn.style.display = 'none';
+
+  filesPanel.style.display = '';
+  const np = json.samples.length;
+  overallStatus.innerHTML =
+    `Loaded <b>${np}</b> sample${np === 1 ? '' : 's'} from cohort.json · ` +
+    `paint r=${p.paint_radius_um}µm, pixel=${p.paint_pixel_um}µm · ` +
+    `${state.availableMarkers.length} phenotype bits, ${(cohortCflagBits() || []).length} compartments`;
+  render();
+  applyConfig(CONFIG);   // apply a preloaded preferences file, if one is present
+}
+
+/** Parse a File (cohort.json) and ingest it. */
+async function loadCohortFile(file){
+  try { ingestCohortJson(JSON.parse(await file.text())); }
+  catch (e){ console.error(e); alert('Could not load cohort.json:\n' + e.message); }
+}
+
+// ----- optional preferences file (small, all keys optional) ----------------
+// { "group_colors": { "Responder": "#2a73d8", ... },
+//   "default_metric": "density"|"percent",
+//   "default_compartment": "Tumor"|"all"|<bit>,
+//   "export": { "format":"png", "width":1100, "height":700, "scale":2 } }
+let CONFIG = null;
+function applyConfig(cfg){
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg.samples)) return;
+  CONFIG = cfg;
+  if (cfg.group_colors && typeof cfg.group_colors === 'object')
+    Object.assign(state.groupColors, cfg.group_colors);
+  if (typeof cfg.default_metric === 'string') state.plotMetric = cfg.default_metric;
+  if (COHORT && cfg.default_compartment != null) {
+    const legend = cohortCflagBits() || [];
+    const want = String(cfg.default_compartment).toLowerCase();
+    const hit = legend.find(e => e.name.toLowerCase() === want || String(e.bit) === want);
+    state.cflagBits = hit ? [hit.bit] : [];          // unknown / "all" -> all cells
+    if (typeof syncCflagChips === 'function') syncCflagChips();
+  }
+  saveSettings();
+  if (COHORT) { refreshCachedStatusForAll(); render(); }
+}
+
+/** Output size for PNG export, from the config (with sane defaults). */
+function cohortExportSize(){
+  const e = (CONFIG && CONFIG.export) || {};
+  return { format: e.format || 'png', width: +e.width || 1000,
+           height: +e.height || 650, scale: +e.scale || 2 };
+}
+function downloadPlotPNG(divId, name){
+  const el = document.getElementById(divId);
+  if (!el || !el.data){ alert('Nothing to export yet — group some samples to draw a plot first.'); return; }
+  const s = cohortExportSize();
+  Plotly.downloadImage(el, { format: s.format, width: s.width, height: s.height, scale: s.scale, filename: name });
+}
+
+/** A dropped/picked .json is a cohort if it has samples[], else a config file. */
+async function loadDroppedFile(file){
+  let json;
+  try { json = JSON.parse(await file.text()); }
+  catch (e){ console.error(e); alert('Not valid JSON:\n' + e.message); return; }
+  if (Array.isArray(json.samples)) ingestCohortJson(json);
+  else applyConfig(json);
+}
+
+// Column definitions — used for header rendering AND tooltip stats AND sort.
+// `accessor(file)` returns either a string (for `name`/`group`/`status`) or a
+// number for the numeric columns.
+// `desc` shows up at the top of the column tooltip — phrase it as a complete
+// sentence the casual user can read without remembering what every setting
+// does. The numeric-column tooltip then appends per-column stats underneath.
+// Columns are grouped left → right as:
+//   [identity]  File · Name · Group
+//   [counts]    Total cells · Cflag region cells · (Marker)+ cells   ← divider after this
+//   [paint]     Paint area (mm²) · cells/mm²                         ← divider after this (only when ROI present)
+//   [ROI]       ROI area (mm²) · cells/mm² (ROI)   (only when an ROI folder is loaded)
+//   [meta]      % in region · Status
+const COLUMNS = [
+  { key: 'name',        label: 'File',          kind: 'str',
+    accessor: f => f.name,
+    desc: 'The .cyf file name (relative to the folder you picked).' },
+
+  { key: 'displayName', label: 'Name',          kind: 'str',
+    accessor: f => f.displayName || '',
+    desc: 'Short label used on the waterfall x-axis. Defaults to the LSP\\d+ pattern in the filename when present.' },
+
+  { key: 'group',       label: 'Group',         kind: 'str',
+    accessor: f => f.group || '',
+    desc: 'Free-text group label you assign for the comparison plot below.' },
+
+  // ----- counts group -----
+  { key: 'count',       label: 'Total cells',   kind: 'num', digits: 0,
+    accessor: f => f.metrics?.count,
+    desc: 'Total number of cells in the .cyf file (every record).' },
+
+  { key: 'regionCount', label: 'Cflag region cells',  kind: 'num', digits: 0,
+    accessor: f => f.metrics?.regionCount,
+    desc: 'Cells in the SELECTED CFLAG REGION — cells with the chosen cflag bit set (or every cell when "All cells" is the region).' },
+
+  { key: 'matchCount',
+    // Dynamic label: the marker combination + " cells", e.g. "CD8a+CD3e+ cells".
+    // Falls back to "Match cells" when no markers are checked.
+    label: () => (selectedMarkerLabel() ? `${selectedMarkerLabel()} cells` : 'Match cells'),
+    kind: 'num', digits: 0,
+    accessor: f => f.metrics?.matchCount,
+    desc: 'Region cells that ALSO have all selected marker pflag bits ON. Equals Cflag region cells when no markers are checked.',
+    dividerAfter: true },
+
+  // ----- paint-area density group -----
+  { key: 'areaMm2',     label: 'Paint area (mm²)', kind: 'num', digits: 1,
+    accessor: f => f.metrics ? metricAreaMm2(f.metrics) : undefined,
+    desc: 'Painted area of the cflag region (mm²), precomputed by cyftools cohort (union of discs around each cell in the region).' },
+
+  { key: 'density',     label: 'cells/mm²',     kind: 'num', digits: 1,
+    accessor: f => f.metrics ? metricDensity(f.metrics) : undefined,
+    desc: 'Density = (Marker)+ cells / Paint area, both rescaled to the current μm/pixel on the fly. The headline metric used in the group comparison below.' },
+
+  // ----- meta -----
+  { key: 'pctInRegion', label: '% in region',   kind: 'num', digits: 2,
+    accessor: f => {
+      const m = f.metrics;
+      if (!m || !m.regionCount) return null;
+      return 100 * m.matchCount / m.regionCount;
+    },
+    desc: 'Percent of cflag-region cells that ALSO pass the marker filter — numerator = cells with all selected pflag bits ON, denominator = cells with the chosen cflag bit set. Equals 100% when no markers are selected.' },
+
+  { key: 'status',      label: 'Status',        kind: 'str',
+    accessor: f => f.status,
+    desc: 'Computation status: queued / loading / parsing / computing / done / cached / error.' },
+];
+
+/**
+ * Returns COLUMNS extended with one extra column per local-density CA
+ * column that matches the current marker selection (e.g. CD20_50r when
+ * the CD20 chip is checked). When no marker is selected, returns the
+ * base COLUMNS array unchanged.
+ */
+function getColumns() {
+  const out = COLUMNS.slice();
+
+  // ROI-area columns (only when an ROI folder is loaded). Placed right after
+  // the paint "cells/mm²" so the two density estimates sit side by side, with a
+  // divider (BAR) separating the paint group from the ROI group.
+  if (anyRoiLoaded()) {
+    const di = out.findIndex(c => c.key === 'density');
+    // Clone the density column so adding the divider doesn't mutate the shared
+    // COLUMNS entry (which would leave a stray BAR when ROIs are later cleared).
+    out[di] = Object.assign({}, out[di], { dividerAfter: true });
+    const at = di + 1;
+    out.splice(at, 0,
+      { key: 'roiArea', label: 'ROI area (mm²)', kind: 'num', digits: 3,
+        accessor: f => { const a = roiAreaMm2ForFile(f); return isFinite(a) ? a : undefined; },
+        desc: `Total TUMOR area of the matched LSP#.roi.csv (sum of polygons whose name contains "tumor"), converted with ${state.roiScale} µm/px. Blank when no ROI file matched this sample's LSP id.` },
+      { key: 'roiDensity', label: 'cells/mm² (ROI)', kind: 'num', digits: 1,
+        accessor: f => { const d = roiDensityForFile(f); return isFinite(d) ? d : undefined; },
+        desc: 'Density using the exact ROI tumor area as the denominator: Match cells (cflag region ∩ pflag markers) ÷ ROI tumor area. Blank when no ROI matched.' },
+    );
+  }
+
+  // Per-marker local-density CA columns (e.g. CD20_50r) when a marker is checked.
+  const relevant = relevantDensityCols();
+  if (relevant.length) {
+    const insertAt = out.findIndex(c => c.key === 'pctInRegion') + 1;
+    const extras = relevant.map(rc => ({
+      key: 'col:' + rc.name,
+      label: rc.name,
+      kind: 'num',
+      digits: 1,
+      accessor: f => {
+        const v = f.metrics?.meanByCol?.[rc.name];
+        return (v === null || v === undefined) ? v : v * (state.densityColScale || 1);
+      },
+      desc: `Mean of column "${rc.name}" across all cells in the selected region. Pre-computed by cyftools as a local density (cells / mm² within a ${rc.radius}-pixel radius neighborhood around each cell). Currently scaled by ×${state.densityColScale || 1} (display only).`,
+    }));
+    out.splice(insertAt, 0, ...extras);
+  }
+  return out;
+}
+
+// ===== ROI support ========================================================
+//
+// Load a folder of LSP#.roi.csv files, match each to a sample by its LSP id,
+// and expose the (tumor) polygon area so the table + plot can show a density
+// that uses the ROI area as the denominator (numerator = the usual Match count
+// defined by the cflag region ∩ pflag markers). Areas convert with a single
+// cohort-wide µm/px (state.roiScale). No per-cell work, so no recompute.
+
+/** LSP id (e.g. "LSP12601") from a file name, or null if absent. */
+function lspIdOf(name) {
+  const m = String(name).match(/LSP\d+/i);
+  return m ? m[0].toUpperCase() : null;
+}
+
+/** Shoelace polygon area (px²) for an array of [x,y] vertices. */
+function polygonAreaPx2(poly) {
+  let a = 0;
+  for (let i = 0, n = poly.length; i < n; i++) {
+    const [x1, y1] = poly[i];
+    const [x2, y2] = poly[(i + 1) % n];
+    a += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(a) / 2;
+}
+
+/** Split one CSV line, honoring "quoted" fields that may contain commas. */
+function splitCsvLine(line) {
+  const out = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += ch;
+    } else {
+      if (ch === '"') inQ = true;
+      else if (ch === ',') { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+/** Parse ROI csv text → { regions:[{label, areaPx2, isTumor}], tumorPx2, allPx2, nTumor }. */
+function parseRoiCsvText(text) {
+  const lines = text.split(/\r\n|\r|\n/).filter(l => l.trim().length);
+  const regions = [];
+  if (lines.length) {
+    const header = splitCsvLine(lines[0]).map(h => h.trim().toLowerCase());
+    const ci = (n) => header.indexOf(n);
+    const iText = ci('text'), iName = ci('name'), iPoints = ci('all_points'), iId = ci('id');
+    const clean = (s) => { s = (s || '').trim(); return (s === '' || s.toLowerCase() === 'undefined') ? '' : s; };
+    for (let r = 1; r < lines.length; r++) {
+      const f = splitCsvLine(lines[r]);
+      const poly = [];
+      for (const tok of String((iPoints >= 0 ? f[iPoints] : '') || '').trim().split(/\s+/)) {
+        if (!tok) continue;
+        const c = tok.split(',');
+        const x = parseFloat(c[0]), y = parseFloat(c[1]);
+        if (isFinite(x) && isFinite(y)) poly.push([x, y]);
+      }
+      if (poly.length < 3) continue;
+      const label = clean(iText >= 0 ? f[iText] : '') || clean(iName >= 0 ? f[iName] : '') ||
+                    `ROI ${(iId >= 0 ? f[iId] : r) || r}`;
+      regions.push({ label, areaPx2: polygonAreaPx2(poly), isTumor: /tumou?r/i.test(label) });
+    }
+  }
+  let tumorPx2 = 0, allPx2 = 0, nTumor = 0;
+  for (const rg of regions) { allPx2 += rg.areaPx2; if (rg.isTumor) { tumorPx2 += rg.areaPx2; nTumor++; } }
+  return { regions, tumorPx2, allPx2, nTumor };
+}
+
+/** Read a picked folder's files, parse each .csv ROI, key by LSP id. */
+async function loadRoiFiles(fileList) {
+  const csvs = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith('.csv'));
+  const byLsp = {};
+  let parsed = 0, noLsp = 0;
+  for (const f of csvs) {
+    const lsp = lspIdOf(f.name);
+    if (!lsp) { noLsp++; continue; }
+    let text;
+    try { text = await f.text(); } catch (e) { console.warn('ROI read failed', f.name, e); continue; }
+    const p = parseRoiCsvText(text);
+    if (!p.regions.length) continue;
+    byLsp[lsp] = { file: f.name, regions: p.regions, tumorPx2: p.tumorPx2, allPx2: p.allPx2, nTumor: p.nTumor };
+    parsed++;
+  }
+  state.roisByLsp = byLsp;
+  state._roiLoadInfo = { nCsv: csvs.length, nParsed: parsed, nNoLsp: noLsp, fromCache: false };
+  persistRois();   // cache the parsed ROI areas so they survive across sessions
+  updateRoiMatchStatus();
+  render();   // ROI columns + density appear; box plot can switch to ROI metric
+}
+
+/** Write the parsed ROI areas into the cache JSON (localStorage + auto-synced
+ *  cache.json). Keyed by LSP id, independent of compute config — so they're
+ *  never recomputed and survive across sessions even before re-picking the
+ *  ROI folder. */
+function persistRois() {
+  const c = loadCache();
+  c.rois = state.roisByLsp;
+  saveCache(c);   // triggers the debounced cache.json auto-sync too
+}
+
+/** Restore ROI areas saved in a previous session (called on boot and after a
+ *  cache.json import) when the user hasn't already picked an ROI folder. */
+function restoreRoisFromCache(cache) {
+  const rois = (cache || loadCache()).rois;
+  if (!rois || !Object.keys(rois).length) return;
+  if (Object.keys(state.roisByLsp).length) return;   // a fresh pick wins
+  state.roisByLsp = rois;
+  state._roiLoadInfo = { nCsv: 0, nParsed: Object.keys(rois).length, nNoLsp: 0, fromCache: true };
+}
+
+function updateRoiMatchStatus() {
+  const el = document.getElementById('roi-match-status');
+  if (!el) return;
+  const info = state._roiLoadInfo;
+  const lspKeys = Object.keys(state.roisByLsp);
+  if (!lspKeys.length) {
+    el.innerHTML = (info && info.nCsv)
+      ? `<span style="color:var(--warn)">found ${info.nCsv} .csv but none had an LSP id / polygons</span>`
+      : 'no ROI folder loaded — pick a folder of LSP#.roi.csv files';
+    return;
+  }
+  const matched = state.files.filter(f => state.roisByLsp[lspIdOf(f.name)]).length;
+  const noTumor = lspKeys.filter(k => !state.roisByLsp[k].nTumor).length;
+  const n = info ? info.nParsed : lspKeys.length;
+  el.innerHTML =
+    `${n} ROI${n === 1 ? '' : 's'} ${info && info.fromCache ? 'restored from cache' : 'loaded'} · ` +
+    `matched <b>${matched}</b>/${state.files.length} sample${state.files.length === 1 ? '' : 's'} by LSP id` +
+    (info && info.nNoLsp ? ` · ${info.nNoLsp} csv skipped (no LSP id)` : '') +
+    (noTumor ? ` · <span style="color:#b8860b">${noTumor} with no "tumor" region</span>` : '');
+}
+
+/** Matched ROI tumor area for a sample, in px² (null if no ROI matched). */
+function roiTumorPx2ForFile(f) {
+  const lsp = lspIdOf(f.name);
+  const r = lsp && state.roisByLsp[lsp];
+  return r ? r.tumorPx2 : null;
+}
+/** ROI tumor area in mm² for a sample (NaN if unmatched / zero). */
+function roiAreaMm2ForFile(f) {
+  const px2 = roiTumorPx2ForFile(f);
+  if (px2 == null || px2 <= 0) return NaN;
+  const s = state.roiScale || 0.325;
+  return px2 * s * s / 1e6;
+}
+/** ROI-area density for a sample = Match cells / ROI tumor area (NaN if N/A). */
+function roiDensityForFile(f) {
+  const a = roiAreaMm2ForFile(f);
+  const m = f.metrics;
+  return (m && a > 0) ? m.matchCount / a : NaN;
+}
+function anyRoiLoaded() { return Object.keys(state.roisByLsp).length > 0; }
+
+// ----- Persistent cache (localStorage) -----------------------------------
+const LS_KEY = 'cyf_cohort_v2';
+const LS_SETTINGS_KEY = 'cyf_cohort_v2_settings';
+
+// In-memory copy is the session's source of truth. localStorage and the
+// folder's cache.json are durable backers. This matters because a large cohort
+// can exceed the localStorage quota: if a write throws, we must NOT lose the
+// results mid-session (that's what caused "it recomputed everything I'd already
+// done"). The in-memory cache keeps them; cache.json still persists to disk.
+let _memCache = null;
+function normalizeCache(c) {
+  if (!c || typeof c !== 'object') c = {};
+  if (!c.samples || typeof c.samples !== 'object') c.samples = {};
+  if (!c.groups  || typeof c.groups  !== 'object') c.groups  = {};
+  if (!c.names   || typeof c.names   !== 'object') c.names   = {};
+  if (!c.rois    || typeof c.rois    !== 'object') c.rois    = {};  // ROI areas by LSP id
+  return c;
+}
+function loadCache() {
+  if (_memCache) return _memCache;
+  let c = null;
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    c = raw ? JSON.parse(raw) : null;
+  } catch { c = null; }
+  _memCache = normalizeCache(c);
+  return _memCache;
+}
+function saveCache(cache) {
+  _memCache = normalizeCache(cache);   // never lose results, even if disk write fails
+  try { localStorage.setItem(LS_KEY, JSON.stringify(_memCache)); }
+  catch (e) { console.warn('cohort: localStorage write failed — keeping in-memory cache; cache.json sync still persists to disk', e); }
+}
+
+/**
+ * One-time migration: caches generated before scaling moved out of the
+ * config key had keys like "cb=3|m=paint|s=1|r=20|mb=6". Strip the |s=X
+ * portion so lookups under the new key shape find them. Idempotent; safe
+ * to call repeatedly. Only writes if something changed.
+ */
+function migrateCacheKeys() {
+  const cache = loadCache();
+  let changed = false;
+  for (const sk of Object.keys(cache.samples || {})) {
+    const samp = cache.samples[sk];
+    const mbc = samp.metricsByConfig || {};
+    const newMbc = {};
+    for (const k of Object.keys(mbc)) {
+      let nk = k.replace(/\|s=[^|]*/g, '');     // " ...|s=1|..." → " ...|..."
+      nk = nk.replace(/^s=[^|]*\|/, '');         // " s=1|..." at start
+      if (nk !== k) changed = true;
+      // Last-writer wins if two old keys collapse to the same new key.
+      newMbc[nk] = mbc[k];
+    }
+    samp.metricsByConfig = newMbc;
+  }
+  if (changed) {
+    saveCache(cache);
+    console.info('cohort: migrated cache keys to scaling-independent form');
+  }
+}
+migrateCacheKeys();   // run at script load before anything reads the cache
+
+/**
+ * Persist the user's current compute settings (bit/method/marker/etc.) so a
+ * page reload lands in the same configuration — otherwise cache lookups
+ * use a different config key on reload and force recompute even though the
+ * results are sitting in localStorage.
+ */
+function settingsSnapshot() {
+  return {
+    cflagBits:  state.cflagBits.slice(),
+    method:     state.method,
+    scaling:    state.scaling,
+    radiusPx:   state.radiusPx,
+    markerBits: state.markerBits.slice(),
+    groupColors: Object.assign({}, state.groupColors),
+    densityColScale: state.densityColScale,
+    roiScale:   state.roiScale,
+    plotMetric: state.plotMetric,
+    sortColumn: state.sortColumn,
+    sortDir:    state.sortDir,
+  };
+}
+function applySettings(s) {
+  if (!s) return;
+  if (Array.isArray(s.cflagBits))       state.cflagBits  = s.cflagBits.slice();
+  else if (typeof s.bit === 'number')   state.cflagBits  = [s.bit]; // legacy
+  if (typeof s.method === 'string')     state.method     = s.method;
+  if (typeof s.scaling === 'number')    state.scaling    = s.scaling;
+  if (typeof s.radiusPx === 'number')   state.radiusPx   = s.radiusPx;
+  if (Array.isArray(s.markerBits))      state.markerBits = s.markerBits.slice();
+  if (s.groupColors && typeof s.groupColors === 'object') state.groupColors = Object.assign({}, s.groupColors);
+  if (typeof s.densityColScale === 'number' && isFinite(s.densityColScale) && s.densityColScale > 0) state.densityColScale = s.densityColScale;
+  if (typeof s.roiScale === 'number' && isFinite(s.roiScale) && s.roiScale > 0) state.roiScale = s.roiScale;
+  if (s.plotMetric === 'density' || s.plotMetric === 'percent' || s.plotMetric === 'roiDensity') state.plotMetric = s.plotMetric;
+  if (typeof s.sortColumn === 'string') state.sortColumn = s.sortColumn;
+  if (typeof s.sortDir === 'string')    state.sortDir    = s.sortDir;
+  syncSettingsUI();
+}
+function syncSettingsUI() {
+  // Push state values into the actual input/select elements so the UI shows
+  // what we're actually computing with. Called on boot and on import.
+  syncCflagChips();
+  for (const r of methodRadios) r.checked = (r.value === state.method);
+  if (scalingInput) scalingInput.value = state.scaling;
+  const dsi = document.getElementById('density-scale-input');
+  if (dsi) dsi.value = state.densityColScale;
+  const rsi = document.getElementById('roi-scale-input');
+  if (rsi) rsi.value = state.roiScale;
+  // Plot metric radio
+  for (const r of document.querySelectorAll('input[name="plot-metric"]')) {
+    r.checked = (r.value === state.plotMetric);
+  }
+  // Marker checkboxes (only present after folder is loaded)
+  syncMarkerCheckboxes();
+}
+
+function syncMarkerCheckboxes() {
+  const box = document.getElementById('marker-checkboxes');
+  if (!box) return;
+  const sel = new Set(state.markerBits);
+  for (const chip of box.children) {
+    const bit = parseInt(chip.dataset.bit, 10);
+    const cb = chip.querySelector('input');
+    if (cb) cb.checked = sel.has(bit);
+    chip.classList.toggle('checked', sel.has(bit));
+  }
+}
+function saveSettings() {
+  try { localStorage.setItem(LS_SETTINGS_KEY, JSON.stringify(settingsSnapshot())); }
+  catch (e) { console.warn('cohort: could not write settings', e); }
+  // Settings (cflag bit, method, marker checkboxes, scaling, group colors,
+  // ...) are also embedded in the exported cache JSON via buildExportJson.
+  // Trigger an auto-sync so the on-disk cache.json reflects the change even
+  // when no metric values were rewritten — e.g. a pure color picker tweak.
+  if (typeof scheduleAutoSync === 'function') scheduleAutoSync();
+}
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(LS_SETTINGS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function fileKey(f) { return `${f.name}|${f.size}|${f.lastModified}`; }
+
+/** Build an AND-mask from an array of bit positions. */
+function cflagMaskFromBits(bits) {
+  let m = 0;
+  for (const b of (bits || [])) m |= (b < 31) ? ((1 << b) >>> 0) : 0;
+  return m;
+}
+function maskToBitsList(m) {
+  const out = [];
+  for (let b = 0; b < 31; b++) if (m & ((1 << b) >>> 0)) out.push(b);
+  return out;
+}
+
+/** Pretty label for the current cflag region (mirrors selectedMarkerLabel). */
+function selectedCflagLabel() {
+  if (!state.cflagBits || state.cflagBits.length === 0) return 'all cells';
+  return state.cflagBits.slice().sort((a, b) => a - b)
+    .map(b => cflagBitName(b)).join('+');
+}
+
+/**
+ * Build the cache config key from a settings-shaped object. Defaults to the
+ * live `state` so existing call sites (configKey()) keep working.
+ *
+ * Cflag bits are AND-combined: cb=3,5 means "cells with bit 3 AND bit 5".
+ */
+/**
+ * Note: `scaling` (μm/px) is intentionally NOT part of the cache key.
+ * The compute pass uses pixel-based bounding box + paint/hull areas, then
+ * stores the mm² conversion under `m.scaling`. Display code re-derives the
+ * mm² values for the CURRENT `state.scaling` via metricAreaMm2() etc. —
+ * which means changing μm/px is a pure re-render, no recompute needed.
+ */
+function configKey(s) {
+  s = s || state;
+  const cb = (s.cflagBits || []).slice().sort((a, b) => a - b);
+  const mb = (s.markerBits || []).slice().sort((a, b) => a - b);
+  return [
+    `cb=${cb.join(',')}`,
+    `m=${s.method}`,
+    `r=${s.radiusPx}`,
+    `mb=${mb.join(',')}`,
+  ].join('|');
+}
+
+/** Inverse of configKey() — turn a stored config key back into a settings
+ *  object. Also handles the OLD `b=N` single-bit format for back-compat
+ *  with caches generated before the cflag-AND refactor. */
+function parseConfigKey(key) {
+  const out = {};
+  for (const part of key.split('|')) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    const k = part.slice(0, eq);
+    const v = part.slice(eq + 1);
+    if      (k === 'cb') out.cflagBits  = v ? v.split(',').map(x => parseInt(x, 10)) : [];
+    else if (k === 'b')  out.cflagBits  = (v === 'null' || v === '' || isNaN(parseInt(v, 10))) ? [] : [parseInt(v, 10)];
+    else if (k === 'm')  out.method     = v;
+    else if (k === 's')  out.scaling    = parseFloat(v);
+    else if (k === 'r')  out.radiusPx   = parseInt(v, 10);
+    else if (k === 'mb') out.markerBits = v ? v.split(',').map(x => parseInt(x, 10)) : [];
+  }
+  return out;
+}
+
+/**
+ * If the preferred settings don't hit anything in the cache but the cache
+ * has exactly one config across all its samples, return that config's
+ * settings instead — the user almost always wants to land on cached data,
+ * not look at an empty queue.
+ *
+ * Returns either the preferred settings (unchanged) or a parsed-from-cache
+ * override. Also returns a flag indicating whether we overrode.
+ */
+function reconcileSettingsWithCache(preferred) {
+  const cache = loadCache();
+  const freq = {};
+  for (const k of Object.keys(cache.samples || {})) {
+    for (const cfg of Object.keys(cache.samples[k].metricsByConfig || {})) {
+      freq[cfg] = (freq[cfg] || 0) + 1;
+    }
+  }
+  const configs = Object.keys(freq);
+  if (configs.length === 0) return { settings: preferred, overrode: false };
+  if (preferred && freq[configKey(preferred)] > 0) {
+    return { settings: preferred, overrode: false };   // already aligned
+  }
+  // No hit with preferred. If there's exactly one cached config OR one that
+  // covers more files than anything else by a clear margin, use it.
+  configs.sort((a, b) => freq[b] - freq[a]);
+  const best = configs[0];
+  const overrideSettings = Object.assign({}, preferred || {}, parseConfigKey(best));
+  return { settings: overrideSettings, overrode: true, fromConfig: best, hits: freq[best] };
+}
+
+// ----- DOM refs ----------------------------------------------------------
+const folderInput     = document.getElementById('folder-input');
+const pickBtn         = document.getElementById('btn-pick-folder');
+const computeBtn      = document.getElementById('btn-compute');
+const recomputeBtn    = document.getElementById('btn-recompute');
+const clearCacheBtn   = document.getElementById('btn-clear-cache');
+const exportBtn       = document.getElementById('btn-export-cache');
+// (Import button removed — cache.json in the picked folder auto-loads.)
+const saveFlash       = document.getElementById('save-flash');
+const cflagDisplay    = document.getElementById('cflag-display');
+const cflagRow        = document.getElementById('cflag-row');
+const cflagBox        = document.getElementById('cflag-checkbox-row-cohort');
+const clearCflagBtn   = document.getElementById('btn-clear-cflag');
+const methodRadios    = document.querySelectorAll('input[name="method-radio"]');
+const markerRow       = document.getElementById('marker-row');
+const markerBox       = document.getElementById('marker-checkboxes');
+const clearMarkersBtn = document.getElementById('btn-clear-markers');
+const scalingInput    = document.getElementById('scaling-input');
+const overallStatus   = document.getElementById('overall-status');
+const overallProg     = document.getElementById('overall-progress');
+const filesPanel      = document.getElementById('files-panel');
+const filesHead       = document.getElementById('files-head');
+const fileRowsEl      = document.getElementById('file-rows');
+const plotPanel       = document.getElementById('plot-panel');
+const plotSummary     = document.getElementById('plot-summary');
+const calcDescEl      = document.getElementById('calc-desc');
+
+// ----- Cflag region chip row (AND-combined) ------------------------------
+//
+// Mirrors the marker chip row. Builds one chip per named cysift.h cflag bit;
+// the user checks any subset and the region becomes cells with ALL those
+// bits set. Empty selection → "all cells".
+
+function buildCflagChips() {
+  cflagBox.innerHTML = '';
+  // Prefer the loaded cohort's compartment legend (these are exactly the
+  // regions with a precomputed painted area); fall back to the built-in names.
+  const fromCohort = cohortCflagBits();
+  const entries = fromCohort ||
+    Object.keys(CFLAG_NAMES).map(Number).sort((a, b) => a - b).map(bit => ({ bit, name: CFLAG_NAMES[bit] }));
+  for (const { bit, name } of entries) {
+    const chip = document.createElement('label');
+    chip.className = 'marker-chip';     // reuse marker chip styling
+    chip.dataset.bit = bit;
+    chip.innerHTML = `
+      <input type="checkbox" value="${bit}" />
+      <span>${escapeHtml(name)}<span class="bit-tag"> · bit ${bit}</span></span>
+    `;
+    const cb = chip.querySelector('input');
+    cb.addEventListener('change', () => {
+      const sel = new Set(state.cflagBits);
+      if (cb.checked) sel.add(bit); else sel.delete(bit);
+      state.cflagBits = Array.from(sel).sort((a, b) => a - b);
+      syncCflagChips();
+      onSettingChanged();
+    });
+    cflagBox.appendChild(chip);
+  }
+  syncCflagChips();
+}
+buildCflagChips();
+
+function syncCflagChips() {
+  const sel = new Set(state.cflagBits || []);
+  for (const chip of cflagBox.children) {
+    const bit = Number(chip.dataset.bit);
+    const cb = chip.querySelector('input');
+    if (cb) cb.checked = sel.has(bit);
+    chip.classList.toggle('checked', sel.has(bit));
+  }
+  if (cflagDisplay) cflagDisplay.textContent = selectedCflagLabel();
+}
+
+if (clearCflagBtn) {
+  clearCflagBtn.addEventListener('click', () => {
+    state.cflagBits = [];
+    syncCflagChips();
+    onSettingChanged();
+  });
+}
+
+function updateCalcDescription() {
+  const lblC = selectedCflagLabel();
+  const region = (!state.cflagBits || state.cflagBits.length === 0)
+    ? '<b>all cells</b>'
+    : `cells with <b>${escapeHtml(lblC)}</b> ON in cflag`;
+  const methodTxt = (state.method === 'hull')
+    ? 'sum of the convex hulls of spatially-connected cell clusters (DBSCAN-style grid CC then hull each component)'
+    : `union of <code>${state.radiusPx} px</code> radius discs painted around every cell — overlaps don't double-count`;
+  const lbl = selectedMarkerLabel();
+  const markerTxt = lbl
+    ? ` AND has ALL of these pflag bits ON: <b>${escapeHtml(lbl)}</b>`
+    : '';
+  // cyftools cohort precomputes a painted area for each single compartment + "all
+  // cells", but not for an AND of several compartments — density is blank there.
+  const note = (state.cflagBits && state.cflagBits.length > 1)
+    ? `<br><span style="color:var(--warn)">No painted area for an AND of multiple compartments — counts &amp; % still apply, but density is blank. Pick one compartment (or “all cells”) for density.</span>`
+    : '';
+  calcDescEl.innerHTML =
+    `<b>Calculation:</b> region = ${region}.<br>` +
+    `<b>Area</b> = precomputed by <code>cyftools cohort</code> (${methodTxt}).<br>` +
+    `<b>Match</b> = cells in the region${markerTxt}. <b>Density</b> = match / area.${note}`;
+}
+
+function onSettingChanged() {
+  saveSettings();
+  refreshCachedStatusForAll();   // recompute every sample's metrics from its histogram
+  render();
+}
+
+// Individual cflag/marker chip listeners live in buildCflagChips() /
+// renderMarkerCheckboxes(). The Area (paint/hull), µm/px, cyf-density-scale and
+// ROI-folder controls were part of the old in-browser compute model and were
+// removed — metrics now arrive precomputed in cohort.json.
+clearMarkersBtn.addEventListener('click', () => {
+  state.markerBits = [];
+  syncMarkerCheckboxes();
+  onSettingChanged();
+});
+
+// ----- Folder selection --------------------------------------------------
+//
+// Two paths:
+//   A. Chrome/Edge → showDirectoryPicker. We get a directory handle with
+//      read+write permission. We auto-read cache.json on load and auto-
+//      write it on every change. No further clicks ever required.
+//   B. Other browsers → fall back to webkitdirectory. Read-only access;
+//      user has to click "Save to file" once per session for sync.
+pickBtn.addEventListener('click', () => folderInput.click());
+
+/** Process a directory handle from showDirectoryPicker. Auto-loads cache.json
+ *  if present; gets a write handle so future cache writes happen silently. */
+async function pickedDirectory(dirHandle) {
+  state.dirHandle = dirHandle;
+  const cyfFiles = [];
+  let cacheBlob = null;
+  for await (const entry of dirHandle.values()) {
+    if (entry.kind !== 'file') continue;
+    if (entry.name.toLowerCase().endsWith('.cyf')) {
+      cyfFiles.push(await entry.getFile());
+    } else if (entry.name === 'cache.json') {
+      cacheBlob = await entry.getFile();
+    }
+  }
+  // Always grab a write handle to cache.json (creates it on first write).
+  state.cacheFileHandle = await dirHandle.getFileHandle('cache.json', { create: true });
+  cyfFiles.sort((a, b) => a.name.localeCompare(b.name));
+  await loadCyfList(cyfFiles, cacheBlob, /*dirName=*/dirHandle.name);
+}
+folderInput.addEventListener('change', async (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) await loadDroppedFile(f);   // accepts a cohort.json OR a config.json
+  folderInput.value = '';            // allow re-picking the same file
+});
+
+/** Shared post-pick logic for both showDirectoryPicker and webkitdirectory. */
+async function loadCyfList(cyfs, cacheBlob, dirName) {
+  state._folderCacheFile = cacheBlob || null;
+  initFileEntries(cyfs);
+
+  let autoMsg = '';
+  if (cacheBlob) {
+    const r = await importCacheFromBlob(cacheBlob);
+    refreshCachedStatusForAll();
+    autoMsg =
+      ` · Loaded cache.json: ${r?.appliedMetrics || 0} cached result${(r?.appliedMetrics === 1) ? '' : 's'} restored` +
+      (r?.overrode
+        ? `, settings adjusted to match cached config`
+        : (r?.hadSettings ? ', settings restored from file' : '')) +
+      (r?.appliedGroups ? `, ${r.appliedGroups} group label${r.appliedGroups === 1 ? '' : 's'} restored` : '');
+  } else {
+    autoMsg = ' · no cache.json found — click Recompute all to generate one';
+  }
+
+  filesPanel.style.display = '';
+  overallStatus.textContent =
+    `${cyfs.length} file${cyfs.length === 1 ? '' : 's'} loaded${dirName ? ` from ${dirName}` : ''} · ` +
+    `${state.files.filter(f => f.metrics).length} cached, ${state.files.filter(f => !f.metrics).length} to compute` +
+    autoMsg;
+  computeBtn.disabled = false;
+  recomputeBtn.disabled = false;
+
+  refreshSyncStatus();
+  try { await populateMarkersFromFirstFile(); }
+  catch (e) { console.warn('cohort: could not read markers from first file', e); }
+
+  // populateMarkersFromFirstFile populated availableDensityCols. Re-check
+  // each sample's cache entry: caches generated before the meanByCol
+  // feature look "cached" but are actually missing the per-region means.
+  // Marking them queued here means the next processAll fills them in.
+  refreshCachedStatusForAll();
+
+  // Don't auto-compute on load — the user clicks "Compute uncached" to start.
+  // If a cache already provided results, enter exploration mode so later
+  // setting changes auto-fill their (usually small) delta.
+  state.autoComputeOnChange = state.files.some(f => f.metrics);
+  const nQueued = state.files.filter(f => f.status === 'queued').length;
+  if (nQueued > 0) {
+    overallStatus.textContent =
+      `${state.files.length} file${state.files.length === 1 ? '' : 's'} loaded · ` +
+      `${state.files.length - nQueued} cached, ${nQueued} to compute — ` +
+      `click “Compute uncached”.`;
+  }
+  render();
+}
+
+/** Build `state.files` from the picked File objects, applying any cached
+ *  metrics in localStorage that match the CURRENT config key. */
+function initFileEntries(cyfs) {
+  const cache = loadCache();
+  const cfg = configKey();
+  state.files = cyfs.map(f => {
+    const k = fileKey(f);
+    const cached = cache.samples[k];
+    const metrics = cached && cached.metricsByConfig && cached.metricsByConfig[cfg];
+    const fname = f.webkitRelativePath || f.name;
+    return {
+      file: f, key: k,
+      name: fname,
+      // Short label shown on the waterfall x-axis. Pre-filled from
+      // LSP\d+ pattern when the filename matches; otherwise basename.
+      // Cache override wins if present.
+      displayName: (cache.names && cache.names[k]) || defaultDisplayName(fname),
+      size: f.size,
+      modified: f.lastModified,
+      group: (cache.groups && cache.groups[k]) || '',
+      status: metrics ? 'cached' : 'queued',
+      metrics: metrics || null,
+      // Intrinsic per-file flag stats (for chip coloring + counts). Restored
+      // from cache when present; recomputed during processOne otherwise.
+      pflagOr:        (cached && typeof cached.pflagOr === 'number') ? cached.pflagOr : null,
+      pflagBitCounts: (cached && Array.isArray(cached.pflagBitCounts)) ? cached.pflagBitCounts : null,
+      cflagBitCounts: (cached && Array.isArray(cached.cflagBitCounts)) ? cached.cflagBitCounts : null,
+      cellCount:      (cached && typeof cached.cellCount === 'number') ? cached.cellCount : null,
+      error: null,
+    };
+  });
+}
+
+async function populateMarkersFromFirstFile() {
+  if (!state.files.length) return;
+  // Header for the sample file we tested is ~7.7 KB. Read a generous slice.
+  const f = state.files[0].file;
+  const slice = await f.slice(0, 64 * 1024).arrayBuffer();
+  let header;
+  try {
+    const r = new CyfReader(slice);
+    header = r.readHeader();
+  } catch (e) {
+    const full = await f.arrayBuffer();
+    const r = new CyfReader(full);
+    header = r.readHeader();
+  }
+  // Derive each marker's pflag bit from its POSITION among @MA tags in the
+  // header (bit k = the k-th MA tag), exactly as cyftools does. Show EVERY
+  // marker; coloring (computed later from pflag) tells the user which are
+  // actually gated. Also catalog any CA tag that looks like a radial-density
+  // column (`<marker>_<NN>r`).
+  const seen = new Set();
+  const out = [];
+  const densityCols = [];
+  // Walk MA + CA in header order to keep colIdx consistent with data.cols.
+  const dataTagOrder = [];
+  for (const t of header) {
+    if (t.type === 1 || t.type === 2) dataTagOrder.push(t);
+  }
+  let maIdx = 0;   // index among MA tags only == the pflag bit
+  for (let i = 0; i < dataTagOrder.length; i++) {
+    const t = dataTagOrder[i];
+    if (t.type === 1) {
+      const bit = maIdx;
+      maIdx++;
+      if (seen.has(t.id)) continue;
+      seen.add(t.id);
+      out.push({ name: t.id, bit });
+    } else if (t.type === 2) {
+      const m = t.id.match(/^(.+)_(\d+)r$/);
+      if (m) densityCols.push({ name: t.id, marker: m[1], radius: parseInt(m[2], 10), colIdx: i });
+    }
+  }
+  state.availableDensityCols = densityCols;
+  // Bits are positional and therefore already unique — no dedup needed.
+  state.availableMarkers = out.sort((a, b) => a.bit - b.bit);
+  renderMarkerCheckboxes();
+
+  // Record the first file's @MA ordering as the cohort reference, then verify
+  // every other file matches (a different order ⇒ different bit↔marker map).
+  state._refMarkerSig = headerMarkerSignature(header);
+  checkPflagMappingConsistency().catch(err =>
+    console.warn('cohort: pflag-mapping consistency check failed', err));
+}
+
+/** Ordered list of @MA marker names (defines the bit↔marker mapping). */
+function headerMarkerSignature(header) {
+  const names = [];
+  for (const t of header) if (t.type === 1) names.push(t.id);
+  return names;
+}
+
+/** Read just the CellHeader from a File (64 KB slice, full-file fallback). */
+async function readHeaderFromFile(file) {
+  try {
+    const slice = await file.slice(0, 64 * 1024).arrayBuffer();
+    return new CyfReader(slice).readHeader();
+  } catch (_) {
+    const full = await file.arrayBuffer();
+    return new CyfReader(full).readHeader();
+  }
+}
+
+/** Describe how a file's @MA ordering differs from the reference. Returns
+ *  null when they match (same markers in the same order). */
+function describeSignatureMismatch(ref, sig) {
+  if (ref.length !== sig.length) {
+    return `${sig.length} markers vs ${ref.length} in the reference`;
+  }
+  for (let k = 0; k < ref.length; k++) {
+    if (ref[k] !== sig[k]) {
+      return `@MA #${k} is “${sig[k]}” but the reference has “${ref[k]}” → pflag bit ${k} means different markers`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Verify every file in the cohort shares the first file's @MA ordering. A
+ * different order (or marker set) means identical pflag bits encode different
+ * markers, so mixing them in one cohort silently compares apples to oranges.
+ * Renders a red banner listing the offending files; clears it when all match.
+ */
+async function checkPflagMappingConsistency() {
+  const banner = document.getElementById('mapping-warning');
+  if (!banner) return;
+  const ref = state._refMarkerSig;
+  if (!ref || state.files.length < 2) { banner.style.display = 'none'; return; }
+
+  const results = await Promise.all(state.files.map(async (f) => {
+    try {
+      const sig = headerMarkerSignature(await readHeaderFromFile(f.file));
+      return { name: f.name, diff: describeSignatureMismatch(ref, sig) };
+    } catch (e) {
+      return { name: f.name, diff: `could not read header (${e.message})` };
+    }
+  }));
+
+  const bad = results.filter(r => r.diff);
+  if (bad.length === 0) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
+
+  const refName = state.files[0]?.name || 'the first file';
+  const shown = bad.slice(0, 8)
+    .map(b => `<li><code>${escapeHtml(b.name)}</code>: ${escapeHtml(b.diff)}</li>`)
+    .join('');
+  const more = bad.length > 8 ? `<li>…and ${bad.length - 8} more</li>` : '';
+  banner.innerHTML =
+    `<strong>⚠ Inconsistent pflag→marker mapping.</strong> ` +
+    `${bad.length} file${bad.length === 1 ? '' : 's'} have a different @MA marker order than the reference ` +
+    `(<code>${escapeHtml(refName)}</code>). Marker filtering uses the reference's bit positions, so results for these ` +
+    `files will be wrong. Re-export them with a consistent panel/order, or load them as a separate cohort.` +
+    `<ul style="margin:6px 0 0 0; padding-left:18px;">${shown}${more}</ul>`;
+  banner.style.display = '';
+}
+
+/** Build the marker checkbox chip row. */
+function renderMarkerCheckboxes() {
+  markerBox.innerHTML = '';
+  if (state.availableMarkers.length === 0) {
+    markerRow.style.display = 'none';
+    return;
+  }
+  markerRow.style.display = '';
+  for (const m of state.availableMarkers) {
+    const chip = document.createElement('label');
+    chip.className = 'marker-chip';
+    chip.dataset.bit = m.bit;
+    chip.innerHTML = `
+      <span class="gate-dot"></span>
+      <input type="checkbox" value="${m.bit}" />
+      <span>${escapeHtml(m.name)}<span class="bit-tag"> · bit ${m.bit}</span></span>
+    `;
+    const cb = chip.querySelector('input');
+    cb.addEventListener('change', () => {
+      const sel = new Set(state.markerBits);
+      if (cb.checked) sel.add(m.bit); else sel.delete(m.bit);
+      state.markerBits = Array.from(sel).sort((a, b) => a - b);
+      syncMarkerCheckboxes();
+      onSettingChanged();
+    });
+    markerBox.appendChild(chip);
+  }
+  updateMarkerChipColors();
+  syncMarkerCheckboxes();
+}
+
+/**
+ * Gate status of a pflag bit across the cohort, from each file's pflagOr
+ * (union of bits ever ON). 'red' = ON in no file, 'green' = ON in every file,
+ * 'yellow' = ON in some, 'unknown' = nothing computed yet. green requires ALL
+ * files (not just the computed ones) to have confirmed the bit.
+ */
+function markerGateStatus(bit) {
+  const total = state.files.length;
+  let withBit = 0, known = 0;
+  for (const f of state.files) {
+    if (typeof f.pflagOr !== 'number') continue;
+    known++;
+    if ((f.pflagOr >>> bit) & 1) withBit++;
+  }
+  let status;
+  if (known === 0)            status = 'unknown';
+  else if (withBit === 0)     status = 'red';
+  else if (withBit === total) status = 'green';
+  else                        status = 'yellow';
+  return { status, withBit, known, total };
+}
+
+/** Recolor existing marker chips in place (no DOM rebuild) from current
+ *  pflagOr data. Safe to call frequently (e.g. from render()). */
+function updateMarkerChipColors() {
+  if (!markerBox) return;
+  for (const chip of markerBox.children) {
+    const bit = parseInt(chip.dataset.bit, 10);
+    if (Number.isNaN(bit)) continue;
+    const { status, withBit, known, total } = markerGateStatus(bit);
+    chip.classList.remove('gate-red', 'gate-yellow', 'gate-green', 'gate-unknown');
+    chip.classList.add('gate-' + status);
+    let label;
+    if (status === 'unknown')    label = 'not computed yet';
+    else if (status === 'red')   label = `not gated in any file (0/${total})`;
+    else if (status === 'green') label = `gated in all files (${total}/${total})`;
+    else                         label = `gated in ${withBit}/${total} files` +
+                                         (known < total ? ` (${total - known} not computed yet)` : '');
+    // Append cohort-wide ON-cell totals when per-bit counts are cached.
+    let onCells = 0, totCells = 0, haveCounts = false;
+    for (const f of state.files) {
+      if (Array.isArray(f.pflagBitCounts)) { haveCounts = true; onCells += (f.pflagBitCounts[bit] || 0); }
+      if (typeof f.cellCount === 'number') totCells += f.cellCount;
+    }
+    let countStr = '';
+    if (haveCounts) {
+      const pct = totCells > 0 ? ((100 * onCells) / totCells).toFixed(2) : '0';
+      countStr = ` · ${onCells.toLocaleString()} cells ON (${pct}% of cohort)`;
+    }
+    chip.title = `bit ${bit}: ${label}${countStr}`;
+  }
+}
+
+/** Compose the AND-combined OR mask of selected marker bit values. */
+function markerBitsMask() {
+  let m = 0;
+  for (const b of state.markerBits) m |= ((b < 31) ? ((1 << b) >>> 0) : 0);
+  return m;
+}
+
+/** Pretty label for the currently selected marker combination — used both
+ *  for the Match column header and the calc-desc line. Empty selection
+ *  means no marker filter (Match == Region). */
+function selectedMarkerLabel() {
+  if (!state.markerBits.length) return '';
+  // Look up names via availableMarkers (which has dedup'd bit→name).
+  const nameByBit = {};
+  for (const m of state.availableMarkers) nameByBit[m.bit] = m.name;
+  return state.markerBits
+    .slice().sort((a, b) => a - b)
+    .map(b => `${nameByBit[b] || `bit${b}`}+`)
+    .join('');
+}
+
+// (Cache management buttons removed — this is a viewer over precomputed
+//  cohort.json; only group labels/colors persist locally.)
+
+// ----- Cache file save / auto-sync ---------------------------------------
+//
+// Browsers can't silently write to arbitrary paths; the user has to grant
+// permission. Modern Chromium-based browsers expose `showSaveFilePicker` to
+// hand the page a `FileSystemFileHandle` they can write to repeatedly for
+// the rest of the session — so once the user clicks "Save to file" once,
+// every subsequent cache change syncs to that file with no further prompts.
+// Firefox/Safari fall back to a normal download for each save.
+
+function buildExportJson() {
+  // Shallow-copy so we don't pollute the in-memory cache with settings/
+  // exportedAt keys. ROI areas (cache.rois) ride along automatically.
+  const cache = Object.assign({}, loadCache(), {
+    settings:   settingsSnapshot(),
+    exportedAt: new Date().toISOString(),
+  });
+  return JSON.stringify(cache, null, 2);
+}
+
+async function saveToFileHandle(handle, json) {
+  const writable = await handle.createWritable();
+  await writable.write(json);
+  await writable.close();
+}
+
+function downloadFile(name, json) {
+  const blob = new Blob([json], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+}
+
+const SYNC_EL = () => document.getElementById('sync-status');
+function setSyncStatus(text, color) {
+  const el = SYNC_EL(); if (!el) return;
+  el.textContent = text;
+  el.style.color = color || '';
+}
+function refreshSyncStatus() {
+  if (state.dirHandle) {
+    if (state._cacheDirty) setSyncStatus(`⏳ syncing cache.json…`, '');
+    else setSyncStatus(`✓ auto-syncing cache.json in ${state.dirHandle.name}/`, 'var(--ok)');
+  } else if (state.cacheFileHandle) {
+    if (state._cacheDirty) setSyncStatus('⏳ syncing…', '');
+    else setSyncStatus(`✓ synced to ${state.cacheFileHandle.name}`, 'var(--ok)');
+  } else if (window.showDirectoryPicker) {
+    setSyncStatus('○ pick a folder (Chrome/Edge) — cache.json will auto-load and auto-save', '');
+  } else if (window.showSaveFilePicker) {
+    setSyncStatus('○ click Save to file to enable auto-sync', '');
+  } else {
+    setSyncStatus('○ this browser will only download the JSON manually', '');
+  }
+}
+
+let _syncTimer = null;
+function scheduleAutoSync() {
+  if (!state.cacheFileHandle) return;
+  state._cacheDirty = true;
+  refreshSyncStatus();
+  clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(async () => {
+    try {
+      await saveToFileHandle(state.cacheFileHandle, buildExportJson());
+      state._cacheDirty = false;
+      refreshSyncStatus();
+    } catch (e) {
+      console.warn('cohort: auto-sync write failed', e);
+      setSyncStatus(`⚠ sync error: ${e.message}`, 'var(--warn)');
+      // If the handle was revoked (e.g. file was moved), drop it so user
+      // can re-link.
+      if (e && (e.name === 'NotAllowedError' || e.name === 'InvalidStateError')) {
+        state.cacheFileHandle = null;
+      }
+    }
+  }, 250);
+}
+
+// Wrap saveCache so every write triggers a (debounced) file sync attempt.
+const _saveCacheRaw = saveCache;
+saveCache = function (cache) {
+  _saveCacheRaw(cache);
+  scheduleAutoSync();
+};
+
+/** Read a JSON Blob, merge into localStorage cache, and apply to current
+ *  file list. Called by the folder-pick code path when a cache.json is
+ *  found in the picked folder. */
+async function importCacheFromBlob(blob) {
+  let imported;
+  try {
+    imported = JSON.parse(await blob.text());
+  } catch (err) {
+    alert('Cache import failed: ' + err.message);
+    return;
+  }
+  const current = loadCache();
+  const merged = {
+    samples: Object.assign({}, current.samples, imported.samples),
+    groups:  Object.assign({}, current.groups,  imported.groups),
+    names:   Object.assign({}, current.names || {}, imported.names || {}),
+    // ROI areas (keyed by LSP id) — preserve both sides so an import never
+    // wipes previously-cached ROIs.
+    rois:    Object.assign({}, current.rois || {}, imported.rois || {}),
+  };
+  saveCache(merged);
+  restoreRoisFromCache(merged);   // show ROI columns/density without re-picking
+
+  // Decide which settings to apply. Prefer the embedded settings IF they
+  // actually point at cached entries — that's the user's intended config.
+  // Otherwise fall back to the dominant config in the cache so they see
+  // their cached results instead of an empty "queued" list.
+  let chosenSettings = imported.settings || settingsSnapshot();
+  let override = null;
+  const r = reconcileSettingsWithCache(chosenSettings);
+  if (r.overrode) {
+    chosenSettings = r.settings;
+    override = r;
+  }
+  applySettings(chosenSettings);
+  saveSettings();
+
+  const cfg = configKey();
+  let appliedMetrics = 0, appliedGroups = 0;
+  for (const ff of state.files) {
+    const cached = merged.samples[ff.key];
+    if (cached && typeof cached.pflagOr === 'number') ff.pflagOr = cached.pflagOr;
+    if (cached && Array.isArray(cached.pflagBitCounts)) ff.pflagBitCounts = cached.pflagBitCounts;
+    if (cached && Array.isArray(cached.cflagBitCounts)) ff.cflagBitCounts = cached.cflagBitCounts;
+    if (cached && typeof cached.cellCount === 'number')  ff.cellCount = cached.cellCount;
+    if (cached && cached.metricsByConfig && cached.metricsByConfig[cfg]) {
+      ff.metrics = cached.metricsByConfig[cfg];
+      ff.status = 'cached';
+      appliedMetrics++;
+    }
+    if (merged.groups[ff.key]) { ff.group = merged.groups[ff.key]; appliedGroups++; }
+    if (merged.names && merged.names[ff.key]) ff.displayName = merged.names[ff.key];
+  }
+  render();
+  return {
+    appliedMetrics, appliedGroups,
+    hadSettings: !!imported.settings,
+    overrode: !!override,
+    fromConfig: override?.fromConfig,
+  };
+}
+
+// (Groups now auto-save on every keystroke — no button needed.)
+
+function flashSaved(text) {
+  saveFlash.textContent = '✓ ' + (text || 'saved');
+  saveFlash.classList.add('show');
+  setTimeout(() => saveFlash.classList.remove('show'), 1400);
+}
+
+// ----- Computation -------------------------------------------------------
+// Metrics are derived live from each sample's precomputed histogram, so a
+// "config change" just recomputes (cheap masked sums) — no caching needed.
+function refreshCachedStatusForAll() {
+  for (const ff of state.files) {
+    if (ff.hist) { computeMetricsForEntry(ff); ff.status = 'done'; ff.error = null; }
+  }
+  updateCalcDescription();
+}
+
+async function readFileAsArrayBuffer(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload  = () => res(r.result);
+    r.onerror = () => rej(r.error || new Error('FileReader error'));
+    r.readAsArrayBuffer(file);
+  });
+}
+
+async function processOne(entry) {
+  // cohort.json mode: metrics are derived from the precomputed histogram, not a
+  // file read. (The legacy per-.cyf path below is unreachable in this build.)
+  if (entry.hist) { computeMetricsForEntry(entry); entry.status = 'done'; render(); return; }
+  entry.status = 'loading'; entry.error = null; render();
+  const buf = await readFileAsArrayBuffer(entry.file);
+  entry.status = 'parsing'; render();
+  await sleep(10);
+  const { data, dataTags } = cyfMetrics.parseCyfBuffer(buf);
+  entry.status = 'computing'; render();
+  await sleep(10);
+
+  // Build per-file densityCols mapping (column name → index in data.cols).
+  // The first-file peek may have given different indices in another file
+  // with a slightly different panel; we always look up by name here.
+  const densityCols = [];
+  for (let i = 0; i < dataTags.length; i++) {
+    const t = dataTags[i];
+    if (t.type !== 2) continue;
+    const m = t.id.match(/^(.+)_(\d+)r$/);
+    if (m) densityCols.push({ name: t.id, colIdx: i });
+  }
+
+  // Build the full grid of variants to pre-cache:
+  //
+  //   cflagBits  — every bit set on at least one cell in this file, plus the
+  //                user's currently-selected bit (in case it's an unused one
+  //                so the lookup still hits).
+  //   markerMasks — empty mask + every single panel marker + current combo.
+  //
+  // Then one pass per cflag bit computes the (expensive) region area; for
+  // each marker mask inside that region we just walk the cells once more
+  // counting matches. Net: every (cflag, marker) combo is a future cache
+  // hit at the cost of N_cflag area passes per file (a small multiple of
+  // the previous single-cflag cost).
+  // Cflag MASKS to pre-cache: 0 (all cells) + each single bit present in
+  // this file + the user's current AND-combo. Single bits cover the common
+  // case; the current combo guarantees the active view is cached.
+  let cflagOR = 0;
+  let pflagOR = 0;
+  // Per-bit ON-cell counts (index = bit). 32 entries covers the 32-bit pflag
+  // the reader stores. Counting only set bits per cell keeps this ~O(N × avg
+  // set bits), negligible next to the area passes.
+  const pflagBitCounts = new Array(32).fill(0);
+  const cflagBitCounts = new Array(32).fill(0);
+  for (let i = 0; i < data.count; i++) {
+    const p = data.pflag[i]; pflagOR |= p;
+    let x = p;
+    while (x !== 0) { const b = 31 - Math.clz32(x); pflagBitCounts[b]++; x &= ~(1 << b); }
+    const c = data.cflag[i]; cflagOR |= c;
+    let y = c;
+    while (y !== 0) { const b = 31 - Math.clz32(y); cflagBitCounts[b]++; y &= ~(1 << b); }
+  }
+  pflagOR >>>= 0;                       // keep unsigned; this is the union of all pflag bits ever ON
+  cflagOR >>>= 0;
+  // Stash on the entry so the UI can color chips / show counts immediately.
+  entry.pflagOr        = pflagOR;       // drives the red/yellow/green marker-chip coloring
+  entry.pflagBitCounts = pflagBitCounts;
+  entry.cflagBitCounts = cflagBitCounts;
+  entry.cellCount      = data.count;
+  const cflagMasks = new Set([0]);
+  for (let b = 0; b < 31; b++) {
+    if (cflagOR & ((1 << b) >>> 0)) cflagMasks.add(((1 << b) >>> 0));
+  }
+  const currentCflagMask = cflagMaskFromBits(state.cflagBits);
+  cflagMasks.add(currentCflagMask);
+
+  const markerMasks = new Set([0]);
+  for (const m of state.availableMarkers) markerMasks.add(((1 << m.bit) >>> 0));
+  const currentMarkerMask = bitsToMask(state.markerBits);
+  markerMasks.add(currentMarkerMask);
+
+  const t0 = performance.now();
+  const allByMethod = {};
+  for (const method of ['paint', 'hull']) {
+    allByMethod[method] = cyfMetrics.computeAllVariants(data, {
+      method,
+      radiusPx: state.radiusPx,
+      scalingUmPerPx: state.scaling,
+      densityCols,
+    }, Array.from(cflagMasks), Array.from(markerMasks));
+  }
+  const ms = (performance.now() - t0) | 0;
+  if (state._verbose) {
+    console.info(`cohort: ${entry.name} variants 2×${cflagMasks.size}×${markerMasks.size} computed in ${ms}ms`);
+  }
+
+  // Save each result under its own config key in the existing flat scheme.
+  const cache = loadCache();
+  const samp = cache.samples[entry.key] ||
+    { fileName: entry.name, size: entry.size, lastModified: entry.modified, metricsByConfig: {} };
+  // Persist intrinsic per-file flag stats (config-independent) so chip colors,
+  // counts, and region sizes survive across sessions without re-parsing.
+  samp.pflagOr        = pflagOR;
+  samp.pflagBitCounts = pflagBitCounts;
+  samp.cflagBitCounts = cflagBitCounts;
+  samp.cellCount      = data.count;
+  for (const method of ['paint', 'hull']) {
+    const results = allByMethod[method];
+    for (const k of Object.keys(results)) {
+      const m = results[k];
+      const cfgK = configKey(Object.assign({}, state, {
+        cflagBits:  maskToBitsList(m.cflagMask),
+        method,
+        markerBits: maskToBits(m.markerBitsMask),
+      }));
+      samp.metricsByConfig[cfgK] = m;
+    }
+  }
+  cache.samples[entry.key] = samp;
+  saveCache(cache);
+
+  // Look up the current view's entry by the exact key the UI uses.
+  const currentKey = configKey();
+  entry.metrics = samp.metricsByConfig[currentKey];
+  entry.status = 'done';
+  render();
+  updateMarkerChipColors();   // a file just resolved its ON-bits — recolor chips
+}
+
+// --- bit-mask helpers shared by processOne and cache restore -------------
+function bitsToMask(bits) {
+  let m = 0;
+  for (const b of bits) m |= (b < 31) ? ((1 << b) >>> 0) : 0;
+  return m;
+}
+function maskToBits(m) {
+  const out = [];
+  for (let b = 0; b < 31; b++) if (m & ((1 << b) >>> 0)) out.push(b);
+  return out;
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function processAll(opts = {}) {
+  state.running = true; state.aborted = false; updateButtons();
+  overallProg.style.display = '';
+  const toDo = state.files.filter(f =>
+    opts.recompute ? true : (f.status !== 'done' && f.status !== 'cached')
+  );
+  if (opts.recompute) for (const f of toDo) { f.metrics = null; f.status = 'queued'; }
+  render();
+
+  for (let i = 0; i < toDo.length; i++) {
+    if (state.aborted) break;
+    const entry = toDo[i];
+    try { await processOne(entry); }
+    catch (e) {
+      console.error(e);
+      entry.status = 'error';
+      entry.error  = e.message || String(e);
+      render();
+    }
+    overallProg.firstElementChild.style.width = `${Math.round(((i + 1) / toDo.length) * 100)}%`;
+  }
+  state.running = false; updateButtons();
+  overallProg.firstElementChild.style.width = '100%';
+  setTimeout(() => { overallProg.style.display = 'none'; }, 1200);
+  render();
+}
+
+// (Compute/Recompute removed — metrics are precomputed in cohort.json.)
+function updateButtons() { /* no compute buttons in viewer-only mode */ }
+
+// ----- Rendering ---------------------------------------------------------
+function render() {
+  updateCalcDescription();
+  renderMetricRadios();        // depends on current marker selection
+  renderGroupColors();
+  renderHeader();
+  renderRows();
+  renderBarPlot();
+  updateRoiMatchStatus();      // keep matched-count current as samples load
+  updateMarkerChipColors();    // keep red/yellow/green current as files resolve
+}
+
+/** Render one color picker per unique group label currently in use. */
+function renderGroupColors() {
+  const wrap = document.getElementById('group-colors-row');
+  const list = document.getElementById('group-colors-list');
+  const groups = Array.from(new Set(state.files.map(f => f.group).filter(g => g))).sort();
+  if (groups.length === 0) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  list.innerHTML = '';
+  for (const g of groups) {
+    const color = getGroupColor(g);
+    const lbl = document.createElement('label');
+    lbl.style.cssText = 'display:inline-flex; align-items:center; gap:4px; font-size:11px;';
+    // type=color uses native picker; lightweight + universally supported.
+    lbl.innerHTML = `
+      <input type="color" data-group="${escapeHtml(g)}" value="${color}" style="width:24px; height:22px; padding:0; border:1px solid #ccc; background:#fff; cursor:pointer;" />
+      <span style="color: ${color}; font-weight: 600;">${escapeHtml(g)}</span>
+    `;
+    const input = lbl.querySelector('input');
+    input.addEventListener('change', () => {
+      state.groupColors[g] = input.value;
+      saveSettings();
+      render();
+    });
+    list.appendChild(lbl);
+  }
+}
+
+// (Reset button removed — group colors persist; clear individually via the color picker.)
+
+// Per-column pixel widths. Identity columns (File/Name/Group) start ~30%
+// narrower than the numeric columns. User drags persist in COLWIDTH across
+// re-renders (table-layout:fixed makes the widths stick).
+const COLWIDTH = {};
+const DEFAULT_COLW = { name: 96, displayName: 80, group: 80, status: 88 };
+function defaultColW(col) {
+  if (DEFAULT_COLW[col.key] != null) return DEFAULT_COLW[col.key];
+  return col.kind === 'num' ? 96 : 110;
+}
+function attachResizer(th, key) {
+  const grip = document.createElement('div');
+  grip.className = 'col-resizer';
+  grip.addEventListener('click', e => e.stopPropagation());     // don't sort
+  grip.addEventListener('mousedown', e => {
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX, startW = th.offsetWidth;
+    const move = ev => { const w = Math.max(40, startW + (ev.clientX - startX));
+                         th.style.width = w + 'px'; COLWIDTH[key] = w; };
+    const up = () => { document.removeEventListener('mousemove', move);
+                       document.removeEventListener('mouseup', up); };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+  th.appendChild(grip);
+}
+
+function renderHeader() {
+  filesHead.innerHTML = '';
+  for (const col of getColumns()) {
+    const th = document.createElement('th');
+    const mark = (state.sortColumn === col.key)
+      ? `<span class="sort-mark">${state.sortDir === 'asc' ? '▲' : '▼'}</span>`
+      : '';
+    const lbl = (typeof col.label === 'function') ? col.label() : col.label;
+    if (col.dividerAfter) th.classList.add('col-divider');
+    th.innerHTML = `${escapeHtml(lbl)}${mark}`;
+    th.title = columnTooltip(col);
+    th.style.width = (COLWIDTH[col.key] || defaultColW(col)) + 'px';
+    th.addEventListener('click', () => {
+      if (state.sortColumn === col.key) {
+        state.sortDir = (state.sortDir === 'asc') ? 'desc' : 'asc';
+      } else {
+        state.sortColumn = col.key;
+        state.sortDir = (col.kind === 'num') ? 'desc' : 'asc';
+      }
+      renderHeader(); renderRows();
+    });
+    attachResizer(th, col.key);
+    filesHead.appendChild(th);
+  }
+}
+
+function columnTooltip(col) {
+  const lines = [];
+  if (col.desc) lines.push(col.desc);
+
+  if (col.kind === 'num') {
+    const vals = [];
+    for (const f of state.files) {
+      const v = col.accessor(f);
+      if (typeof v === 'number' && isFinite(v)) vals.push(v);
+    }
+    if (vals.length > 0) {
+      vals.sort((a, b) => a - b);
+      const n = vals.length;
+      const sum = vals.reduce((a, b) => a + b, 0);
+      const mean = sum / n;
+      const median = (n % 2) ? vals[(n - 1) / 2] : (vals[n/2 - 1] + vals[n/2]) / 2;
+      const min = vals[0], max = vals[n - 1];
+      const variance = n > 1 ? vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1) : 0;
+      const sd = Math.sqrt(variance);
+      const f = (x) => x.toLocaleString(undefined, { maximumFractionDigits: 3 });
+      lines.push('');
+      lines.push(`n=${n}  mean=${f(mean)}  median=${f(median)}  min=${f(min)}  max=${f(max)}  SD=${f(sd)}`);
+    }
+  }
+  lines.push('');
+  lines.push('Click to sort (toggles direction).');
+  return lines.join('\n');
+}
+
+function renderRows() {
+  fileRowsEl.innerHTML = '';
+  const rows = state.files.slice();
+  const col = getColumns().find(c => c.key === state.sortColumn);
+  if (col) {
+    rows.sort((a, b) => {
+      const va = col.accessor(a), vb = col.accessor(b);
+      // Nullish values always sort to the bottom regardless of direction.
+      const aIs = (va === null || va === undefined || (typeof va === 'number' && !isFinite(va)));
+      const bIs = (vb === null || vb === undefined || (typeof vb === 'number' && !isFinite(vb)));
+      if (aIs && bIs) return 0;
+      if (aIs) return 1;
+      if (bIs) return -1;
+      if (col.kind === 'num') return va - vb;
+      return String(va).localeCompare(String(vb));
+    });
+    if (state.sortDir === 'desc') rows.reverse();
+  }
+
+  for (const f of rows) {
+    const tr = document.createElement('tr');
+    tr.className = (f.status === 'done' || f.status === 'cached') ? 'row-done' : '';
+    if (f.group) {
+      tr.style.background = getGroupFill(f.group);   // pale tint of group color
+    }
+    const m = f.metrics;
+    const cells = [];
+    for (const col of getColumns()) {
+      const v = col.accessor(f);
+      if (col.key === 'name') {
+        const base = String(f.name).split('/').pop();   // f.name is now an absolute path
+        cells.push(`<td class="file-name" title="${escapeHtml(f.name)}">${escapeHtml(base)}</td>`);
+      } else if (col.key === 'displayName') {
+        cells.push(`<td><input class="name-input" type="text" placeholder="${escapeHtml(defaultDisplayName(f.name))}" value="${escapeHtml(f.displayName || '')}" data-key="${escapeHtml(f.key)}" /></td>`);
+      } else if (col.key === 'group') {
+        cells.push(`<td><input class="group-input" type="text" placeholder="(none)" value="${escapeHtml(f.group)}" data-key="${escapeHtml(f.key)}" /></td>`);
+      } else if (col.key === 'status') {
+        cells.push(`<td class="status ${f.status}">${escapeHtml(statusLabel(f))}</td>`);
+      } else if (col.key === 'pctInRegion') {
+        cells.push(`<td class="num">${m && m.regionCount ? fmtNum(100 * m.matchCount / m.regionCount, 1) + '%' : '—'}</td>`);
+      } else {
+        const cls = 'num' + (col.dividerAfter ? ' col-divider' : '');
+        cells.push(`<td class="${cls}">${(v === null || v === undefined || !isFinite(v)) ? '—' : fmtNum(v, col.digits ?? 1)}</td>`);
+      }
+    }
+    tr.innerHTML = cells.join('');
+    fileRowsEl.appendChild(tr);
+  }
+  for (const inp of fileRowsEl.querySelectorAll('input.group-input')) {
+    inp.addEventListener('input', () => {
+      const entry = state.files.find(ff => ff.key === inp.dataset.key);
+      if (!entry) return;
+      entry.group = inp.value.trim();
+      // Auto-save to localStorage on every keystroke so labels survive
+      // reload and the next export captures them.
+      const cache = loadCache();
+      cache.groups = cache.groups || {};
+      cache.groups[entry.key] = entry.group;
+      saveCache(cache);
+      renderBarPlot();
+    });
+  }
+  for (const inp of fileRowsEl.querySelectorAll('input.name-input')) {
+    inp.addEventListener('input', () => {
+      const entry = state.files.find(ff => ff.key === inp.dataset.key);
+      if (!entry) return;
+      // Empty input → fall back to the default extracted from the filename
+      // so the waterfall always has a non-empty label.
+      entry.displayName = inp.value.trim() || defaultDisplayName(entry.name);
+      const cache = loadCache();
+      cache.names = cache.names || {};
+      cache.names[entry.key] = entry.displayName;
+      saveCache(cache);
+      renderBarPlot();
+    });
+  }
+  for (const a of fileRowsEl.querySelectorAll('a.open-gater')) {
+    a.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      openInGater(a.dataset.key);
+    });
+  }
+}
+
+function statusLabel(f) {
+  switch (f.status) {
+    case 'cached':    return 'cached';
+    case 'queued':    return 'queued';
+    case 'loading':   return 'loading…';
+    case 'parsing':   return 'parsing…';
+    case 'computing': return 'computing…';
+    case 'done':      return 'done';
+    case 'error':     return 'error: ' + (f.error || '');
+    default:          return f.status;
+  }
+}
+
+function fmtNum(n, digits) {
+  if (n === null || n === undefined || !isFinite(n)) return '—';
+  return n.toLocaleString(undefined, { maximumFractionDigits: digits ?? 2 });
+}
+
+// ----- Pop out a single file in the gater --------------------------------
+//
+// We open cyf_gater.html in a new tab and stream the file's bytes over via
+// postMessage once the gater signals it's ready. File objects survive
+// structured cloning, so the gater can call its existing loadFile path
+// without re-prompting the OS file picker.
+
+function openInGater(key) {
+  const entry = state.files.find(f => f.key === key);
+  if (!entry) return;
+  const win = window.open('cyf_gater.html?from=cohort', '_blank');
+  if (!win) {
+    alert('Could not open new tab — pop-up blocked?');
+    return;
+  }
+  // Wait for "ready" from the new tab, then send the file.
+  function onMsg(ev) {
+    if (ev.source !== win) return;
+    if (ev.data && ev.data.type === 'cohort-gater-ready') {
+      win.postMessage({ type: 'load-cyf', file: entry.file, name: entry.name }, '*');
+      window.removeEventListener('message', onMsg);
+    }
+  }
+  window.addEventListener('message', onMsg);
+}
+
+// ----- Group comparison: box + jittered dots, ColorBrewer Set2 -----------
+//
+// Single trace per group rendered as `type:'box'` with `boxpoints:'all'` so
+// Plotly handles both the box and the jittered point cloud in one go.
+// Per-group colors come from the ColorBrewer Set2 qualitative palette
+// (the soft teal/orange/lavender the user shared).
+
+const SET2 = [
+  '#66c2a5','#fc8d62','#8da0cb','#e78ac3','#a6d854','#ffd92f','#e5c494','#b3b3b3',
+];
+function softColor(idx) { return SET2[idx % SET2.length]; }
+function hexToRgba(hex, alpha) {
+  if (typeof hex !== 'string' || hex[0] !== '#' || hex.length !== 7) {
+    return `rgba(180,180,180,${alpha})`;
+  }
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+function softFill(idx)  { return hexToRgba(SET2[idx % SET2.length], 0.25); }
+
+/** Resolve the color for a group: user-set hex if present, otherwise the
+ *  default SET2 swatch picked by alphabetical position. */
+function getGroupColor(g) {
+  if (!g) return SET2[7];
+  if (state.groupColors[g]) return state.groupColors[g];
+  const sortedGroups = Array.from(new Set(state.files.map(f => f.group).filter(x => x))).sort();
+  const i = sortedGroups.indexOf(g);
+  return i >= 0 ? softColor(i) : SET2[7];
+}
+function getGroupFill(g) { return hexToRgba(getGroupColor(g), 0.18); }
+
+function renderBarPlot() {
+  // The per-sample waterfall only needs computed metrics; the by-group box plot
+  // additionally needs Group labels. Show the panel whenever anything is
+  // computed, so missing/cleared group labels never hide the waterfall too.
+  const computedAll = state.files.filter(f => f.metrics);
+  if (computedAll.length === 0) { plotPanel.style.display = 'none'; return; }
+  plotPanel.style.display = '';
+
+  const completed = computedAll.filter(f => f.group);
+  const byGroup = {};
+  for (const f of completed) {
+    (byGroup[f.group] = byGroup[f.group] || []).push(f);
+  }
+  const groups = Object.keys(byGroup).sort();
+
+  // No groups yet → clear the box plot + hint how to get it, but still draw the
+  // waterfall for every computed sample below.
+  if (groups.length === 0) {
+    Plotly.purge('plot-area');
+    renderPairwiseStats([], {});
+    plotSummary.innerHTML =
+      `${computedAll.length} sample${computedAll.length === 1 ? '' : 's'} computed · ` +
+      `assign <b>Group</b> labels (left column) to see the by-group box plot.`;
+    renderWaterfall(computedAll);
+    return;
+  }
+
+  // Per-group summary stats for the caption line under the plot.
+  const stats = groups.map(g => {
+    const vals = byGroup[g].map(metricFor).filter(v => isFinite(v));
+    const n = vals.length;
+    const mean = vals.reduce((a, b) => a + b, 0) / n;
+    const sorted = vals.slice().sort((a, b) => a - b);
+    const median = (n % 2) ? sorted[(n - 1) / 2] : (sorted[n/2 - 1] + sorted[n/2]) / 2;
+    const variance = n > 1 ? vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1) : 0;
+    return { n, mean, median, sd: Math.sqrt(variance) };
+  });
+
+  // One trace per group: box + all points overlaid + jittered. Color picks
+  // up the user-customized hex (state.groupColors[g]) when set.
+  const isPct = state.plotMetric === 'percent';
+  const traces = groups.map((g, i) => {
+    const c = getGroupColor(g);
+    return ({
+    type: 'box',
+    name: g,
+    y: byGroup[g].map(metricFor),
+    text: byGroup[g].map(f => f.name),
+    boxpoints: 'all',
+    jitter: 0.55,
+    pointpos: 0,
+    marker: { color: c, size: 7, opacity: 0.85, line: { color: c, width: 0 } },
+    line: { color: c, width: 1.5 },
+    fillcolor: hexToRgba(c, 0.25),
+    whiskerwidth: 0.4,
+    boxmean: false,
+    hoveron: 'points',
+    hovertemplate: isPct
+      ? '%{text}<br>%{y:.2f}% in region<extra></extra>'
+      : '%{text}<br>%{y:.1f} cells/mm²<extra></extra>',
+    });
+  });
+
+  const ylabel = metricLabel();
+
+  const useLog = !!document.getElementById('plot-log')?.checked;
+  Plotly.newPlot('plot-area', traces, {
+    margin: { t: 14, l: 70, r: 10, b: 56 },
+    yaxis: {
+      title: ylabel,
+      type: useLog ? 'log' : 'linear',
+      rangemode: useLog ? 'normal' : 'tozero',
+      gridcolor: '#eee', zerolinecolor: '#ddd',
+    },
+    xaxis: {
+      title: '',
+      tickfont: { size: 12 },
+      // Add n= annotations under each group label
+      tickmode: 'array',
+      tickvals: groups,
+      ticktext: groups.map((g, i) => `${g}<br><span style="color:#888;font-size:10px">n=${stats[i].n}</span>`),
+    },
+    showlegend: false,
+    plot_bgcolor: '#fff',
+    paper_bgcolor: '#fff',
+  }, { displayModeBar: false, responsive: true });
+
+  const ungrouped = state.files.filter(f => f.metrics && !f.group).length;
+  const unit = isPct ? '%' : '';
+  const dig  = isPct ? 2 : 1;
+  plotSummary.innerHTML =
+    `${completed.length} sample${completed.length === 1 ? '' : 's'} across ${groups.length} group${groups.length === 1 ? '' : 's'}: ` +
+    groups.map((g, i) =>
+      `<b style="color:${getGroupColor(g)}">${escapeHtml(g)}</b> ` +
+      `(n=${stats[i].n}, median ${fmtNum(stats[i].median, dig)}${unit}, ` +
+      `mean ${fmtNum(stats[i].mean, dig)}${unit} ± ${fmtNum(stats[i].sd, dig)}${unit})`
+    ).join(' · ') +
+    (ungrouped > 0 ? ` · ${ungrouped} computed but ungrouped` : '');
+
+  renderPairwiseStats(groups, byGroup);
+  renderWaterfall(computedAll);
+}
+
+/**
+ * Waterfall bar plot: every sample as one vertical bar, sorted by density
+ * descending, colored by its group's color. Labels along the x-axis use
+ * the editable Name column (defaults to LSP\d+). Shares the box plot's
+ * log-y toggle.
+ */
+function renderWaterfall(completed) {
+  const wf = document.getElementById('waterfall-area');
+  if (!wf) return;
+  const useLog = !!document.getElementById('plot-log')?.checked;
+  const ylabel = metricLabel();
+  const isPct = state.plotMetric === 'percent';
+
+  if (!completed.length) {
+    Plotly.purge(wf);
+    return;
+  }
+  const items = completed.slice().sort((a, b) => (metricFor(b) || 0) - (metricFor(a) || 0));
+  const xs = items.map(f => f.displayName || defaultDisplayName(f.name));
+  const ys = items.map(metricFor);
+  const colors = items.map(f => getGroupColor(f.group));
+  const hover = items.map((f, i) =>
+    `<b>${escapeHtml(f.displayName || defaultDisplayName(f.name))}</b><br>` +
+    `${escapeHtml(f.group)}<br>` +
+    (isPct
+      ? `${(ys[i] ?? 0).toLocaleString(undefined, {maximumFractionDigits:2})}% in region<br>`
+      : `${(ys[i] ?? 0).toLocaleString(undefined, {maximumFractionDigits:1})} cells/mm²<br>`) +
+    `<span style="color:#888">${escapeHtml(f.name)}</span>`
+  );
+
+  Plotly.newPlot(wf, [{
+    x: xs, y: ys,
+    type: 'bar',
+    marker: { color: colors, line: { color: 'rgba(0,0,0,0.25)', width: 0.6 } },
+    text: hover, textposition: 'none',           // text used only for hover, not drawn on bars
+    hovertemplate: '%{text}<extra></extra>',
+  }], {
+    margin: { t: 14, l: 70, r: 10, b: 90 },
+    yaxis: {
+      title: ylabel,
+      type: useLog ? 'log' : 'linear',
+      rangemode: useLog ? 'normal' : 'tozero',
+      gridcolor: '#eee', zerolinecolor: '#ddd',
+    },
+    xaxis: {
+      tickangle: -45,
+      tickfont: { size: 9, family: 'monospace' },
+      automargin: true,
+      type: 'category',
+    },
+    showlegend: false,
+    bargap: 0.15,
+    plot_bgcolor: '#fff',
+    paper_bgcolor: '#fff',
+  }, { displayModeBar: false, responsive: true });
+}
+
+/**
+ * Build the pairwise stats table beneath the box plot. For every pair of
+ * groups, run Welch's two-sided t-test and Mann-Whitney U. Highlight rows
+ * by significance: p < 0.01 strong, p < 0.05 marginal, else "ns".
+ */
+function renderPairwiseStats(groups, byGroup) {
+  const wrap = document.getElementById('stats-table-wrap');
+  wrap.innerHTML = '';
+  if (groups.length < 2) return;
+
+  const rows = [];
+  for (let i = 0; i < groups.length; i++) {
+    for (let j = i + 1; j < groups.length; j++) {
+      const gi = groups[i], gj = groups[j];
+      const vi = byGroup[gi].map(metricFor).filter(v => isFinite(v));
+      const vj = byGroup[gj].map(metricFor).filter(v => isFinite(v));
+      const t = welchT(vi, vj);
+      const u = mannWhitneyU(vi, vj);
+      rows.push({ gi, gj, t, u });
+    }
+  }
+
+  function fmtP(p) {
+    if (!isFinite(p)) return '—';
+    if (p < 0.001) return '< 0.001';
+    return p.toFixed(p < 0.01 ? 4 : (p < 0.1 ? 3 : 2));
+  }
+  function pClass(p) {
+    if (!isFinite(p)) return '';
+    if (p < 0.01)  return 'p-sig';
+    if (p < 0.05)  return 'p-marg';
+    return 'p-ns';
+  }
+
+  let html = `<h2 style="font-size:12px; margin: 0 0 6px 0; color: #555; text-transform: uppercase; letter-spacing: 0.5px;">Pairwise tests (two-sided)</h2>`;
+  html += `<table class="stats">
+    <thead>
+      <tr>
+        <th>Comparison</th>
+        <th>n₁ / n₂</th>
+        <th>Welch t</th>
+        <th>df</th>
+        <th>t-test p</th>
+        <th>Mann–Whitney U</th>
+        <th>z</th>
+        <th>MW p</th>
+      </tr>
+    </thead><tbody>`;
+  for (const r of rows) {
+    html += `<tr>` +
+      `<td>${escapeHtml(r.gi)} <span style="color:#999">vs</span> ${escapeHtml(r.gj)}</td>` +
+      `<td>${r.t.n1} / ${r.t.n2}</td>` +
+      `<td>${isFinite(r.t.t) ? r.t.t.toFixed(2) : '—'}</td>` +
+      `<td>${isFinite(r.t.df) ? r.t.df.toFixed(1) : '—'}</td>` +
+      `<td class="${pClass(r.t.p)}">${fmtP(r.t.p)}</td>` +
+      `<td>${isFinite(r.u.U) ? r.u.U.toFixed(0) : '—'}</td>` +
+      `<td>${isFinite(r.u.z) ? r.u.z.toFixed(2) : '—'}</td>` +
+      `<td class="${pClass(r.u.p)}">${fmtP(r.u.p)}</td>` +
+      `</tr>`;
+  }
+  html += `</tbody></table>`;
+  html += `<div style="font-size: 10.5px; color: #888; margin-top: 4px;">
+    Welch's two-sided t-test (unequal variances). Mann–Whitney U with tie-corrected normal approximation and continuity correction.
+    <span class="p-sig">p &lt; 0.01</span>, <span class="p-marg">p &lt; 0.05</span>, otherwise <span class="p-ns">not significant</span>.
+  </div>`;
+  wrap.innerHTML = html;
+}
+
+// ----- Pairwise statistics ----------------------------------------------
+// Welch's two-sample t-test (unequal variances) + Mann-Whitney U.
+// p-values are two-sided. t-distribution CDF uses the regularized
+// incomplete beta function (Numerical Recipes-style continued fraction).
+
+function meanSd(arr) {
+  const n = arr.length;
+  if (n === 0) return { n, mean: 0, sd: 0 };
+  const mean = arr.reduce((a, b) => a + b, 0) / n;
+  if (n === 1) return { n, mean, sd: 0 };
+  const v = arr.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (n - 1);
+  return { n, mean, sd: Math.sqrt(v) };
+}
+
+function logGamma(x) {
+  // Lanczos approximation (cof[] from Numerical Recipes).
+  const cof = [76.18009172947146, -86.50532032941677, 24.01409824083091,
+               -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+  let y = x;
+  let tmp = x + 5.5;
+  tmp -= (x + 0.5) * Math.log(tmp);
+  let ser = 1.000000000190015;
+  for (let j = 0; j < 6; j++) { y += 1; ser += cof[j] / y; }
+  return -tmp + Math.log(2.5066282746310005 * ser / x);
+}
+
+function betaContinuedFraction(x, a, b) {
+  const EPS = 3e-7, MAXIT = 200, FPMIN = 1e-30;
+  const qab = a + b, qap = a + 1, qam = a - 1;
+  let c = 1, d = 1 - qab * x / qap;
+  if (Math.abs(d) < FPMIN) d = FPMIN;
+  d = 1 / d;
+  let h = d;
+  for (let m = 1; m <= MAXIT; m++) {
+    const m2 = 2 * m;
+    let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+    d = 1 + aa * d; if (Math.abs(d) < FPMIN) d = FPMIN;
+    c = 1 + aa / c; if (Math.abs(c) < FPMIN) c = FPMIN;
+    d = 1 / d;
+    h *= d * c;
+    aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+    d = 1 + aa * d; if (Math.abs(d) < FPMIN) d = FPMIN;
+    c = 1 + aa / c; if (Math.abs(c) < FPMIN) c = FPMIN;
+    d = 1 / d;
+    const del = d * c;
+    h *= del;
+    if (Math.abs(del - 1) < EPS) break;
+  }
+  return h;
+}
+
+function incompleteBeta(x, a, b) {
+  if (x === 0) return 0;
+  if (x === 1) return 1;
+  const bt = Math.exp(logGamma(a + b) - logGamma(a) - logGamma(b) +
+                       a * Math.log(x) + b * Math.log(1 - x));
+  if (x < (a + 1) / (a + b + 2)) {
+    return bt * betaContinuedFraction(x, a, b) / a;
+  }
+  return 1 - bt * betaContinuedFraction(1 - x, b, a) / b;
+}
+
+function tCdf(t, df) {
+  // Two-tailed tail relation via incomplete beta.
+  const x = df / (df + t * t);
+  return 1 - 0.5 * incompleteBeta(x, df / 2, 0.5);
+}
+
+/** Two-sided Welch's t-test. Returns { t, df, p, n1, n2 }. */
+function welchT(a, b) {
+  const A = meanSd(a), B = meanSd(b);
+  if (A.n < 2 || B.n < 2) return { t: NaN, df: NaN, p: NaN, n1: A.n, n2: B.n };
+  const sa2n = (A.sd * A.sd) / A.n;
+  const sb2n = (B.sd * B.sd) / B.n;
+  const se = Math.sqrt(sa2n + sb2n);
+  if (se === 0) return { t: 0, df: A.n + B.n - 2, p: 1, n1: A.n, n2: B.n };
+  const t = (A.mean - B.mean) / se;
+  const df = ((sa2n + sb2n) ** 2) / ((sa2n * sa2n) / (A.n - 1) + (sb2n * sb2n) / (B.n - 1));
+  return { t, df, p: 2 * (1 - tCdf(Math.abs(t), df)), n1: A.n, n2: B.n };
+}
+
+function normCdf(z) {
+  // Abramowitz & Stegun 7.1.26 — accurate to ~7.5e-8.
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989422804014327 * Math.exp(-z * z / 2);
+  const poly = t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 +
+                t * (-1.821255978 + t * 1.330274429))));
+  const p = d * poly;
+  return z >= 0 ? 1 - p : p;
+}
+
+/**
+ * Two-sided Mann-Whitney U with normal approximation, including tie
+ * correction in the variance term and a 0.5 continuity correction. Good
+ * enough for the cohort sizes here; for very small n consider an exact
+ * permutation test instead.
+ */
+function mannWhitneyU(a, b) {
+  const n1 = a.length, n2 = b.length;
+  if (n1 === 0 || n2 === 0) return { U: NaN, p: NaN, n1, n2 };
+  const all = [];
+  for (const v of a) all.push({ v, g: 1 });
+  for (const v of b) all.push({ v, g: 2 });
+  all.sort((x, y) => x.v - y.v);
+
+  // Assign ranks, averaging across ties.
+  const tieGroups = [];
+  let i = 0;
+  while (i < all.length) {
+    let j = i;
+    while (j < all.length - 1 && all[j + 1].v === all[i].v) j++;
+    const avgRank = (i + j + 2) / 2;       // ranks are 1-indexed
+    for (let k = i; k <= j; k++) all[k].rank = avgRank;
+    if (j > i) tieGroups.push(j - i + 1);
+    i = j + 1;
+  }
+  let R1 = 0;
+  for (const it of all) if (it.g === 1) R1 += it.rank;
+  const U1 = R1 - n1 * (n1 + 1) / 2;
+  const U2 = n1 * n2 - U1;
+  const U = Math.min(U1, U2);
+  const N = n1 + n2;
+  const meanU = n1 * n2 / 2;
+  // Tie correction
+  let tieAdj = 0;
+  for (const t of tieGroups) tieAdj += (t * t * t - t);
+  const varU = (n1 * n2 / 12) * ((N + 1) - tieAdj / (N * (N - 1)));
+  const sdU = Math.sqrt(Math.max(varU, 0));
+  if (sdU === 0) return { U, U1, U2, z: 0, p: 1, n1, n2 };
+  // Two-sided p with 0.5 continuity correction
+  const z = (Math.abs(U1 - meanU) - 0.5) / sdU;
+  const p = 2 * (1 - normCdf(z));
+  return { U, U1, U2, z, p, n1, n2 };
+}
+
+// ----- Export to R -------------------------------------------------------
+//
+// Builds a complete, self-contained R script — data inline as a data.frame
+// literal, plus the create_beeswarm_plot helper, group colors, pairwise
+// comparisons, and a faceted ggplot call. Pasting into any R session
+// reproduces the cohort comparison without external file access.
+
+function describeMarkerBits(bits) {
+  if (!bits || bits.length === 0) return 'region only';
+  const nameByBit = {};
+  for (const m of state.availableMarkers) nameByBit[m.bit] = m.name;
+  return bits.slice().sort((a, b) => a - b)
+    .map(b => `${nameByBit[b] || `bit${b}`}+`).join('');
+}
+
+function rString(s) {
+  // Escape for R string literals: backslash and double-quote.
+  return '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+}
+function rNum(n) {
+  if (n === null || n === undefined) return 'NA';
+  if (typeof n === 'number' && !isFinite(n)) return 'NA';
+  return String(n);
+}
+
+/**
+ * Build the "current view" rows used by both R exports: one row per
+ * computed, grouped sample carrying the value of the metric currently on
+ * display (state.plotMetric: density or percent).
+ */
+function currentViewRowsForR() {
+  const out = [];
+  const cache = loadCache();
+  const cfg = configKey();
+  for (const f of state.files) {
+    if (!f.group) continue;
+    const samp = cache.samples[f.key];
+    const m = samp?.metricsByConfig?.[cfg] || f.metrics;
+    if (!m) continue;
+    // metricFor() reads state.plotMetric and applies the live μm/pixel
+    // rescaling for density / column metrics. We pull from it here so the
+    // exported R numbers match what the in-browser plot shows.
+    const value = metricFor(f);
+    out.push({
+      file: f.name,
+      name: f.displayName || defaultDisplayName(f.name),
+      group: f.group,
+      value,
+      match: m.matchCount,
+      region: m.regionCount,
+      total: m.count,
+      area_mm2: metricAreaMm2(m),
+    });
+  }
+  return out;
+}
+
+/** Helper: emit one R column with line-wrapped vector items (6 per line). */
+function rColumnLines(rows, key, fn, indent) {
+  const PER_LINE = 6;
+  const items = rows.map(r => fn(r[key]));
+  const lines = [];
+  for (let i = 0; i < items.length; i += PER_LINE) {
+    lines.push(indent + items.slice(i, i + PER_LINE).join(', '));
+  }
+  return lines.join(',\n');
+}
+
+function rExportHeader(extra) {
+  const ml = selectedMarkerLabel() || '(no marker filter)';
+  const region = selectedCflagLabel();
+  const metric = state.plotMetric === 'percent' ? '% in region' : 'cells / mm²';
+  return `# ---------------------------------------------------------------
+# cyftools phenotyper · ${extra || 'cohort export'}
+# Generated: ${new Date().toISOString()}
+# Region   : ${region}
+# Method   : ${state.method === 'hull' ? 'convex hull (DBSCAN-style)' : `painted ${state.radiusPx}px discs`}, ${state.scaling} µm/px
+# Markers  : ${ml}
+# Y metric : ${metric}
+# ---------------------------------------------------------------`;
+}
+
+/**
+ * R script: single-panel beeswarm + box plot of the CURRENT view (no
+ * facet_wrap). Uses the user's create_beeswarm_plot helper. Pairwise
+ * comparisons use Wilcoxon (matches the in-browser Mann–Whitney result).
+ */
+function buildBoxPlotR() {
+  const rows = currentViewRowsForR();
+  if (!rows.length) return { ok: false, msg: 'Nothing to export — group some computed samples first.' };
+  rows.sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
+
+  const groups = Array.from(new Set(rows.map(r => r.group))).sort();
+  const colorLines = groups.map(g => `  ${rString(g)} = ${rString(getGroupColor(g))}`).join(',\n');
+  const pairs = [];
+  for (let i = 0; i < groups.length; i++) {
+    for (let j = i + 1; j < groups.length; j++) {
+      pairs.push(`  c(${rString(groups[i])}, ${rString(groups[j])})`);
+    }
+  }
+  const ylab = (state.plotMetric === 'percent')
+    ? `% ${selectedMarkerLabel() || ''}`
+    : `${selectedMarkerLabel() || selectedCflagLabel()} cells / mm²`;
+
+  const cohortBlock = [
+    `  file     = c(\n${rColumnLines(rows, 'file',     v => rString(v), '    ')}\n  )`,
+    `  name     = c(\n${rColumnLines(rows, 'name',     v => rString(v), '    ')}\n  )`,
+    `  group    = c(\n${rColumnLines(rows, 'group',    v => rString(v), '    ')}\n  )`,
+    `  value    = c(\n${rColumnLines(rows, 'value',    v => rNum(v),    '    ')}\n  )`,
+    `  match    = c(\n${rColumnLines(rows, 'match',    v => rNum(v),    '    ')}\n  )`,
+    `  region   = c(\n${rColumnLines(rows, 'region',   v => rNum(v),    '    ')}\n  )`,
+    `  total    = c(\n${rColumnLines(rows, 'total',    v => rNum(v),    '    ')}\n  )`,
+    `  area_mm2 = c(\n${rColumnLines(rows, 'area_mm2', v => rNum(v),    '    ')}\n  )`,
+  ].join(',\n');
+
+  return { ok: true, script:
+`${rExportHeader('box plot export')}
+
+library(ggplot2)
+library(ggbeeswarm)
+library(ggpubr)
+
+cohort <- data.frame(
+${cohortBlock},
+  stringsAsFactors = FALSE
+)
+cohort <- subset(cohort, !is.na(group) & group != "")
+cohort$group <- factor(cohort$group, levels = c(${groups.map(g => rString(g)).join(', ')}))
+
+group_colors <- c(
+${colorLines}
+)
+
+group_pairs <- list(
+${pairs.join(',\n')}
+)
+
+# --- Beeswarm helper (from user's snippet, lightly reformatted) ---
+create_beeswarm_plot <- function(data, x_var, y_var, withbox = FALSE, dx_combos = NA, fill_var = NA) {
+  if (is.na(fill_var)) fill_var <- x_var
+  g <- ggplot(data, aes_string(x = x_var, y = y_var)) +
+    ggbeeswarm::geom_quasirandom(
+      shape = 21, color = "black", alpha = 1, size = 2,
+      aes(fill = .data[[fill_var]])
+    ) +
+    theme_bw() +
+    theme(
+      legend.position = "none",
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      axis.title = element_text(size = 10, face = "bold"),
+      axis.text  = element_text(size = 10)
+    )
+  if (length(dx_combos) || !is.na(dx_combos)) {
+    g <- g + ggpubr::stat_compare_means(
+      comparisons = dx_combos, label = "p.signif",
+      method = "wilcox.test"
+    )
+  }
+  if (withbox) {
+    g <- g + geom_boxplot(width = 0.2, outlier.shape = NA,
+                          alpha = 0.5, fill = NA, color = "black")
+  }
+  g
+}
+
+g <- create_beeswarm_plot(
+  cohort,
+  x_var     = "group",
+  y_var     = "value",
+  withbox   = TRUE,
+  dx_combos = group_pairs,
+  fill_var  = "group"
+) +
+  scale_fill_manual(values = group_colors) +
+  labs(y = ${rString(ylab)}, x = NULL)
+
+print(g)
+` };
+}
+
+/**
+ * R script: horizontal "waterfall" bar plot, sorted by value ascending so
+ * the top bars are the highest after coord_flip. Black bar outline,
+ * Helvetica, transparent background — the style from the user's snippet.
+ */
+function buildWaterfallR() {
+  const rows = currentViewRowsForR();
+  if (!rows.length) return { ok: false, msg: 'Nothing to export — group some computed samples first.' };
+  // Sort ascending in R-space so that after coord_flip the highest sits on top.
+  rows.sort((a, b) => a.value - b.value);
+
+  const groups = Array.from(new Set(rows.map(r => r.group))).sort();
+  const colorLines = groups.map(g => `  ${rString(g)} = ${rString(getGroupColor(g))}`).join(',\n');
+  const ylab = (state.plotMetric === 'percent') ? '% in region' : 'Cells / mm²';
+
+  const cohortBlock = [
+    `  file     = c(\n${rColumnLines(rows, 'file',     v => rString(v), '    ')}\n  )`,
+    `  name     = c(\n${rColumnLines(rows, 'name',     v => rString(v), '    ')}\n  )`,
+    `  group    = c(\n${rColumnLines(rows, 'group',    v => rString(v), '    ')}\n  )`,
+    `  value    = c(\n${rColumnLines(rows, 'value',    v => rNum(v),    '    ')}\n  )`,
+  ].join(',\n');
+
+  return { ok: true, script:
+`${rExportHeader('waterfall export')}
+
+library(ggplot2)
+
+cohort <- data.frame(
+${cohortBlock},
+  stringsAsFactors = FALSE
+)
+cohort <- subset(cohort, !is.na(group) & group != "")
+
+# Sort by value ascending so coord_flip puts the highest bar on top.
+cohort <- cohort[order(cohort$value), ]
+cohort$name <- factor(cohort$name, levels = cohort$name)
+
+group_colors <- c(
+${colorLines}
+)
+
+g <- ggplot(cohort, aes(x = name, y = value, fill = group)) +
+  geom_bar(stat = "identity", color = "black") +
+  ylab(${rString(ylab)}) + xlab("Sample ID") +
+  coord_flip() +
+  scale_fill_manual(values = group_colors) +
+  theme_classic() +
+  theme(
+    # axis.line + axis.ticks together (single entry — ggplot2 rejects duplicates)
+    axis.line   = element_line(colour = "black"),
+    axis.ticks  = element_line(colour = "black"),
+    legend.position = c(0.65, 0.3),
+    legend.justification = c(-0.2, -0.3),
+    legend.box.margin = margin(6, 6, 6, 6),
+    legend.margin = margin(-10, -10, -10, -10),
+    text        = element_text(family = "Helvetica"),
+    axis.text.x = element_text(color = "black"),
+    axis.text.y = element_text(color = "black"),
+    axis.title.y = element_text(size = 9, margin = margin(r = 5)),
+    axis.title.x = element_text(size = 9, margin = margin(t = 2)),
+    plot.title  = element_text(size = 9),
+    legend.title = element_blank(),
+    legend.text  = element_text(size = 9),
+    legend.background = element_blank(),
+    legend.key   = element_blank(),
+    panel.background = element_rect(fill = "transparent", colour = NA),
+    plot.background  = element_rect(fill = "transparent", colour = NA)
+  ) +
+  scale_y_continuous(expand = c(0, 0))
+
+print(g)
+` };
+}
+
+// Legacy entry point kept so any stale handler doesn't crash; redirects to box plot.
+function buildRExport() { return buildBoxPlotR(); }
+
+function buildRExportOriginal() {
+  const completed = state.files.filter(f => f.metrics && f.group);
+  if (completed.length === 0) {
+    return { ok: false, msg: 'Nothing to export — assign group labels to at least one computed sample first.' };
+  }
+
+  // Long-format rows across every cached marker variant for the current
+  // (cflag bit, method, scaling, radius). One row per (sample × variant).
+  const cache = loadCache();
+  const rows = [];
+  for (const f of completed) {
+    const samp = cache.samples[f.key];
+    if (!samp || !samp.metricsByConfig) continue;
+    const currentCflagBits = (state.cflagBits || []).slice().sort((a,b)=>a-b);
+    for (const cfgKey of Object.keys(samp.metricsByConfig)) {
+      const cfg = parseConfigKey(cfgKey);
+      const cfgBits = (cfg.cflagBits || []).slice().sort((a,b)=>a-b);
+      if (cfgBits.join(',') !== currentCflagBits.join(',')) continue;
+      if (cfg.method !== state.method) continue;
+      if (cfg.scaling !== state.scaling) continue;
+      if (cfg.radiusPx !== state.radiusPx) continue;
+      const m = samp.metricsByConfig[cfgKey];
+      rows.push({
+        file: f.name,
+        group: f.group,
+        variable: describeMarkerBits(cfg.markerBits || []),
+        value: m.densityPerMm2,
+        pct_in_region: m.regionCount ? (100 * m.matchCount / m.regionCount) : null,
+        match: m.matchCount,
+        region: m.regionCount,
+        total: m.count,
+        area_mm2: m.areaMm2,
+        bbox_mm2: m.bboxAreaMm2,
+        marker_bits: (cfg.markerBits || []).join('+') || '',
+      });
+    }
+  }
+
+  // De-dup by (file, variable) — keep the most recently written entry
+  // (later in iteration order from the cache object).
+  const dedup = new Map();
+  for (const r of rows) dedup.set(r.file + '|' + r.variable, r);
+  const finalRows = Array.from(dedup.values()).sort((a, b) =>
+    a.variable.localeCompare(b.variable) || a.group.localeCompare(b.group) || a.file.localeCompare(b.file)
+  );
+
+  // Per-group colors: prefer user-customized hex (if any), else SET2 by sort order.
+  const groups = Array.from(new Set(finalRows.map(r => r.group))).sort();
+  const colorLines = groups.map(g => `  ${rString(g)} = ${rString(getGroupColor(g))}`).join(',\n');
+
+  // All pairwise comparisons (used by stat_compare_means)
+  const pairs = [];
+  for (let i = 0; i < groups.length; i++) {
+    for (let j = i + 1; j < groups.length; j++) {
+      pairs.push(`  c(${rString(groups[i])}, ${rString(groups[j])})`);
+    }
+  }
+  const pairsLines = pairs.join(',\n');
+
+  // Vector lines for the data.frame columns.
+  //
+  // R's interactive parser caps single lines at ~4094 characters, so if we
+  // emit one huge `c("a","b",...)` per column it will choke on big cohorts.
+  // Chunk to 6 items per line — well under the limit even for long file
+  // paths, and the data block stays readable in the user's editor too.
+  const PER_LINE = 6;
+  const vec = (key, fn) => {
+    const items = finalRows.map(r => fn(r[key]));
+    const lines = [];
+    for (let i = 0; i < items.length; i += PER_LINE) {
+      lines.push('    ' + items.slice(i, i + PER_LINE).join(', '));
+    }
+    return lines.join(',\n');
+  };
+  const col = (name, key, fn) =>
+`  ${name} = c(
+${vec(key, fn)}
+  )`;
+
+  const cohortLines = [
+    col('file         ', 'file',          v => rString(v)),
+    col('group        ', 'group',         v => rString(v)),
+    col('variable     ', 'variable',      v => rString(v)),
+    col('marker_bits  ', 'marker_bits',   v => rString(v)),
+    col('value        ', 'value',         v => rNum(v)),
+    col('pct_in_region', 'pct_in_region', v => rNum(v)),
+    col('match        ', 'match',         v => rNum(v)),
+    col('region       ', 'region',        v => rNum(v)),
+    col('total        ', 'total',         v => rNum(v)),
+    col('area_mm2     ', 'area_mm2',      v => rNum(v)),
+    col('bbox_mm2     ', 'bbox_mm2',      v => rNum(v)),
+  ].join(',\n');
+
+  const ml = selectedMarkerLabel() || '(no marker filter)';
+  const header =
+`# ---------------------------------------------------------------
+# cyftools phenotyper — cohort export
+# Generated: ${new Date().toISOString()}
+# Region    : ${selectedCflagLabel()}
+# Area      : ${state.method === 'hull' ? 'convex hull (DBSCAN-style)' : `painted ${state.radiusPx} px discs`}, scaling = ${state.scaling} µm/px
+# Markers   : ${ml} (current view)  ·  facet "variable" cycles through every cached marker combination
+# Samples   : ${groups.reduce((s, g) => s + finalRows.filter(r => r.group === g && r.variable === finalRows[0]?.variable).length, 0)} grouped (across ${groups.length} group${groups.length === 1 ? '' : 's'})
+# ---------------------------------------------------------------`;
+
+  const script =
+`${header}
+
+library(ggplot2)
+library(ggbeeswarm)
+library(ggpubr)
+
+# Long-format data: one row per (sample, marker-variant).
+# 'value' is cells / mm² of the region area (paint or hull, see header above).
+cohort <- data.frame(
+${cohortLines},
+  stringsAsFactors = FALSE
+)
+
+# Drop unlabeled samples (defensive; usually empty)
+cohort <- subset(cohort, !is.na(group) & group != "")
+
+# Order group factor so plot x-axis follows the order you've been working in.
+cohort$group <- factor(cohort$group, levels = c(${groups.map(g => rString(g)).join(', ')}))
+
+# Per-group colors (ColorBrewer Set2)
+group_colors <- c(
+${colorLines}
+)
+
+# All pairwise group comparisons (Wilcoxon, two-sided)
+group_pairs <- list(
+${pairsLines}
+)
+
+# ------------------------------------------------------------------
+# Beeswarm plotting helper (your snippet, lightly reformatted)
+# ------------------------------------------------------------------
+create_beeswarm_plot <- function(data, x_var, y_var, withbox = FALSE, dx_combos = NA, fill_var = NA) {
+  if (is.na(fill_var)) fill_var <- x_var
+  g <- ggplot(data, aes_string(x = x_var, y = y_var)) +
+    ggbeeswarm::geom_quasirandom(
+      shape = 21, color = "black", alpha = 1, size = 2,
+      aes(fill = .data[[fill_var]])
+    ) +
+    theme_bw() +
+    theme(
+      legend.position = "none",
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      axis.title = element_text(size = 10, face = "bold"),
+      axis.text  = element_text(size = 10)
+    )
+  if (length(dx_combos) || !is.na(dx_combos)) {
+    g <- g + ggpubr::stat_compare_means(
+      comparisons = dx_combos, label = "p.signif",
+      method = "wilcox.test"
+    )
+  }
+  if (withbox) {
+    g <- g + geom_boxplot(width = 0.2, outlier.shape = NA,
+                          alpha = 0.5, fill = NA, color = "black")
+  }
+  g
+}
+
+# ------------------------------------------------------------------
+# Default plot: all cached marker variants in one figure, faceted.
+# To plot just one marker, e.g. CD20+:
+#   create_beeswarm_plot(subset(cohort, variable == "CD20+"),
+#                        x_var = "group", y_var = "value",
+#                        withbox = TRUE, dx_combos = group_pairs,
+#                        fill_var = "group") +
+#     scale_fill_manual(values = group_colors)
+# ------------------------------------------------------------------
+g <- create_beeswarm_plot(
+  cohort,
+  x_var     = "group",
+  y_var     = "value",
+  withbox   = TRUE,
+  dx_combos = group_pairs,
+  fill_var  = "group"
+) +
+  facet_wrap(~ variable, scales = "free_y") +
+  scale_fill_manual(values = group_colors) +
+  labs(y = "cells / mm² of region area", x = NULL)
+
+print(g)
+`;
+
+  return { ok: true, script };
+}
+
+async function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext !== false) {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch (e) { /* fall through */ }
+  }
+  // Fallback: textarea + execCommand. file:// origins often need this.
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (e) { return false; }
+}
+
+function showRModal(script) {
+  const modal = document.getElementById('r-export-modal');
+  const ta = document.getElementById('r-modal-text');
+  ta.value = script;
+  modal.style.display = 'flex';
+  // Pre-select so the user can just Ctrl/Cmd-A then Cmd-C
+  setTimeout(() => { ta.focus(); ta.select(); }, 0);
+}
+
+// Re-render the box plot when the log-y toggle flips.
+document.getElementById('plot-log').addEventListener('change', renderBarPlot);
+
+/**
+ * Rebuild the radio buttons for plot metric: cells/mm², %, plus one per
+ * local-density column relevant to the current marker selection.
+ * Called whenever markers or available density columns change.
+ */
+function renderMetricRadios() {
+  const wrap = document.getElementById('plot-metric-radios');
+  if (!wrap) return;
+  const options = [
+    { value: 'density', label: 'cells/mm²' },
+    { value: 'percent', label: '%' },
+  ];
+  if (anyRoiLoaded()) {
+    options.push({ value: 'roiDensity', label: 'cells/mm² (ROI)' });
+  }
+  for (const rc of relevantDensityCols()) {
+    options.push({ value: 'col:' + rc.name, label: rc.name });
+  }
+  // If the previously-selected metric is no longer available (marker changed),
+  // fall back to 'density' so the plot still has a valid y.
+  if (!options.find(o => o.value === state.plotMetric)) {
+    state.plotMetric = 'density';
+  }
+  wrap.innerHTML = '';
+  for (const opt of options) {
+    const lbl = document.createElement('label');
+    lbl.className = 'toggle';
+    lbl.innerHTML = `<input type="radio" name="plot-metric" value="${escapeHtml(opt.value)}" ${state.plotMetric === opt.value ? 'checked' : ''} /> ${escapeHtml(opt.label)}`;
+    lbl.querySelector('input').addEventListener('change', () => {
+      state.plotMetric = opt.value;
+      saveSettings();
+      renderBarPlot();
+    });
+    wrap.appendChild(lbl);
+  }
+}
+
+/** Returns the chosen metric value for a sample.
+ *  - 'density' → cells/mm² (paint or hull area, see settings)
+ *  - 'percent' → 100 × match / region
+ *  - 'col:NAME' → mean of CA column NAME across cells in the region
+ *  Returns NaN when the sample isn't yet computed. */
+function metricFor(f) {
+  const m = f.metrics;
+  if (!m) return NaN;
+  if (state.plotMetric === 'percent') {
+    return m.regionCount ? (100 * m.matchCount / m.regionCount) : 0;
+  }
+  if (state.plotMetric && state.plotMetric.startsWith('col:')) {
+    const name = state.plotMetric.slice(4);
+    const v = m.meanByCol?.[name];
+    if (v === null || v === undefined) return NaN;
+    return v * (state.densityColScale || 1);
+  }
+  if (state.plotMetric === 'roiDensity') {
+    return roiDensityForFile(f);   // Match ÷ ROI tumor area (NaN if unmatched)
+  }
+  return metricDensity(m);   // live-rescaled to state.scaling
+}
+
+/** Returns the human-readable y-axis label / metric description. */
+function metricLabel() {
+  const ml = selectedMarkerLabel();
+  if (state.plotMetric === 'percent') {
+    return ml ? `% ${ml}` : '%';
+  }
+  if (state.plotMetric && state.plotMetric.startsWith('col:')) {
+    return state.plotMetric.slice(4);
+  }
+  if (state.plotMetric === 'roiDensity') {
+    return ml ? `${ml} cells / mm² (ROI area)` : `cells / mm² (ROI area)`;
+  }
+  return ml ? `${ml} cells / mm²` : `${selectedCflagLabel()} cells / mm²`;
+}
+
+async function runRExport(builderFn, kindLabel) {
+  const res = builderFn();
+  if (!res.ok) { alert(res.msg); return; }
+  const ok = await copyToClipboard(res.script);
+  const flash = document.getElementById('export-r-flash');
+  if (ok) {
+    flash.textContent = `✓ ${kindLabel} copied`;
+    flash.style.display = '';
+    setTimeout(() => { flash.style.display = 'none'; }, 2000);
+  } else {
+    showRModal(res.script);
+  }
+}
+document.getElementById('btn-export-r-box').addEventListener('click', () => runRExport(buildBoxPlotR,  'box plot R script'));
+document.getElementById('btn-export-r-wf') .addEventListener('click', () => runRExport(buildWaterfallR, 'waterfall R script'));
+document.getElementById('btn-png-box').addEventListener('click', () => downloadPlotPNG('plot-area', 'cohort_box'));
+document.getElementById('btn-png-wf') .addEventListener('click', () => downloadPlotPNG('waterfall-area', 'cohort_waterfall'));
+document.getElementById('btn-r-modal-close').addEventListener('click', () => {
+  document.getElementById('r-export-modal').style.display = 'none';
+});
+document.getElementById('btn-r-modal-copy').addEventListener('click', async () => {
+  const ta = document.getElementById('r-modal-text');
+  ta.focus(); ta.select();
+  const ok = await copyToClipboard(ta.value);
+  if (ok) {
+    const flash = document.getElementById('export-r-flash');
+    flash.textContent = '✓ copied';
+    flash.style.display = '';
+    setTimeout(() => { flash.style.display = 'none'; }, 1800);
+    document.getElementById('r-export-modal').style.display = 'none';
+  }
+});
+
+// ----- Utilities ---------------------------------------------------------
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// Boot: restore persisted settings so cache keys line up across page loads.
+// If those settings don't match any cached config but the cache has a clear
+// dominant config, switch to that instead so the user lands on cached data.
+(function bootSettings() {
+  const stored = loadSettings();
+  const r = reconcileSettingsWithCache(stored);
+  applySettings(r.settings);
+  if (r.overrode) {
+    console.info('cohort: overrode boot settings with cached config', r.fromConfig);
+  }
+})();
+updateCalcDescription();
+renderMetricRadios();
+
+// ----- cohort.json load: drag-and-drop + ?file= auto-load (when served) ----
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) loadDroppedFile(f);   // cohort.json or config.json
+});
+(function autoLoadFromQuery(){
+  const q = new URLSearchParams(location.search);
+  // optional preferences file (?config=...). Loaded independently of the cohort.
+  const cfgUrl = q.get('config');
+  if (cfgUrl) fetch(cfgUrl).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(applyConfig).catch(err => console.warn('cohort: config load failed', err));
+  // the cohort itself (?file=...)
+  const pre = q.get('file');
+  if (!pre) return;
+  overallStatus.textContent = 'loading ' + pre + ' …';
+  fetch(pre).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(ingestCohortJson)
+    .catch(err => { console.error(err); overallStatus.textContent = 'auto-load failed — use the “Load cohort.json…” button (file:// blocks fetch)'; });
+})();
+})();
+</script>
+
+</body>
+</html>

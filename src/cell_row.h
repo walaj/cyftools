@@ -39,7 +39,8 @@ class Cell {
 		       bool tabprint,
 		       bool header_print,
 		       const CellHeader& header,
-          	       bool no_print_cellid_etc) const;
+          	       bool no_print_cellid_etc,
+		       bool csv = false) const;
 
   void PrintForCrevasse(const CellHeader& header) const;
 

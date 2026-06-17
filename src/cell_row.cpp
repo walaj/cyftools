@@ -189,11 +189,13 @@ void Cell::Print(int round, bool tabprint) const {
 
 void Cell::PrintWithHeader(int round,
 			   bool tabprint,
-			   bool header_print, 
+			   bool header_print,
 			   const CellHeader& header,
-			   bool no_print_cellid_etc) const { 
+			   bool no_print_cellid_etc,
+			   bool csv) const {
 
-  char d = tabprint ? '\t' : ',';
+  // SAM-style tab is the default; comma only when CSV output (-R) is requested.
+  char d = csv ? ',' : '\t';
   uint32_t sampleID = static_cast<uint32_t>(id >> 32);
   uint32_t cellID = static_cast<uint32_t>(id & 0xFFFFFFFF);
   
@@ -220,9 +222,9 @@ void Cell::PrintWithHeader(int round,
   size_t i = 0;
   for (const auto& t : header.GetDataTags()) {
     if (i == 0 && no_print_cellid_etc)
-      ; // don't print leading comma if strict cut
+      ; // no leading delimiter if strict cut
     else
-      std::cout << (i > 0 || tabprint ? d : ','); // Conditional delimiter for the first column based on tabprint
+      std::cout << d;
     if (header_print)
       std::cout << t.id << ":";
     if (tabprint) std::cout << std::setw(fixed_width);

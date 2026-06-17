@@ -84,6 +84,10 @@ target_include_directories(cyftools PRIVATE
   ${SRC}                       # nanoflann.hpp + delaunator.hpp live here
   ${EXT}/cereal/include)       # cereal: still a core dep until the CYF migration completes
 
+# single source of truth for the version string: the project() VERSION above,
+# surfaced to the binary (help text + --version) so they can never drift.
+target_compile_definitions(cyftools PRIVATE CYFTOOLS_VERSION="${PROJECT_VERSION}")
+
 if(CYFTOOLS_64BIT)
   target_compile_definitions(cyftools PRIVATE USE_64_BIT)
 endif()

@@ -28,7 +28,7 @@ static Tag mk(uint8_t t, std::string id, std::string d, int i) { Tag x(t, id, d)
 
 static CellHeader buildHeader() {
   CellHeader h; int i = 0;
-  h.appendRawTag(mk(Tag::VN_TAG, "",     "VN:1.0\tSO:unsorted",                    i++));
+  h.appendRawTag(mk(Tag::HD_TAG, "",     "VN:1.0\tSO:unsorted",                    i++));
   h.appendRawTag(mk(Tag::SA_TAG, "S1",   "SM:tonsil_01\tPA:Orion",                 i++));
   h.appendRawTag(mk(Tag::MA_TAG, "DAPI", "TY:f\tCH:1",                             i++));
   h.appendRawTag(mk(Tag::MA_TAG, "CD3",  "TY:f\tCH:5",                             i++));
@@ -51,7 +51,7 @@ static bool cellEq(const Cell& a, const Cell& b) {
 // array metadata columns. Data columns are MA+CA (what the schema binds to).
 static CellHeader buildTypedHeader() {
   CellHeader h; int i = 0;
-  h.appendRawTag(mk(Tag::VN_TAG, "",         "VN:1.0",                              i++));
+  h.appendRawTag(mk(Tag::HD_TAG, "",         "VN:1.0",                              i++));
   h.appendRawTag(mk(Tag::MA_TAG, "DAPI",     "TY:f",                                i++));
   h.appendRawTag(mk(Tag::CA_TAG, "count",    "TY:i",                                i++));
   h.appendRawTag(mk(Tag::CA_TAG, "label",    "TY:Z",                                i++));
@@ -109,19 +109,45 @@ int main() {
     check(st == cyf::CyfReader::TRUNCATED, "truncation detected (no EOF marker)");
   }
 
-  std::cout << "cereal/CYF adapter (OutArchive / InArchive):\n";
-  for (bool use_cyf : {false, true}) {
+  std::cout << "adapter round-trips (CYF-binary / CYF-text):\n";
+  struct FmtCase { cyf::OutFormat fmt; const char* name; };
+  for (FmtCase fc : { FmtCase{cyf::OutFormat::Binary, "binary .byf (BGZF)"},
+                      FmtCase{cyf::OutFormat::Text,   "text .cyf (tab)"} }) {
     std::ostringstream os(std::ios::binary);
-    { OutArchive ar(os, use_cyf); ar(h); for (auto& c : cells) ar(c); }
+    { OutArchive ar(os, fc.fmt); ar(h); for (auto& c : cells) ar(c); }
     std::istringstream is(os.str(), std::ios::binary);
     InArchive ar(is);
     CellHeader h2; ar(h2);
     std::vector<Cell> got; Cell c;
     while (ar.next(c)) got.push_back(c);
-    bool ok = (ar.isCyf() == use_cyf) && got.size() == cells.size();
+    bool ok = got.size() == cells.size();
     for (size_t i = 0; ok && i < cells.size(); ++i) ok &= cellEq(cells[i], got[i]);
-    check(ok, use_cyf ? "OutArchive(cyf) -> InArchive auto-detects cyf"
-                      : "OutArchive(cereal) -> InArchive auto-detects cereal");
+    check(ok, (std::string("OutArchive(") + fc.name + ") -> InArchive auto-detects + round-trips").c_str());
+  }
+
+  // Legacy cereal (.ocyf) is never written by OutArchive, but InArchive must still
+  // READ it so existing files can be migrated. Write a raw cereal stream directly.
+  {
+    std::ostringstream os(std::ios::binary);
+    { cereal::PortableBinaryOutputArchive ar(os); ar(h); for (auto& c : cells) ar(c); }
+    std::istringstream is(os.str(), std::ios::binary);
+    InArchive ar(is);
+    CellHeader h2; ar(h2);
+    std::vector<Cell> got; Cell c;
+    while (ar.next(c)) got.push_back(c);
+    bool ok = got.size() == cells.size();
+    for (size_t i = 0; ok && i < cells.size(); ++i) ok &= cellEq(cells[i], got[i]);
+    check(ok, "legacy cereal still readable by InArchive (.ocyf migration path)");
+  }
+
+  // formatForPath: extension drives the writer; .ocyf is refused.
+  {
+    bool ok = cyf::formatForPath("a.cyf")  == cyf::OutFormat::Text  &&
+              cyf::formatForPath("a.byf") == cyf::OutFormat::Binary &&
+              cyf::formatForPath("-")      == cyf::OutFormat::Binary;
+    bool threw = false;
+    try { cyf::formatForPath("a.ocyf"); } catch (const std::exception&) { threw = true; }
+    check(ok && threw, "formatForPath: .cyf/.byf/'-' map correctly and .ocyf throws");
   }
 
   std::cout << "typed columns (int / string / categorical / array):\n";
@@ -159,7 +185,7 @@ int main() {
   std::cout << "self-describing flags (@FL):\n";
   {
     CellHeader h; int i = 0;
-    h.appendRawTag(mk(Tag::VN_TAG, "", "VN:1.0", i++));
+    h.appendRawTag(mk(Tag::HD_TAG, "", "VN:1.0", i++));
     h.appendRawTag(mk(Tag::MA_TAG, "DAPI", "TY:f", i++));
     cyf::addStandardFlagTags(h);
     check(h.GetFlagTags().size() == 11, "addStandardFlagTags declares 11 cflag bits");

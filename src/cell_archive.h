@@ -1,22 +1,20 @@
 #pragma once
 //
-// cell_archive.h — a thin compatibility layer that lets cyftools read and write
-// EITHER the legacy cereal stream OR the new CYF format, without changing the
-// (*archive)(header) / (*archive)(cell) call sites scattered through the code.
+// cell_archive.h — a thin layer presenting a uniform (*archive)(header) /
+// (*archive)(cell) interface over the CYF formats, so the call sites scattered
+// through the code do not change.
 //
-// Writing: OutArchive picks cereal or CYF once at construction (see
-// cyf::useCyfOutput()) and forwards operator() to the chosen backend. A CYF
-// stream's EOF marker is emitted when the embedded CyfWriter is destroyed, so
-// the existing member-destruction order (archive before its ofstream) finalizes
-// the file correctly with no new explicit "close" calls.
+// Writing: OutArchive writes either text (.cyf) or BGZF binary (.byf), chosen by
+// cyf::formatForPath(output). It never writes the legacy cereal form. A binary
+// stream's EOF marker is emitted when the embedded CyfWriter is destroyed, so the
+// existing member-destruction order (archive before its ofstream) finalizes the
+// file correctly with no new explicit "close" calls.
 //
-// Reading: InArchive auto-detects the format from the stream's magic bytes
-// (cyf::detectCyf, which replays the peeked bytes so stdin pipes work) and
-// presents a uniform interface: operator()(header) then next(cell) until false.
-// Truncated CYF streams throw rather than silently ending.
-//
-// This is the single seam to remove when cereal is finally dropped: delete the
-// cereal branches and OutArchive/InArchive collapse onto CyfWriter/CyfReader.
+// Reading: InArchive auto-detects the format from the stream's leading bytes
+// (text '@', BGZF magic, CYF magic, else legacy cereal), replaying peeked bytes
+// so stdin pipes work, and presents operator()(header) then next(cell) until
+// false. Truncated binary streams throw rather than silently ending. The cereal
+// branch is read-only and exists only to migrate old (.ocyf) files.
 //
 #include <memory>
 #include <stdexcept>
@@ -31,50 +29,51 @@
 // ----------------------------------------------------------------- writing
 class OutArchive {
 public:
-  // Format defaults to the process-global switches; pass explicitly to override.
-  // When CYF is selected and BGZF is on, the CYF byte stream is written through a
-  // BGZF compressor (the .bcyf / BAM analog).
-  explicit OutArchive(std::ostream& os,
-                      bool use_cyf  = cyf::useCyfOutput(),
-                      bool use_bgzf = cyf::useBgzfOutput()) {
-    if (use_cyf) {
-      if (use_bgzf) {
-        m_bgzf = cyf::makeBgzfOutput(os);                  // BGZF container over os
+  // Text = .cyf (SAM analog); Binary = .byf (BAM analog, always BGZF-framed).
+  // Defaults to Binary; callers pass cyf::formatForPath(output) to honor the
+  // file extension.
+  explicit OutArchive(std::ostream& os, cyf::OutFormat fmt = cyf::OutFormat::Binary) {
+    switch (fmt) {
+      case cyf::OutFormat::Text:
+        m_text = std::make_unique<cyf::CyfTextWriter>(os);
+        break;
+      case cyf::OutFormat::Binary:
+        m_bgzf = cyf::makeBgzfOutput(os);                   // binary is always BGZF
         m_cyf  = std::make_unique<cyf::CyfWriter>(*m_bgzf);
-      } else {
-        m_cyf = std::make_unique<cyf::CyfWriter>(os);
-      }
-    } else {
-      m_cereal = std::make_unique<cereal::PortableBinaryOutputArchive>(os);
+        break;
     }
   }
 
   void operator()(const CellHeader& h) {
-    if (m_cyf) m_cyf->writeHeader(h);
-    else       (*m_cereal)(h);
+    if (m_text) m_text->writeHeader(h);
+    else        m_cyf->writeHeader(h);
   }
 
   void operator()(const Cell& c) {
-    if (m_cyf) m_cyf->writeCell(c);
-    else       (*m_cereal)(c);
+    if (m_text) m_text->writeCell(c);
+    else        m_cyf->writeCell(c);
   }
 
 private:
   // Declaration order matters for finalization: m_cyf is destroyed first (it flushes
-  // the CYF EOF marker into the BGZF stream), then m_bgzf (it writes the last block
-  // + the BGZF EOF marker into os).
-  std::unique_ptr<std::ostream>                        m_bgzf;
-  std::unique_ptr<cereal::PortableBinaryOutputArchive> m_cereal;
-  std::unique_ptr<cyf::CyfWriter>                      m_cyf;
+  // the CYF EOF marker into the BGZF stream), then m_bgzf (last block + BGZF EOF).
+  std::unique_ptr<std::ostream>       m_bgzf;
+  std::unique_ptr<cyf::CyfWriter>     m_cyf;
+  std::unique_ptr<cyf::CyfTextWriter> m_text;
 };
 
 // ----------------------------------------------------------------- reading
 class InArchive {
 public:
   explicit InArchive(std::istream& src) {
-    // first peel off BGZF compression if present (gzip magic), then detect CYF vs cereal
-    cyf::openMaybeBgzfInput(src, m_outer);      // m_outer = decompressed (or passthrough) bytes
-    m_is_cyf = cyf::detectCyf(*m_outer, m_stream);
+    // detection order: text ('@') → BGZF (gzip magic, decompress) → CYF binary → cereal
+    m_is_text = cyf::detectText(src, m_l1);
+    if (m_is_text) {
+      m_text = std::make_unique<cyf::CyfTextReader>(*m_l1);
+      return;
+    }
+    cyf::openMaybeBgzfInput(*m_l1, m_l2);       // m_l2 = decompressed (or passthrough) bytes
+    m_is_cyf = cyf::detectCyf(*m_l2, m_stream);
     if (m_is_cyf)
       m_cyf = std::make_unique<cyf::CyfReader>(*m_stream);
     else
@@ -83,7 +82,8 @@ public:
 
   // Read the header (must be called first).
   void operator()(CellHeader& h) {
-    if (m_cyf) {
+    if      (m_text) m_text->readHeader(h);
+    else if (m_cyf) {
       if (!m_cyf->readHeader(h))
         throw std::runtime_error("CYF: failed to read header (bad magic or version)");
     } else {
@@ -92,8 +92,14 @@ public:
   }
 
   // Read the next cell. Returns true if one was read, false at clean end of
-  // stream. Throws on a truncated/corrupt CYF stream.
+  // stream. Throws on a truncated/corrupt stream.
   bool next(Cell& c) {
+    if (m_text) {
+      cyf::CyfTextReader::Status st = m_text->readCell(c);
+      if (st == cyf::CyfTextReader::OK)  return true;
+      if (st == cyf::CyfTextReader::END) return false;
+      throw std::runtime_error("CYF text: malformed record");
+    }
     if (m_cyf) {
       cyf::CyfReader::Status st = m_cyf->readCell(c);
       if (st == cyf::CyfReader::OK)  return true;
@@ -108,13 +114,18 @@ public:
     }
   }
 
-  bool isCyf() const { return m_is_cyf; }
+  bool isCyf()  const { return m_is_cyf; }
+  bool isText() const { return m_is_text; }
 
 private:
-  // m_outer (BGZF/passthrough) is declared before m_stream so it is destroyed after it.
-  std::unique_ptr<std::istream>                       m_outer;
+  // Layering, declared before the readers that reference them (so destroyed after):
+  // m_l1 (text-detect over src) -> m_l2 (BGZF/passthrough) -> m_stream (CYF-detect).
+  std::unique_ptr<std::istream>                       m_l1;
+  std::unique_ptr<std::istream>                       m_l2;
   std::unique_ptr<std::istream>                       m_stream;
-  bool                                                m_is_cyf = false;
+  bool                                                m_is_cyf  = false;
+  bool                                                m_is_text = false;
   std::unique_ptr<cereal::PortableBinaryInputArchive> m_cereal;
-  std::unique_ptr<cyf::CyfReader>                      m_cyf;
+  std::unique_ptr<cyf::CyfReader>                     m_cyf;
+  std::unique_ptr<cyf::CyfTextReader>                 m_text;
 };

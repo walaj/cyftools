@@ -43,22 +43,27 @@ is wired). It can be deleted.
 
 ## How to use it
 
-Reading is always automatic — `StreamTable`/`InArchive` detect the format per file,
-so existing cereal files keep working and mixed inputs are fine.
+Reading is always automatic — `StreamTable`/`InArchive` detect the format per file
+(text `@`, BGZF magic, CYF magic, else legacy cereal), so old `.ocyf` files keep
+working and mixed inputs are fine.
 
-Writing is selected by an environment variable (no CLI changes needed yet):
+Writing is selected by the output file's extension — no environment variable, no
+CLI flag:
 
 ```sh
-# default: writes the legacy cereal stream
-cyftools convert in.csv - | cyftools filter ... - out.cyf
-
-# opt in to CYF output for the whole pipeline
-export CYFTOOLS_FORMAT=cyf
-cyftools convert in.csv - | cyftools filter ... - out.cyf
+cyftools convert in.csv out.cyf     # text  (.cyf)
+cyftools convert in.csv out.byf    # BGZF binary (.byf)
+cyftools convert in.csv -           # stdout -> binary (the default)
 ```
 
-`cyf::useCyfOutput()` reads `CYFTOOLS_FORMAT` once and is mutable, so a future
-`--cyf` flag can set it directly from `cyftools.cpp` arg parsing.
+`cyf::formatForPath(path)` maps `.cyf` → text and `.byf` → binary; an unknown
+extension (and `-`) defaults to binary. The legacy cereal form is **read-only**:
+`formatForPath` throws on a `.ocyf` output, since cereal is never written. To
+migrate old files, convert them once:
+
+```sh
+cyftools clean old.ocyf new.byf    # cereal in, BGZF binary out
+```
 
 Run the self-test anytime:
 

@@ -1,3 +1,4 @@
+#include <cstdint>
 #ifndef TIFF_WRITER_H
 #define TIFF_WRITER_H
 

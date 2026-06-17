@@ -9,6 +9,13 @@
 
 #include <regex>
 #include <limits>
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <cmath>
+#include <array>
+#include <cstdio>
+#include <cstdlib>
 
 static inline bool roikey(const Polygon& poly, const std::string& keyword) {
     return poly.Text.find(keyword) != std::string::npos ||
@@ -1064,9 +1071,584 @@ int CleanProcessor::ProcessLine(Cell& cell) {
   } else if (m_pflag > 0) {
     cell.pflag &= ~m_pflag;
   }
-  
+
   return 1;
-  
+
+}
+
+int AddTagProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+
+  // ROI add/overwrite policy (used by addroi): refuse to silently add onto a file
+  // that already has ROIs unless the user picked --add or --overwrite.
+  if (m_roi_mode != ROI_NONE) {
+    size_t existing = 0;
+    for (const auto& t : m_header) if (t.type == Tag::RO_TAG) ++existing;
+    if (existing > 0 && m_roi_mode == ROI_REQUIRE) {
+      std::cerr << "cyftools addroi: file already has " << existing
+                << " ROI(s). Pass --add to append or --overwrite to replace." << std::endl;
+      m_aborted = true;
+      return ONLY_WRITE_HEADER;   // stop before opening output -> no file written
+    }
+    if (existing > 0 && m_roi_mode == ROI_OVERWRITE)
+      m_header.RemoveRoiTags("", -1);
+  }
+
+  // ROIs are appended (each polygon is its own @RO; an --add of the same file
+  // really appends, even when ids collide). Non-ROI tags merge their fields into
+  // an existing same-class/same-id tag (the addtag behavior).
+  for (const auto& t : m_tags) {
+    if (m_roi_mode != ROI_NONE) m_header.appendRawTag(t);
+    else                        m_header.UpsertTag(t);
+  }
+
+  // optional sample group/category -> @SA GP field. Merge into the file's
+  // existing @SA tag (keep its id/name); create one keyed by the default id
+  // (the input filename stem) only if the file has no @SA tag yet.
+  if (!m_group.empty()) {
+    std::string sid = m_group_default_id;
+    for (const auto& t : m_header) if (t.type == Tag::SA_TAG) { sid = t.id; break; }
+    m_header.UpsertTag(Tag(Tag::SA_TAG, sid, std::string("GP:") + m_group));
+  }
+
+  // just in time, make the output stream
+  this->SetupOutputStream();
+
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));   // provenance
+  m_header.SortTags();
+
+  assert(m_archive);
+  (*m_archive)(m_header);
+
+  return HEADER_NO_ACTION;
+}
+
+int AddTagProcessor::ProcessLine(Cell& cell) {
+  return WRITE_CELL;   // pass every cell through unchanged
+}
+
+int ScaleRoiProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+
+  // clean number formatting (no scientific notation for typical coords)
+  auto fmtnum = [](double v) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%.7g", v);
+    return std::string(buf);
+  };
+
+  // scale every @RO polygon's PT coordinates; collect first, then upsert (so we
+  // don't mutate the tag vector while iterating it).
+  std::vector<Tag> updates;
+  for (const auto& t : m_header) {
+    if (t.type != Tag::RO_TAG) continue;
+    std::istringstream ps(t.GetField("PT"));
+    std::string pair, out;
+    while (ps >> pair) {
+      const size_t c = pair.find(',');
+      if (c == std::string::npos) continue;
+      try {
+        double x = std::stod(pair.substr(0, c))  * m_factor;
+        double y = std::stod(pair.substr(c + 1)) * m_factor;
+        if (m_flipx) x = -x;
+        if (m_flipy) y = -y;
+        x += m_xoff; y += m_yoff;
+        if (!out.empty()) out += " ";
+        out += fmtnum(x) + "," + fmtnum(y);
+      } catch (...) { /* skip a malformed coordinate pair */ }
+    }
+    updates.push_back(Tag(Tag::RO_TAG, t.id, std::string("PT:") + out));   // by-value ctor: no ODR-use of RO_TAG
+  }
+  for (auto& u : updates) m_header.UpsertTag(u);   // PT field overrides the old one
+
+  this->SetupOutputStream();
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));     // provenance
+  m_header.SortTags();
+  (*m_archive)(m_header);
+  return HEADER_NO_ACTION;
+}
+
+int ScaleRoiProcessor::ProcessLine(Cell& cell) {
+  return WRITE_CELL;   // pass every cell through unchanged
+}
+
+int ClearRoiProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+  const size_t n = m_header.RemoveRoiTags(m_name, m_sample);
+  if (m_verbose)
+    std::cerr << "cyftools clearroi: removed " << n << " @RO tag(s)" << std::endl;
+
+  this->SetupOutputStream();
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));     // provenance
+  m_header.SortTags();
+  (*m_archive)(m_header);
+  return HEADER_NO_ACTION;
+}
+
+int ClearRoiProcessor::ProcessLine(Cell& cell) {
+  return WRITE_CELL;   // pass every cell through unchanged
+}
+
+int ValidateProcessor::ProcessHeader(CellHeader& header) {
+  version    = header.GetHeaderField("VN");
+  sort_order = header.GetHeaderField("SO");
+  mpp        = header.GetHeaderField("MP");
+  units      = header.GetHeaderField("UN");
+  return ONLY_WRITE_HEADER;   // header is all we need; stop before the cells
+}
+
+int FlagRoiProcessor::ProcessHeader(CellHeader& header) {
+
+  m_header = header;
+
+  // build polygons from the @RO header tags (PT = "x,y x,y ..." pairs)
+  for (const auto& t : m_header.GetAllTags()) {
+    if (t.type != Tag::RO_TAG) continue;
+
+    if (!m_name_filter.empty() && t.GetField("NM").find(m_name_filter) == std::string::npos)
+      continue;
+    if (m_sample_filter >= 0) {
+      const std::string sa = t.GetField("SA");
+      if (!sa.empty() && std::stol(sa) != m_sample_filter) continue;
+    }
+
+    std::vector<JPoint> verts;
+    std::istringstream ps(t.GetField("PT"));
+    std::string pair;
+    while (ps >> pair) {
+      const size_t comma = pair.find(',');
+      if (comma == std::string::npos) continue;
+      try {
+        verts.emplace_back(std::stof(pair.substr(0, comma)),
+                           std::stof(pair.substr(comma + 1)));
+      } catch (...) { /* skip malformed coordinate */ }
+    }
+    if (verts.size() >= 3)
+      m_polys.emplace_back(verts);
+  }
+
+  if (m_polys.empty())
+    std::cerr << "Warning: flagroi found no matching @RO polygons in the header" << std::endl;
+
+  this->SetupOutputStream();
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  m_header.SortTags();
+  assert(m_archive);
+  (*m_archive)(m_header);
+  return HEADER_NO_ACTION;
+}
+
+int FlagRoiProcessor::ProcessLine(Cell& cell) {
+  const uint64_t mask = static_cast<uint64_t>(1) << m_bit;
+  for (const auto& poly : m_polys) {
+    if (poly.PointIn(cell.x, cell.y)) {
+      if (m_reg == 'c') cell.cflag |= mask;
+      else              cell.pflag |= mask;
+      break;   // one containing region is enough to set the bit
+    }
+  }
+  return WRITE_CELL;
+}
+
+int ExportProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+  for (const auto& t : header.GetDataTags()) {
+    m_markers.push_back(t.id);
+    m_kinds.push_back(t.type == Tag::MA_TAG ? 'M' : 'C');   // marker vs calculated
+  }
+  m_cols.resize(m_markers.size());
+  return HEADER_NO_ACTION;   // no .byf output stream; we write our own pack
+}
+
+int ExportProcessor::ProcessLine(Cell& cell) {
+  m_id.push_back(cell.id);
+  m_x.push_back(cell.x);
+  m_y.push_back(cell.y);
+  m_cflag.push_back(cell.cflag);
+  m_pflag.push_back(cell.pflag);
+  const size_t n = std::min(m_cols.size(), cell.cols.size());
+  for (size_t i = 0; i < n; ++i)            m_cols[i].push_back(cell.cols[i]);
+  for (size_t i = n; i < m_cols.size(); ++i) m_cols[i].push_back(0.0f);
+  return NO_WRITE_CELL;   // we don't re-emit cells
+}
+
+void ExportProcessor::finalize() {
+
+  std::ofstream os(m_outpath, std::ios::binary);
+  if (!os.good()) {
+    std::cerr << "cyftools export: cannot open output: " << m_outpath << std::endl;
+    return;
+  }
+
+  auto w    = [&](const void* p, std::size_t n) { os.write((const char*)p, (std::streamsize)n); };
+  auto wu16 = [&](uint16_t v) { unsigned char b[2]={(unsigned char)v,(unsigned char)(v>>8)}; w(b,2); };
+  auto wu32 = [&](uint32_t v) { unsigned char b[4]; for(int i=0;i<4;++i) b[i]=(unsigned char)(v>>(8*i)); w(b,4); };
+  auto wu64 = [&](uint64_t v) { unsigned char b[8]; for(int i=0;i<8;++i) b[i]=(unsigned char)(v>>(8*i)); w(b,8); };
+
+  const uint64_t n = m_id.size();
+
+  // preamble: magic, version, n_cells, marker count + names
+  w("CYFV", 4);
+  wu16(5); wu16(0);          // version 5: trailing @FL flag maps (pflag then cflag)
+  wu64(n);
+  wu32(static_cast<uint32_t>(m_markers.size()));
+  for (const auto& m : m_markers) { wu16(static_cast<uint16_t>(m.size())); w(m.data(), m.size()); }
+  for (char k : m_kinds) os.put(k);   // 'M' = marker (MA), 'C' = calculated (CA)
+
+  // pad to an 8-byte boundary so the column arrays below are aligned: a JS reader
+  // can then make zero-copy BigUint64Array/Float32Array views straight over them.
+  while ((static_cast<long long>(os.tellp()) & 7) != 0) os.put('\0');
+
+  // column-major arrays (little-endian). u64 columns written element-wise to
+  // guarantee byte order; f32 columns are contiguous IEEE-754 little-endian.
+  for (uint64_t v : m_id)    wu64(v);
+  w(m_x.data(), m_x.size() * sizeof(float));
+  w(m_y.data(), m_y.size() * sizeof(float));
+  for (uint64_t v : m_cflag) wu64(v);
+  for (uint64_t v : m_pflag) wu64(v);
+  for (const auto& col : m_cols)
+    w(col.data(), col.size() * sizeof(float));
+
+  // --- @RO polygons, so the pack is a self-contained viewer file ---
+  const std::vector<Tag> tags = m_header.GetAllTags();
+  uint32_t n_roi = 0;
+  for (const auto& t : tags) if (t.type == Tag::RO_TAG) ++n_roi;
+  wu32(n_roi);
+  for (const auto& t : tags) {
+    if (t.type != Tag::RO_TAG) continue;
+    const std::string id = t.id;
+    const std::string nm = t.GetField("NM");
+    std::vector<float> pts;                       // x,y interleaved
+    std::istringstream ps(t.GetField("PT"));
+    std::string pair;
+    while (ps >> pair) {
+      const size_t c = pair.find(',');
+      if (c == std::string::npos) continue;
+      try { pts.push_back(std::stof(pair.substr(0, c)));
+            pts.push_back(std::stof(pair.substr(c + 1))); }
+      catch (...) { /* skip bad coord */ }
+    }
+    wu16(static_cast<uint16_t>(id.size())); w(id.data(), id.size());
+    wu16(static_cast<uint16_t>(nm.size())); w(nm.data(), nm.size());
+    wu32(static_cast<uint32_t>(pts.size() / 2));
+    w(pts.data(), pts.size() * sizeof(float));
+  }
+
+  // --- @FL flag-bit maps (name -> bit), pflag block then cflag block ---
+  // pflag lets a viewer derive a "phenotype gate" (lowest marker value among cells
+  // whose bit is set); cflag carries the structural-flag names for labeling.
+  auto writeFlags = [&](const char* reg){
+    std::vector<std::pair<std::string,int>> fl;
+    for (const auto& t : tags){
+      if (t.type != Tag::FL_TAG || t.GetField("RG") != reg) continue;
+      try { fl.emplace_back(t.id, std::stoi(t.GetField("BI"))); } catch (...) {}
+    }
+    wu32(static_cast<uint32_t>(fl.size()));
+    for (const auto& f : fl){
+      wu16(static_cast<uint16_t>(f.first.size())); w(f.first.data(), f.first.size());
+      os.put(static_cast<char>(static_cast<unsigned char>(f.second & 0xff)));
+    }
+  };
+  writeFlags("pflag");
+  writeFlags("cflag");
+}
+
+// ---------------------------------------------------------------------------
+// cohort: per-sample region densities via the "painting" area estimate
+// ---------------------------------------------------------------------------
+namespace {
+
+// A rasterized union-of-discs accumulator. Each cell paints a filled disc of a
+// fixed radius onto a grid of `pixel`-micron squares; the painted-pixel count ×
+// pixel^2 is the union area, so two overlapping discs are counted once. Rows are
+// 64-bit-word aligned (stride) so disjoint row-bands can be painted by separate
+// threads with no shared word — i.e. the OpenMP path below is race-free.
+struct PaintGrid {
+  double x0 = 0, y0 = 0, pixel = 1.0;
+  long   W = 0, H = 0, stride = 0;        // stride = uint64 words per row
+  std::vector<uint64_t> bits;
+
+  PaintGrid(double xmin, double ymin, double xmax, double ymax,
+            double radius, double pixel_) : pixel(pixel_) {
+    x0 = xmin - radius;                   // grow the box so edge discs fit
+    y0 = ymin - radius;
+    W = static_cast<long>(std::floor((xmax + radius - x0) / pixel)) + 1;
+    H = static_cast<long>(std::floor((ymax + radius - y0) / pixel)) + 1;
+    if (W < 1) W = 1;
+    if (H < 1) H = 1;
+    stride = (W + 63) / 64;
+    bits.assign(static_cast<size_t>(stride) * static_cast<size_t>(H), 0ull);
+  }
+
+  inline void set(long ix, long iy) {     // ix,iy assumed in-bounds
+    bits[static_cast<size_t>(iy) * static_cast<size_t>(stride) +
+         static_cast<size_t>(ix >> 6)] |= (1ull << (ix & 63));
+  }
+
+  size_t painted() const {
+    size_t c = 0;
+    for (uint64_t w : bits) c += static_cast<size_t>(__builtin_popcountll(w));
+    return c;
+  }
+};
+
+// Paint discs of `radius` microns for the cells in `idx` (indices into xs/ys)
+// into `g`. Threads own disjoint horizontal bands of rows, so writes never
+// collide on a 64-bit word (rows are word-aligned in PaintGrid).
+void paint_discs(PaintGrid& g, const std::vector<size_t>& idx,
+                 const std::vector<float>& xs, const std::vector<float>& ys,
+                 double radius, size_t nthreads) {
+  const double Rpix  = radius / g.pixel;
+  const long   Rceil = static_cast<long>(std::ceil(Rpix));
+  const double R2    = Rpix * Rpix;
+
+#ifdef HAVE_OMP
+#pragma omp parallel num_threads(nthreads)
+#endif
+  {
+    long y_lo = 0, y_hi = g.H;
+#ifdef HAVE_OMP
+    const int  tid  = omp_get_thread_num();
+    const int  nth  = omp_get_num_threads();
+    const long band = (g.H + nth - 1) / nth;
+    y_lo = static_cast<long>(tid) * band;
+    y_hi = std::min<long>(g.H, y_lo + band);
+#endif
+    for (size_t k = 0; k < idx.size(); ++k) {
+      const size_t i  = idx[k];
+      const long   cx = std::lround((xs[i] - g.x0) / g.pixel);
+      const long   cy = std::lround((ys[i] - g.y0) / g.pixel);
+      // only the rows this thread owns; rows outside [0,H) are skipped too
+      long dlo = -Rceil, dhi = Rceil;
+      if (cy + dlo < y_lo)     dlo = y_lo - cy;
+      if (cy + dhi > y_hi - 1) dhi = y_hi - 1 - cy;
+      for (long dy = dlo; dy <= dhi; ++dy) {
+        const long iy = cy + dy;
+        if (iy < 0 || iy >= g.H) continue;
+        const double rem = R2 - static_cast<double>(dy) * static_cast<double>(dy);
+        if (rem < 0) continue;
+        const long hw   = static_cast<long>(std::floor(std::sqrt(rem)));
+        long ix_lo = cx - hw; if (ix_lo < 0)      ix_lo = 0;
+        long ix_hi = cx + hw; if (ix_hi >= g.W)   ix_hi = g.W - 1;
+        for (long ix = ix_lo; ix <= ix_hi; ++ix)
+          g.set(ix, iy);
+      }
+    }
+  }
+  (void)nthreads;
+}
+
+} // anonymous namespace
+
+int CohortProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+
+  // @FL bit -> name maps (the self-describing flag vocabulary, when present)
+  for (const auto& t : header.GetFlagTags()) {
+    const std::string reg = t.GetField("RG");
+    int bit;
+    try { bit = std::stoi(t.GetField("BI")); } catch (...) { continue; }
+    if      (reg == "cflag") m_cflag_names[bit] = t.id;
+    else if (reg == "pflag") m_pflag_names[bit] = t.id;
+  }
+
+  // marker-order pflag names (1st @MA marker -> bit 0, ...), as a fallback for
+  // files that carry no @FL pflag tags. Matches how cyfview maps pflag bits.
+  int midx = 0;
+  for (const auto& t : header.GetDataTags())
+    if (t.type == Tag::MA_TAG) m_pflag_auto[midx++] = t.id;
+
+  // sample label from @SA, if any (else derived from the filename at emit time);
+  // the GP field carries an optional group/category (set via `addtag --group`).
+  const auto sa = header.GetSampleTags();
+  if (!sa.empty()) { m_sample_name = sa.front().id; m_sample_group = sa.front().GetField("GP"); }
+
+  return HEADER_NO_ACTION;   // cohort reads only; no .byf output stream
+}
+
+int CohortProcessor::ProcessLine(Cell& cell) {
+  if (m_x.empty())
+    m_sample_id = static_cast<uint64_t>(cell.id) >> 32;   // (sample_id<<32)|cell_id
+  m_x.push_back(cell.x);
+  m_y.push_back(cell.y);
+  m_cflag.push_back(static_cast<uint64_t>(cell.cflag));
+  m_pflag.push_back(static_cast<uint64_t>(cell.pflag));
+  return NO_WRITE_CELL;       // cohort never re-emits cells
+}
+
+void CohortProcessor::WriteSampleJSON(std::ostream& os, const std::string& file,
+                                      const std::string& ind) {
+  const size_t N = m_x.size();
+
+  // minimal JSON string escaper
+  auto esc = [](const std::string& s) {
+    std::string o; o.reserve(s.size() + 2);
+    for (char c : s) {
+      switch (c) {
+        case '"':  o += "\\\""; break;
+        case '\\': o += "\\\\"; break;
+        case '\n': o += "\\n";  break;
+        case '\t': o += "\\t";  break;
+        case '\r': o += "\\r";  break;
+        default:
+          if (static_cast<unsigned char>(c) < 0x20) {
+            char b[8]; std::snprintf(b, sizeof b, "\\u%04x", static_cast<unsigned char>(c)); o += b;
+          } else o += c;
+      }
+    }
+    return o;
+  };
+
+  // sample label: @SA, else the file's basename stem
+  std::string sample = m_sample_name;
+  if (sample.empty()) {
+    std::string base = file;
+    const size_t slash = base.find_last_of("/\\");
+    if (slash != std::string::npos) base = base.substr(slash + 1);
+    const size_t dot = base.find_last_of('.');
+    if (dot != std::string::npos && dot != 0) base = base.substr(0, dot);
+    sample = base;
+  }
+
+  // which cflag / pflag bits ever appear (OR over all cells), for the legends
+  uint64_t cflag_any = 0, pflag_any = 0;
+  for (size_t i = 0; i < N; ++i) { cflag_any |= m_cflag[i]; pflag_any |= m_pflag[i]; }
+
+  std::vector<int> pbits;
+  for (int b = 0; b < 64; ++b) if (pflag_any & (1ull << b)) pbits.push_back(b);
+
+  // compartments -> synthetic "All" (bit -1) then each present cflag bit
+  std::vector<int> cbits;
+  cbits.push_back(-1);
+  for (int b = 0; b < 64; ++b) if (cflag_any & (1ull << b)) cbits.push_back(b);
+
+  // sample-level bbox
+  double gxmin = 0, gymin = 0, gxmax = 0, gymax = 0;
+  if (N) {
+    gxmin = gxmax = m_x[0]; gymin = gymax = m_y[0];
+    for (size_t i = 1; i < N; ++i) {
+      gxmin = std::min<double>(gxmin, m_x[i]); gxmax = std::max<double>(gxmax, m_x[i]);
+      gymin = std::min<double>(gymin, m_y[i]); gymax = std::max<double>(gymax, m_y[i]);
+    }
+  }
+
+  // name resolvers: header @FL first, then built-in cflag vocabulary, then generic
+  auto cname = [&](int bit) -> std::string {
+    if (bit < 0) return "All";
+    auto it = m_cflag_names.find(bit);
+    if (it != m_cflag_names.end()) return it->second;
+    for (const auto& f : cyf::standardFlags())
+      if (std::string(f.reg) == "cflag" && f.bit == bit) return f.name;
+    return "cflag_bit_" + std::to_string(bit);
+  };
+  auto pname = [&](int bit) -> std::string {
+    auto it = m_pflag_names.find(bit);
+    if (it != m_pflag_names.end()) return it->second;       // @FL declaration wins
+    auto ja = m_pflag_auto.find(bit);
+    if (ja != m_pflag_auto.end()) return ja->second;        // else @MA marker order
+    return "pflag_bit_" + std::to_string(bit);
+  };
+
+  std::cerr << "cyftools cohort:   " << sample << ": " << AddCommas(N)
+            << " cells, " << cbits.size() << " compartments, "
+            << pbits.size() << " phenotype bits" << std::endl;
+
+  // --- precompute each compartment's painted area (the density denominators) ---
+  // A compartment is one cflag bit's region, or "All" (every cell, bit -1).
+  struct Comp { int bit; size_t n; double area_mm2; };
+  std::vector<Comp> comps;
+  comps.reserve(cbits.size());
+  for (int b : cbits) {
+    std::vector<size_t> idx;
+    if (b < 0) { idx.resize(N); for (size_t i = 0; i < N; ++i) idx[i] = i; }
+    else { for (size_t i = 0; i < N; ++i) if (m_cflag[i] & (1ull << b)) idx.push_back(i); }
+
+    double xmin = 0, ymin = 0, xmax = 0, ymax = 0;
+    for (size_t k = 0; k < idx.size(); ++k) {
+      const size_t i = idx[k];
+      if (k == 0) { xmin = xmax = m_x[i]; ymin = ymax = m_y[i]; }
+      else {
+        xmin = std::min<double>(xmin, m_x[i]); xmax = std::max<double>(xmax, m_x[i]);
+        ymin = std::min<double>(ymin, m_y[i]); ymax = std::max<double>(ymax, m_y[i]);
+      }
+    }
+
+    std::cerr << "cyftools cohort:     compartment '" << cname(b) << "' ("
+              << AddCommas(idx.size()) << " cells) painting..." << std::endl;
+
+    double area_mm2 = 0.0;
+    if (!idx.empty()) {
+      PaintGrid g(xmin, ymin, xmax, ymax, m_radius, m_pixel);
+      paint_discs(g, idx, m_x, m_y, m_radius, m_nthreads);
+      area_mm2 = static_cast<double>(g.painted()) * m_pixel * m_pixel / 1.0e6;
+    }
+    comps.push_back({b, idx.size(), area_mm2});
+  }
+
+  // --- joint (cflag, pflag) histogram: the contingency table of the two flag ---
+  // registers. The viewer counts any pflag combination in any compartment as a
+  // masked sum over these rows, divided by that compartment's painted area:
+  //   count = sum(row.count) over rows where (bit==-1 || row.cflag & (1<<bit))
+  //                                       and  pflagPredicate(row.pflag)
+  std::map<uint64_t, std::map<uint64_t, uint64_t>> joint;
+  for (size_t i = 0; i < N; ++i) joint[m_cflag[i]][m_pflag[i]]++;
+  size_t njoint = 0;
+  for (const auto& cf : joint) njoint += cf.second.size();
+  std::cerr << "cyftools cohort:     joint flag histogram: " << AddCommas(njoint)
+            << " distinct (cflag,pflag) patterns" << std::endl;
+
+  // --- emit the per-sample object ---
+  os << ind << "{\n";
+  os << ind << "  \"file\": \""   << esc(file)   << "\",\n";
+  os << ind << "  \"sample\": \"" << esc(sample) << "\",\n";
+  os << ind << "  \"group\": \""  << esc(m_sample_group) << "\",\n";   // @SA GP field, "" if untagged
+  os << ind << "  \"sample_id\": " << m_sample_id << ",\n";
+  os << ind << "  \"n_cells\": "   << N << ",\n";
+  os << ind << "  \"bbox_um\": [" << gxmin << ", " << gymin << ", "
+                                  << gxmax << ", " << gymax << "],\n";
+
+  // legends: bit -> name for each register (drives the viewer's predicate UI)
+  os << ind << "  \"cflag_bits\": [";
+  bool cfirst = true;
+  for (int b : cbits) {
+    if (b < 0) continue;                       // skip the synthetic "All"
+    os << (cfirst ? " " : ", "); cfirst = false;
+    os << "{\"name\": \"" << esc(cname(b)) << "\", \"bit\": " << b << "}";
+  }
+  os << " ],\n";
+  os << ind << "  \"pflag_bits\": [";
+  for (size_t j = 0; j < pbits.size(); ++j)
+    os << (j ? ", " : " ")
+       << "{\"name\": \"" << esc(pname(pbits[j])) << "\", \"bit\": " << pbits[j] << "}";
+  os << " ],\n";
+
+  // compartments: precomputed painted areas (the density denominators)
+  os << ind << "  \"compartments\": [\n";
+  for (size_t k = 0; k < comps.size(); ++k) {
+    const Comp&  c    = comps[k];
+    const double dens = c.area_mm2 > 0 ? static_cast<double>(c.n) / c.area_mm2 : 0.0;
+    os << ind << "    {\"cflag\": \"" << esc(cname(c.bit)) << "\", \"bit\": " << c.bit
+       << ", \"n_cells\": " << c.n << ", \"area_mm2\": " << c.area_mm2
+       << ", \"density_per_mm2\": " << dens << "}"
+       << (k + 1 < comps.size() ? "," : "") << "\n";
+  }
+  os << ind << "  ],\n";
+
+  // joint histogram: [cflag_value, pflag_value, count]. The flag *values* are
+  // decimal strings, because a 64-bit register can exceed JS's 2^53 safe-integer
+  // range -> a consumer parses them with BigInt and masks with BigInt.
+  os << ind << "  \"flag_histogram\": [";
+  bool first = true;
+  for (const auto& cf : joint) {
+    for (const auto& pf : cf.second) {
+      os << (first ? "\n" : ",\n");
+      first = false;
+      os << ind << "    [\"" << cf.first << "\", \"" << pf.first << "\", " << pf.second << "]";
+    }
+  }
+  os << (first ? "" : "\n") << ind << "  ]\n";
+  os << ind << "}";
 }
 
 
@@ -1186,10 +1768,12 @@ int PhenoProcessor::ProcessHeader(CellHeader& header) {
   
   // build up a map of the indices of the markers
   // in the Cell
-  size_t i = 0;
+  // pflag bit = the marker's position among @MA tags (1st marker -> bit 0); the
+  // column index tracks its position among all data columns (for reading values).
+  size_t i = 0, mbit = 0;
   for (const auto& t : header.GetDataTags()) {
     if (t.type == Tag::MA_TAG)
-      m_marker_map[t.id] = i;
+      m_marker_map[t.id] = { i, mbit++ };
     i++;
   }
 
@@ -1239,15 +1823,13 @@ int PhenoProcessor::ProcessLine(Cell& cell) {
       continue;
     }
 
-    // set the index of where
-    size_t marker_index = m->second;
-    
+    const size_t col = m->second.first;    // column index (read the value)
+    const size_t bit = m->second.second;   // pflag bit = position among @MA markers
+
     // set the flag on if it clears the gates
-    if (cell.cols.at(m->second) >= b.second.first*m_scale &&
-	cell.cols.at(m->second) <= b.second.second*m_scale) {
-      //      std::cerr << "Marker: " << b.first << " cleared" << std::endl;
-      //std::cerr << "...before " << flag << std::endl; 
-      flag.setFlagOn(marker_index);
+    if (cell.cols.at(col) >= b.second.first*m_scale &&
+	cell.cols.at(col) <= b.second.second*m_scale) {
+      flag.setFlagOn(bit);
     }
     
   }
@@ -1406,7 +1988,7 @@ int ViewProcessor::ProcessLine(Cell& cell) {
       return NO_WRITE_CELL;
     }
     
-    cell.PrintWithHeader(m_round, m_tabprint, m_adjacent, m_header, false);
+    cell.PrintWithHeader(m_round, m_tabprint, m_adjacent, m_header, false, m_csv_header);
 
     return NO_WRITE_CELL; // don't output, since already printing it
   }
@@ -1424,8 +2006,8 @@ int ViewProcessor::ProcessLine(Cell& cell) {
   }
   cell.cols = cols_new;
 
-  cell.PrintWithHeader(m_round, m_tabprint, m_adjacent, m_header, m_strict_cut);
-    
+  cell.PrintWithHeader(m_round, m_tabprint, m_adjacent, m_header, m_strict_cut, m_csv_header);
+
   return NO_WRITE_CELL; // don't output, since already printing it
 }
 
@@ -1513,14 +2095,22 @@ int CerealProcessor::ProcessHeader(CellHeader& header) {
   // declare the standard cflag bit meanings so the file is self-describing
   cyf::addStandardFlagTags(m_header);
 
+  // ensure an @HD format/version line leads the header
+  m_header.EnsureHeaderLine();
+
+  // stamp the required coordinate-scale tags onto @HD (set by `convert`)
+  if (!m_mpp.empty())   m_header.SetHeaderField("MP", m_mpp);
+  if (!m_units.empty()) m_header.SetHeaderField("UN", m_units);
+
   assert(!m_filename.empty());
 
-  // set the output to file or stdout (cereal or CYF, per cyf::useCyfOutput())
+  // format follows the output extension (.cyf text, .byf binary); stdout "-" -> binary
+  const cyf::OutFormat fmt = cyf::formatForPath(m_filename);
   if (m_filename == "-") {
-    m_archive = std::make_unique<OutArchive>(std::cout);
+    m_archive = std::make_unique<OutArchive>(std::cout, fmt);
   } else {
     m_os = std::make_unique<std::ofstream>(m_filename, std::ios::binary);
-    m_archive = std::make_unique<OutArchive>(*m_os);
+    m_archive = std::make_unique<OutArchive>(*m_os, fmt);
   }
 
   m_header.SortTags();
@@ -1532,27 +2122,68 @@ int CerealProcessor::ProcessHeader(CellHeader& header) {
 }
 
 int CerealProcessor::ProcessLine(const std::string& line) {
-  
-  Cell row(line,
-	   m_id_index,
-	   m_x_index,
-	   m_y_index,
-	   m_header,
-	   m_cellid,
-	   m_sampleid);
 
-  // used here only if m_id_index < 0
-  if (m_id_index < 0)
-    row.set_cell_id(m_cellid);
+  // Legacy positional parse when no column plan was supplied.
+  if (m_col_kind.empty()) {
+    Cell row(line, m_id_index, m_x_index, m_y_index, m_header, m_cellid, m_sampleid);
+    if (m_id_index < 0) row.set_cell_id(m_cellid);
+    m_cellid++;
+    (*m_archive)(row);
+    return 0;
+  }
+
+  const StringVec tokens = tokenize_comma_delimited<StringVec>(line);
+  if (tokens.size() != m_col_kind.size())
+    throw std::runtime_error("cyftools convert: line has " + std::to_string(tokens.size()) +
+                             " columns but header has " + std::to_string(m_col_kind.size()) +
+                             "; line: " + line);
+
+  Cell cell;
+  cell.id = 0; cell.x = 0; cell.y = 0; cell.cflag = 0; cell.pflag = 0;
+  uint32_t cellid = m_cellid;
+
+  // markers and metas collected separately then concatenated, so cols line up
+  // with GetDataTags() after SortTags (all @MA in column order, then all @CA).
+  std::vector<float> markers, metas;
+
+  for (size_t i = 0; i < tokens.size(); ++i) {
+    const char* t = tokens[i].c_str();
+    switch (m_col_kind[i]) {
+      case COL_ID:     cellid = static_cast<uint32_t>(std::strtol(t, nullptr, 10)); break;
+      case COL_X:      cell.x = std::strtof(t, nullptr); break;
+      case COL_Y:      cell.y = std::strtof(t, nullptr); break;
+      case COL_MARKER: markers.push_back(std::strtof(t, nullptr)); break;
+      case COL_CA:     metas.push_back(std::strtof(t, nullptr)); break;
+      case COL_IC: {
+        const float v = std::strtof(t, nullptr);
+        metas.push_back(v);
+        if (v != 0.0f) cell.cflag |= (static_cast<cy_uint>(1) << 5);   // bit 5 (IC)
+        break;
+      }
+      case COL_GATE: {
+        const int b = m_gate_bit[i];
+        if (std::strtof(t, nullptr) != 0.0f && b >= 0 &&
+            b < static_cast<int>(sizeof(cy_uint) * 8))
+          cell.pflag |= (static_cast<cy_uint>(1) << b);                // gate -> pflag bit
+        break;
+      }
+      case COL_REGION:
+        if (static_cast<int>(std::strtof(t, nullptr)) == 1)
+          cell.cflag |= (static_cast<cy_uint>(1) << 3);                // bit 3 (Region)
+        break;
+      default: break;   // COL_IGNORE
+    }
+  }
+
+  cell.cols = std::move(markers);
+  cell.cols.insert(cell.cols.end(), metas.begin(), metas.end());
+
+  cell.set_sample_id(m_sampleid);
+  cell.set_cell_id(cellid);
   m_cellid++;
 
-  // serialize it
-  (*m_archive)(row);
-
-  // serializing here, so don't need to write in the cell_table call
-  // minor, but NO_WRITE_CELL is in CellProcessor abstract class, of which CerealProcessor is uniquely not a child  
-  return 0; 
- 
+  (*m_archive)(cell);
+  return 0;
 }
 
 int DebugProcessor::ProcessHeader(CellHeader& header) {

@@ -1,3 +1,4 @@
+#include <cstdint>
 #ifndef TIFF_HEADER_H
 #define TIFF_HEADER_H
 

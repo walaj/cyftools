@@ -1,3 +1,4 @@
+#include <cstdint>
 #ifndef TIFF_IMAGE_H
 #define TIFF_IMAGE_H
 

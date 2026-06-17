@@ -7,7 +7,9 @@
 #include "polygon.h"
 
 #include <set>
+#include <map>
 #include <string>
+#include <cstdint>
 #include <cassert>
 #include <random>
 
@@ -52,13 +54,14 @@ class CellProcessor {
 
   void SetupOutputStream() {
 
-    // set the output to file or stdout. Format (cereal vs CYF) is selected by
-    // cyf::useCyfOutput(); OutArchive forwards to the chosen backend.
+    // Format follows the output extension (.cyf text, .byf binary); ".ocyf"
+    // throws (cereal is read-only); stdout "-" defaults to binary.
+    const cyf::OutFormat fmt = cyf::formatForPath(m_output_file);
     if (m_output_file == "-") {
-      m_archive = std::make_unique<OutArchive>(std::cout);
+      m_archive = std::make_unique<OutArchive>(std::cout, fmt);
     } else {
       m_os = std::make_unique<std::ofstream>(m_output_file, std::ios::binary);
-      m_archive = std::make_unique<OutArchive>(*m_os);
+      m_archive = std::make_unique<OutArchive>(*m_os, fmt);
     }
    assert(m_archive);
   }
@@ -302,7 +305,213 @@ private:
   bool m_clean_cflags = false;
 
   std::unordered_set<size_t> m_to_remove;
-  
+
+};
+
+// Adds (or merges into) a single header tag, then streams every cell through
+// unchanged. Backs `cyftools addtag` — e.g. an @IM image/acquisition record.
+class AddTagProcessor : public CellProcessor {
+
+public:
+
+  // Build one tag from a class + ID field + "KEY:VALUE" fields (used by `addtag`).
+  // tag_id is the tag's ID field (sample id for @IM/@SA).
+  void SetParams(uint8_t tag_type, const std::string& tag_id,
+                 const std::vector<std::string>& fields) {
+    std::string data;
+    for (size_t i = 0; i < fields.size(); ++i) { if (i) data += "\t"; data += fields[i]; }
+    m_tags.emplace_back(tag_type, tag_id, data);
+  }
+
+  // Add several pre-built tags at once (used by `addroi`).
+  void SetTags(const std::vector<Tag>& tags) { m_tags = tags; }
+
+  // ROI add policy for `addroi`: how to handle a file that already has @RO tags.
+  // ROI_REQUIRE aborts (with a message) unless ADD/OVERWRITE is chosen explicitly.
+  enum RoiMode : uint8_t { ROI_NONE = 0, ROI_REQUIRE, ROI_ADD, ROI_OVERWRITE };
+  void SetRoiMode(RoiMode m) { m_roi_mode = m; }
+  bool aborted() const { return m_aborted; }
+
+  // Set a sample group/category label, stored as the @SA tag's GP field. It is
+  // merged into the file's existing @SA tag; if there is none, a fresh @SA is
+  // created keyed by default_sa_id (e.g. the input filename stem).
+  void SetGroup(const std::string& label, const std::string& default_sa_id) {
+    m_group = label; m_group_default_id = default_sa_id;
+  }
+
+  int ProcessHeader(CellHeader& header) override;
+
+  int ProcessLine(Cell& cell) override;
+
+private:
+
+  std::vector<Tag> m_tags;
+  std::string m_group;             // sample group/category (@SA GP field), if set
+  std::string m_group_default_id;  // @SA id to use when the file has no @SA tag
+  RoiMode m_roi_mode = ROI_NONE;   // addroi existing-@RO policy
+  bool m_aborted = false;          // set when ROI_REQUIRE hits existing ROIs
+};
+
+// Reads polygons from the @RO header tags and sets one cflag/pflag bit on every
+// cell that falls inside a matching region. Backs `cyftools flagroi` — the
+// "lasso in the viewer -> a flag bit on disk" write-back primitive.
+// Multiply every header @RO polygon coordinate by a factor (e.g. microns-per-
+// pixel), then stream cells through unchanged. Header-only transform.
+class ScaleRoiProcessor : public CellProcessor {
+
+public:
+
+  // Per @RO vertex transform, applied as scale -> invert -> offset.
+  void SetParams(double factor, double xoff, double yoff, bool flipx, bool flipy) {
+    m_factor = factor; m_xoff = xoff; m_yoff = yoff; m_flipx = flipx; m_flipy = flipy;
+  }
+
+  int ProcessHeader(CellHeader& header) override;
+  int ProcessLine(Cell& cell) override;
+
+private:
+
+  double m_factor = 1.0, m_xoff = 0.0, m_yoff = 0.0;
+  bool m_flipx = false, m_flipy = false;
+};
+
+// Remove @RO polygon tags from the header (all, or filtered by name/sample),
+// then stream cells through unchanged. Header-only transform.
+class ClearRoiProcessor : public CellProcessor {
+
+public:
+
+  void SetParams(const std::string& name_filter, long sample_filter) {
+    m_name = name_filter; m_sample = sample_filter;
+  }
+
+  int ProcessHeader(CellHeader& header) override;
+  int ProcessLine(Cell& cell) override;
+
+private:
+
+  std::string m_name;       // only @RO whose NM contains this ("" = all)
+  long        m_sample = -1; // only @RO with this SA sample id (< 0 = all)
+};
+
+// Read-only header check for `cyftools validate`: pulls the @HD format fields
+// (VN/SO and the required MP microns-per-pixel + UN coordinate units) so the
+// caller can report and instruct. Stops after the header (no cell reading).
+class ValidateProcessor : public CellProcessor {
+
+public:
+
+  int ProcessHeader(CellHeader& header) override;
+  int ProcessLine(Cell& cell) override { return NO_WRITE_CELL; }
+
+  std::string version, sort_order, mpp, units;
+};
+
+class FlagRoiProcessor : public CellProcessor {
+
+public:
+
+  // reg: 'c' or 'p' (which flag register); bit: 0-based bit index to set;
+  // name_filter: only @RO whose NM contains this substring ("" = all);
+  // sample_filter: only @RO with this SA sample id (< 0 = all).
+  void SetParams(char reg, int bit, const std::string& name_filter, long sample_filter) {
+    m_reg = reg;
+    m_bit = bit;
+    m_name_filter = name_filter;
+    m_sample_filter = sample_filter;
+  }
+
+  int ProcessHeader(CellHeader& header) override;
+
+  int ProcessLine(Cell& cell) override;
+
+private:
+
+  char m_reg = 'p';
+  int m_bit = 0;
+  std::string m_name_filter;
+  long m_sample_filter = -1;
+  std::vector<Polygon> m_polys;
+};
+
+// Streams a table once, accumulating columns, and writes a dependency-free
+// column-major binary "viewer pack" (magic "CYFV") for a GPU front-end to load
+// with typed arrays. Backs `cyftools export`. Call finalize() after streaming.
+class ExportProcessor : public CellProcessor {
+
+public:
+
+  void SetParams(const std::string& outpath) { m_outpath = outpath; }
+
+  int ProcessHeader(CellHeader& header) override;
+
+  int ProcessLine(Cell& cell) override;
+
+  void finalize();   // write the pack; call after StreamTable returns
+
+private:
+
+  std::string m_outpath;
+  std::vector<std::string> m_markers;        // data-column names (color/gate attrs)
+  std::vector<char> m_kinds;                 // per column: 'M'=marker(MA), 'C'=calculated(CA)
+  std::vector<uint64_t> m_id;
+  std::vector<float> m_x, m_y;
+  std::vector<uint64_t> m_cflag, m_pflag;
+  std::vector<std::vector<float>> m_cols;    // one f32 column per marker
+};
+
+// Cohort meta-data builder, used by `cyftools cohort`. Streams one CYF table,
+// collecting per-cell x/y/cflag/pflag plus the header's @FL bit names and @SA
+// sample. After StreamTable, WriteSampleJSON computes — for each cflag-defined
+// region (and a synthetic "All" over every cell) — the painted tissue area (the
+// union of fixed-radius discs over that region's cells, overlaps counted once)
+// and the per-pflag cell density in cells/mm^2, and emits one JSON object per
+// sample for a cohort-level summary file.
+class CohortProcessor : public CellProcessor {
+
+public:
+
+  void SetParams(double radius_um, double pixel_um, size_t threads) {
+    m_radius   = radius_um;
+    m_pixel    = pixel_um;
+    m_nthreads = threads ? threads : 1;
+  }
+
+  int ProcessHeader(CellHeader& header) override;
+  int ProcessLine(Cell& cell) override;
+
+  // Compute regions/areas/densities and write this sample's JSON object to `os`,
+  // each line prefixed with `indent`. `file` is the source path (recorded as-is,
+  // and used to derive the sample label if the header carries no @SA). Call after
+  // StreamTable returns; progress is logged to stderr.
+  void WriteSampleJSON(std::ostream& os, const std::string& file,
+                       const std::string& indent);
+
+  size_t CellCount() const { return m_x.size(); }
+
+private:
+
+  // params
+  double m_radius   = 20.0;   // paint disc radius, microns
+  double m_pixel    = 1.0;    // raster pixel size, microns
+  size_t m_nthreads = 1;
+
+  // collected per-cell columns
+  std::vector<float>    m_x, m_y;
+  std::vector<uint64_t> m_cflag, m_pflag;
+
+  // sample identity: id high 32 bits are the sample id ((sample_id<<32)|cell_id)
+  uint64_t    m_sample_id = 0;
+  std::string m_sample_name;        // from @SA, else derived from the filename
+  std::string m_sample_group;       // from @SA GP field (set via `addtag --group`)
+
+  // bit -> symbolic name, from @FL tags (RG:cflag / RG:pflag), when present
+  std::map<int,std::string> m_cflag_names;
+  std::map<int,std::string> m_pflag_names;
+
+  // pflag bit -> @MA marker name by column order (the convention the viewers use:
+  // 1st marker = bit 0). Fallback for files with no @FL pflag declarations.
+  std::map<int,std::string> m_pflag_auto;
 };
 
 // a single collection of value to calculate a mean on
@@ -434,7 +643,8 @@ class PhenoProcessor : public CellProcessor {
  private:
 
   // map connecting marker names to indicies
-  std::unordered_map<std::string, size_t> m_marker_map;
+  // marker id -> { column index (all data cols), pflag bit (@MA order) }
+  std::unordered_map<std::string, std::pair<size_t, size_t>> m_marker_map;
 
   // map of all of the gates (string - pair<float,float>)
   PhenoMap m_p;
@@ -878,6 +1088,27 @@ class CerealProcessor : public LineProcessor {
   void SetYInd(int y) { m_y_index = y; }
   void SetIDInd(int i) { m_id_index = i; }
 
+  // Per-CSV-column conversion plan, built by StreamTableCSV. Each column maps to
+  // one action; gate (*p) columns carry the pflag bit to flip in m_gate_bit.
+  enum ColKind : uint8_t {
+    COL_IGNORE = 0, COL_ID, COL_X, COL_Y,
+    COL_MARKER,   // marker intensity   -> cols (markers, in column order)
+    COL_CA,       // non-marker numeric -> cols (metas,   in column order)
+    COL_IC,       // -> cols (meta) AND set cflag bit 5 when non-zero
+    COL_GATE,     // -> set pflag bit m_gate_bit[col] when non-zero
+    COL_REGION,   // -> set cflag bit 3 when value == 1
+  };
+  void SetColumnPlan(std::vector<uint8_t> kinds, std::vector<int> gate_bits) {
+    m_col_kind = std::move(kinds);
+    m_gate_bit = std::move(gate_bits);
+  }
+
+  // Required @HD scale tags stamped on convert: MP (microns per pixel) and UN
+  // (coordinate units, "micron" or "pixel").
+  void SetScale(const std::string& mpp, const std::string& units) {
+    m_mpp = mpp; m_units = units;
+  }
+
   int ProcessHeader(CellHeader& header) override;
 
   int ProcessLine(const std::string& line) override;
@@ -891,6 +1122,8 @@ private:
 
   std::string m_cmd;
   std::string m_filename;
+  std::string m_mpp;      // @HD MP (microns per pixel); empty if not set
+  std::string m_units;    // @HD UN ("micron"/"pixel"); empty if not set
 
   // index tracking
   int m_x_index = -1;
@@ -899,6 +1132,10 @@ private:
   
   CellHeader m_header;
   
+  // per-CSV-column conversion plan (see ColKind); empty -> legacy positional parse
+  std::vector<uint8_t> m_col_kind;
+  std::vector<int>     m_gate_bit;
+
   std::unique_ptr<std::ofstream> m_os;
   std::unique_ptr<OutArchive> m_archive;
 

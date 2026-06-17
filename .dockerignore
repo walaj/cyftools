@@ -1,0 +1,18 @@
+# keep the build context lean and force a clean in-container build
+.git
+.gitmodules
+build/
+**/__pycache__/
+**/*.pyc
+
+# data / artifacts — never needed to build or serve
+test/
+*.byf
+*.cyf
+*.cyfv
+*.ocyf
+*.csv
+*.tif
+*.tiff
+*.png
+*.pdf
