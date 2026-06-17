@@ -59,7 +59,9 @@
   <div class="big">cyfview</div>
   <div class="muted">drop a <b>.byf</b> file here, or</div>
   <button class="primary" onclick="document.getElementById('file').click()">Choose .byf file</button>
-  <input id="file" type="file" accept=".byf,.cyf,.ocyf,.cyfv,application/octet-stream" style="display:none" />
+  <!-- no accept filter: .byf/.cyfv have no macOS UTI and would be greyed out; we
+       validate by magic bytes after selection instead -->
+  <input id="file" type="file" style="display:none" />
   <div class="hint">tip: <code>python3 viewer/view.py cells.byf</code> opens a file directly</div>
 </div>
 

@@ -193,6 +193,78 @@ layout is readable from the spec by any language (a Python reference reader live
 
 ---
 
+## Viewing in the browser (cyfview)
+
+`viewer/cyfview.html` is a browser GUI for CYF tables; `viewer/view.py` serves it and runs
+`cyftools` to convert whatever you load. The **same `view.py` + `cyftools`** run three ways —
+a quick local launch, a local Docker container, or Cloud Run with a GCS bucket for multi-GB
+uploads. The deep cloud config (IAM, bucket CORS, sizing) lives in
+[`viewer/DEPLOY.md`](viewer/DEPLOY.md).
+
+### A. Local, no Docker (fastest to iterate)
+
+Needs `build/cyftools` and Python 3 — nothing else:
+
+```sh
+python3 viewer/view.py                 # serve; open the printed URL, drag a .byf onto the page
+python3 viewer/view.py cells.byf       # ...or auto-open cells.byf, preloaded
+```
+
+Edit `viewer/cyfview.html` and just **refresh** the page; edit `viewer/view.py` and
+**restart** the command. No build step on this path.
+
+### B. Local, in Docker (the exact image that deploys to the cloud)
+
+```sh
+git submodule update --init --recursive          # once
+docker build -t cyftools-viewer .                # build the image
+docker run --rm -p 8080:8080 cyftools-viewer     # open http://localhost:8080/
+```
+
+### Rebuild the image after a code change
+
+The container holds a **baked-in copy** of the code, so after editing anything you must
+rebuild the image (path A above does not — it reads the files live):
+
+```sh
+docker build -t cyftools-viewer .                # rebuild
+docker run --rm -p 8080:8080 cyftools-viewer     # run the new image
+```
+
+- Changed only `viewer/` (HTML or Python)? The rebuild is **seconds** — the C++ compile
+  layer is cached.
+- Changed `src/` or `CMakeLists.txt`? `cyftools` **recompiles** (a few minutes).
+
+### C. Deploy to Cloud Run + GCS (multi-GB uploads)
+
+`gcloud run deploy --source .` rebuilds the image with Cloud Build and deploys it, so
+shipping a code change is just re-running that one command.
+
+```sh
+# 1. a bucket for uploads + render packs
+gcloud storage buckets create gs://MY-CYF-BUCKET --location=us-central1
+
+# 2. let the Cloud Run service account read/write objects AND sign upload URLs
+SA="cyftools-viewer@MY-PROJECT.iam.gserviceaccount.com"
+gcloud storage buckets add-iam-policy-binding gs://MY-CYF-BUCKET \
+  --member="serviceAccount:$SA" --role="roles/storage.objectAdmin"
+gcloud iam service-accounts add-iam-policy-binding "$SA" \
+  --member="serviceAccount:$SA" --role="roles/iam.serviceAccountTokenCreator"
+
+# 3. build + deploy (re-run this to ship any later code change)
+gcloud run deploy cyftools-viewer --source . --region us-central1 \
+  --service-account "$SA" --allow-unauthenticated \
+  --set-env-vars CYFVIEW_BUCKET=MY-CYF-BUCKET,CYFVIEW_MAX_CELLS=4000000 \
+  --memory 4Gi --cpu 2 --timeout 900
+```
+
+After the first deploy, set the bucket's CORS to allow the printed `run.app` origin to PUT/GET
+it (one command in [`viewer/DEPLOY.md`](viewer/DEPLOY.md)). Without a bucket the container still
+works — uploads just stay local; the bucket is what lifts the request-size limit so multi-GB
+`.byf` files can be uploaded.
+
+---
+
 ## Documentation
 
 - [`docs/CYF_FORMAT.md`](docs/CYF_FORMAT.md) — the on-disk format specification (text + binary).
@@ -200,3 +272,4 @@ layout is readable from the spec by any language (a Python reference reader live
 - [`docs/CYF_INTEGRATION.md`](docs/CYF_INTEGRATION.md) — how the CYF reader/writer is wired in (and the path off cereal).
 - [`docs/DEPENDENCY_CLEANUP.md`](docs/DEPENDENCY_CLEANUP.md) — the dependency-slimming plan and status.
 - [`docs/reference/cyf.py`](docs/reference/cyf.py) — a pure-Python reference codec.
+- [`viewer/DEPLOY.md`](viewer/DEPLOY.md) — cyfview cloud deploy: Docker, Cloud Run, GCS bucket setup.
