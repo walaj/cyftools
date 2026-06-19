@@ -110,6 +110,35 @@ in `external/`: `cereal` (serialization), `knncolle` (KNN, used by `island`/`dis
 built with the kmknn/HNSW/Annoy backends disabled). zlib is the only always-required
 system lib (BGZF).
 
+## Browser viewer & cloud deploy (`viewer/`)
+
+`viewer/cyfview.html` is a single-file deck.gl GUI for a CYF table; `viewer/view.py` is
+the server that feeds it. **Invariant: the browser never reimplements the format or any
+algorithm — every conversion shells out to the real `cyftools` binary.** The GUI renders a
+`.cyfv` "pack" (`cyftools export` → magic `CYFV`, columnar id/x/y/cflag/pflag + markers,
+see `docs/VIEWER_PACK.md`); `.cyfv` is an internal intermediary, never user-facing (users
+only ever name `.byf`).
+
+`view.py` runs two ways: a **local launch** (`python3 viewer/view.py [cells.byf]` →
+`127.0.0.1`, auto port, opens a browser) or **server mode** when `$PORT` is set (binds
+`0.0.0.0:$PORT`, threaded, no browser — for Docker/Cloud Run). Loading a `.byf` uses a
+**staged flow** so multi-GB files aren't bound by any request-size limit: `POST
+/api/upload-url` → browser **PUTs the file straight to an object store** → `POST /api/pack`
+(server runs `cyftools count`, then `export`, or `subsample -r | export` when over
+`CYFVIEW_MAX_CELLS` so the browser payload stays bounded) → browser fetches the pack. The
+object store is pluggable: `LocalStore` (cache dir; PUT to `/blob/...`) or `GcsStore`
+(signed URLs to a GCS bucket). A raw `POST /convert` (whole body) is the small-file
+fallback. Browser-side magic-byte sniff routes `CYFV`→render-direct, BGZF→server.
+
+Deploy: `Dockerfile` is a two-stage build (minimal-core `cyftools`, i.e. TIFF/Cairo/LDA/
+OpenMP off → runtime needs only `python3`+`zlib`+`google-cloud-storage`). **After any code
+change you must rebuild the image** (container has a baked-in copy); viewer-only edits
+rebuild in seconds (compile cached), `src/`/`CMakeLists.txt` edits recompile. The build
+stage copies only `CMakeLists.txt`/`src/`/`external/`, so viewer edits don't bust the
+compile cache. Full local+Cloud Run+GCS steps: `README.md` ("Viewing in the browser") and
+`viewer/DEPLOY.md`. Note: fixed-width int headers must `#include <cstdint>` (macOS/clang
+hides a missing include that gcc/libstdc++ surfaces — keep the tree Linux-buildable).
+
 ## Conventions
 
 - Output form follows the **filename extension**, never a flag. Don't add format-select flags.
@@ -125,4 +154,6 @@ system lib (BGZF).
 
 `docs/CYF_FORMAT.md` (format spec), `docs/ARCHITECTURE_REVIEW.md` (design notes),
 `docs/CYF_INTEGRATION.md` (reader/writer wiring + path off cereal),
-`docs/DEPENDENCY_CLEANUP.md` (what was slimmed and why).
+`docs/DEPENDENCY_CLEANUP.md` (what was slimmed and why),
+`docs/VIEWER_PACK.md` (`.cyfv` pack byte layout), `viewer/DEPLOY.md` (cyfview Docker/Cloud
+Run/GCS deploy).
