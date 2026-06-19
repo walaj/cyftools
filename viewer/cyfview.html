@@ -47,6 +47,9 @@
   .muted { color:#8b949e; font-size:11px; } .hint { color:#6e7681; font-size:10px; margin-top:5px; }
   #drop { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; z-index:10; background:rgba(13,17,23,.85); text-align:center; }
   #drop.hidden { display:none; } #drop .big { font-size:20px; font-weight:600; }
+  #drop #dropPrompt, #drop #dropBusy { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .spinner { width:34px; height:34px; border:3px solid #30363d; border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
   #tooltip { position:absolute; z-index:20; pointer-events:none; background:#000a; color:#fff; border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:11px; white-space:pre; display:none; }
   #stat { color:#8b949e; font-size:11px; }
 </style>
@@ -56,18 +59,26 @@
 <div id="tooltip"></div>
 
 <div id="drop">
-  <div class="big">cyfview</div>
-  <div class="muted">drop a <b>.byf</b> file here, or</div>
-  <button class="primary" onclick="document.getElementById('file').click()">Choose .byf file</button>
-  <!-- no accept filter: .byf/.cyfv have no macOS UTI and would be greyed out; we
-       validate by magic bytes after selection instead -->
-  <input id="file" type="file" style="display:none" />
-  <div class="hint">tip: <code>python3 viewer/view.py cells.byf</code> opens a file directly</div>
+  <div id="dropPrompt">
+    <div class="big">cyfview</div>
+    <div class="muted">drop a <b>.byf</b> file here, or</div>
+    <button class="primary" onclick="document.getElementById('file').click()">Choose .byf file</button>
+    <!-- no accept filter: .byf/.cyfv have no macOS UTI and would be greyed out; we
+         validate by magic bytes after selection instead -->
+    <input id="file" type="file" style="display:none" />
+    <div class="hint">tip: <code>python3 viewer/view.py cells.byf</code> opens a file directly</div>
+  </div>
+  <div id="dropBusy" style="display:none">
+    <div class="spinner"></div>
+    <div class="big" id="dropMsg">Working…</div>
+    <div class="muted" id="dropSub"></div>
+  </div>
 </div>
 
 <div id="panel">
   <h1>cyfview</h1>
   <div class="sub" id="stat">no file loaded</div>
+  <button id="loadBtn" onclick="document.getElementById('file').click()" style="margin:-6px 0 12px;font-size:11px">Load .byf…</button>
 
   <div class="sec">
     <h2>Channels &nbsp;<span class="muted" id="chCount">0 / 5</span></h2>
@@ -658,16 +669,29 @@ function loadArrayBuffer(ab){
   COLORS=new Uint8Array(DATA.N*4); GBUF=new Float32Array(DATA.N*2); GCOUNT=0;
   $('drop').classList.add('hidden'); onLoaded();
 }
+// Show the overlay with a spinner + message so the user can see the server is
+// working (the conversion runs cyftools on the server, not in the browser).
+function showBusy(msg, sub){
+  $('drop').classList.remove('hidden');
+  $('dropPrompt').style.display='none';
+  $('dropBusy').style.display='flex';
+  $('dropMsg').textContent=msg;
+  $('dropSub').textContent=sub||'';
+  $('stat').textContent=msg;
+}
+function endBusy(){ $('dropBusy').style.display='none'; $('dropPrompt').style.display='flex'; }
+
 // A dropped/picked .cyfv pack loads directly. A .byf (BGZF) is handled server-side:
 //  • staged flow (handles multi-GB): ask view.py for an upload target, PUT the file
 //    straight there (a GCS bucket in the cloud, bypassing any request-size limit),
 //    then ask the server to build a render-capped pack and fetch it.
 //  • fallback: if the server has no staged API, POST the raw bytes to /convert.
 async function handleFile(file){
+  showBusy('Reading file…', file.name);
   try {
     const head = new Uint8Array(await file.slice(0,4).arrayBuffer());
     const isPack = head[0]===67 && head[1]===89 && head[2]===70 && head[3]===86;  // "CYFV"
-    if (isPack){ loadArrayBuffer(await file.arrayBuffer()); return; }
+    if (isPack){ showBusy('Loading…', 'rendering cells'); loadArrayBuffer(await file.arrayBuffer()); endBusy(); return; }
 
     // --- staged upload → pack → fetch ---
     let up = null;
@@ -679,35 +703,40 @@ async function handleFile(file){
     } catch(_) { /* no staged API → fall back below */ }
 
     if (up && up.id && up.put_url){
-      $('stat').textContent='uploading '+file.name+' …';
+      showBusy('Uploading…', file.name+' → server');
       const putRes = await fetch(up.put_url, { method: up.method||'PUT',
         headers: up.headers||{}, body: file });
       if (!putRes.ok) throw new Error('upload failed (HTTP '+putRes.status+')');
-      $('stat').textContent='converting '+file.name+' …';
+      showBusy('Converting…', 'running cyftools on the server');
       const packRes = await fetch('/api/pack', { method:'POST',
         headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id:up.id }) });
       if (!packRes.ok) throw new Error('convert failed (HTTP '+packRes.status+')');
       const meta = await packRes.json();
-      $('stat').textContent='loading pack …';
+      showBusy('Loading…', 'downloading + rendering the pack');
       const ab = await (await fetch(meta.pack_url)).arrayBuffer();
       loadArrayBuffer(ab);
+      endBusy();
       if (meta.subsampled) $('stat').textContent =
         'showing '+meta.rendered.toLocaleString()+' of '+meta.cells.toLocaleString()+' cells (subsampled to fit)';
       return;
     }
 
     // --- fallback: direct convert (small files / simple server) ---
-    $('stat').textContent='converting '+file.name+' …';
+    showBusy('Converting…', 'running cyftools on the server');
     const res = await fetch('/convert', { method:'POST', headers:{'X-Filename':file.name}, body:file });
     if (!res.ok) throw new Error('server convert failed (HTTP '+res.status+')');
+    showBusy('Loading…', 'rendering cells');
     loadArrayBuffer(await res.arrayBuffer());
+    endBusy();
   } catch(err){
-    console.error(err); $('stat').textContent='load failed';
+    console.error(err); endBusy();
+    if (DATA) $('drop').classList.add('hidden');      // keep showing the current file
+    $('stat').textContent='load failed';
     alert('Could not load '+file.name+'\n'+err.message+
           '\n\nLoad a .byf directly by launching:\n  python3 viewer/view.py '+file.name);
   }
 }
-$('file').onchange=e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); };
+$('file').onchange=e=>{ const f=e.target.files[0]; e.target.value=''; if(f) handleFile(f); };
 ['dragover','drop'].forEach(ev=> document.addEventListener(ev, e=> e.preventDefault()));
 document.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
 
@@ -723,9 +752,10 @@ window.addEventListener('load', ()=>{
       else t.style.display='none'; } });
   window.addEventListener('resize', ()=>{ if(!DATA||!VB) return; const fit=fitZoom(); VB.ZMIN=fit-3; VB.ZMAX=fit+18; viewState=clampZoom(viewState); deckgl.setProps({viewState}); });
   const pre=new URLSearchParams(location.search).get('file');
-  if (pre){ $('stat').textContent='loading '+pre+' …';
-    fetch(pre).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); }).then(loadArrayBuffer)
-      .catch(err=>{ console.error(err); $('stat').textContent='auto-load failed'; alert('Could not auto-load '+pre+'\n'+err.message); }); }
+  if (pre){ showBusy('Converting…', 'preparing '+pre+' on the server');
+    fetch(pre).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
+      .then(ab=>{ loadArrayBuffer(ab); endBusy(); })
+      .catch(err=>{ console.error(err); endBusy(); $('stat').textContent='auto-load failed'; alert('Could not auto-load '+pre+'\n'+err.message); }); }
 });
 </script>
 </body>
