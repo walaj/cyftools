@@ -11,6 +11,7 @@
 #include <string>
 #include <cstdint>
 #include <cassert>
+#include <stdexcept>
 #include <random>
 
 #include <cereal/types/vector.hpp>
@@ -61,6 +62,8 @@ class CellProcessor {
       m_archive = std::make_unique<OutArchive>(std::cout, fmt);
     } else {
       m_os = std::make_unique<std::ofstream>(m_output_file, std::ios::binary);
+      if (!m_os->is_open())
+        throw std::runtime_error("cannot open output file '" + m_output_file + "' for writing");
       m_archive = std::make_unique<OutArchive>(*m_os, fmt);
     }
    assert(m_archive);

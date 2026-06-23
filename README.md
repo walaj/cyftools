@@ -80,11 +80,16 @@ cd src && make cyf-test
 cyftools reads and writes the binary CYF format. Use a filename, or `-` to stream
 from stdin / to stdout so commands can be piped.
 
-**Import a CSV** (must have `CellID`, `X`/`X_centroid`, `Y`/`Y_centroid` columns, then
-one column per marker):
+**Import a CSV.** You declare which columns are markers (`-M`, an inline list or
+`@file`), the X/Y coordinate columns (default `X`/`Y`; override with `-x`/`-y`), and
+the coordinate scale (`-c` microns-per-pixel and `-u` units, both required and
+stamped on the header). `CellID`, `Region` and `IC` keep special roles, a
+`<marker>p` column becomes that marker's gate bit, and **every other column is kept
+as an annotation** — nothing is silently assumed to be a marker:
 
 ```sh
-cyftools convert cells.csv cells.byf -s 1       # -s = sample id
+cyftools convert cells.csv cells.byf -c 0.325 -u micron \
+  -x tX_centroid -y tY_centroid -M @markers.txt -s 1     # -s = sample id
 ```
 
 cyftools picks the output form from the file extension, mirroring SAM/BAM:
@@ -109,7 +114,7 @@ cyftools view -l cells.byf                         # list marker names
 ```sh
 # import, keep cells whose phenotype flag has bit 256 set, view as CSV
 # (-s is a phenotype-flag OR mask; which bit means which marker depends on your panel)
-cyftools convert cells.csv - -s 1 \
+cyftools convert cells.csv - -c 0.325 -u micron -M @markers.txt -s 1 \
   | cyftools filter - - -s 256 \
   | cyftools view -R -
 ```

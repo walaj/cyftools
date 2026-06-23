@@ -2110,6 +2110,8 @@ int CerealProcessor::ProcessHeader(CellHeader& header) {
     m_archive = std::make_unique<OutArchive>(std::cout, fmt);
   } else {
     m_os = std::make_unique<std::ofstream>(m_filename, std::ios::binary);
+    if (!m_os->is_open())
+      throw std::runtime_error("cannot open output file '" + m_filename + "' for writing");
     m_archive = std::make_unique<OutArchive>(*m_os, fmt);
   }
 

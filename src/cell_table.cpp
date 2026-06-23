@@ -382,6 +382,8 @@ void CellTable::SetupOutputWriter(const std::string& file) {
     m_archive = std::make_unique<OutArchive>(std::cout, fmt);
   } else {
     m_os = std::make_unique<std::ofstream>(file, std::ios::binary);
+    if (!m_os->is_open())
+      throw std::runtime_error("cannot open output file '" + file + "' for writing");
     m_archive = std::make_unique<OutArchive>(*m_os, fmt);
   }
 
@@ -1420,7 +1422,9 @@ int CellTable::StreamTable(CellProcessor& proc, const std::string& file) {
   
 }
   
-void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, const std::string& metac) {
+void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file,
+                               const std::string& xcol, const std::string& ycol,
+                               const StringSet& markers, const StringSet& ignore) {
 
   // key indices
   int id_index = -1;
@@ -1442,11 +1446,6 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
   bool header_read = false;
   size_t flag_index = -1;
   char* next_line_ptr;
-
-  // read in meta columns in header
-  StringSet meta_items = tokenize_comma_delimited<StringSet>(metac);
-  meta_items.insert({"Area", "MajorAxisLength", "MinorAxisLength",
-      "Eccentricity", "Solidity", "Extent", "Orientation"});
 
   // for verbose
   size_t count = 0;
@@ -1477,56 +1476,55 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file, c
       std::vector<uint8_t> kind(ncol, CerealProcessor::COL_IGNORE);
       std::vector<int>     gate_bit(ncol, -1);
 
-      // Pass 1: classify non-gate columns. A marker's pflag bit = its position
-      // among @MA columns (the convention cohort/viewer use). *p (gate) columns
-      // are deferred to pass 2, which needs the complete marker set.
+      // Column roles are user-driven (see `cyftools convert`): the x/y columns are
+      // named explicitly (xcol/ycol, default X/Y), `markers` lists exactly which
+      // columns are marker intensities (@MA), and `ignore` lists columns to drop.
+      // A few names keep hard-coded roles (CellID, Region, IC); gate columns are
+      // matched by the *p convention; EVERY other column becomes a CA annotation.
+      //
+      // Pass 1 classifies all non-gate columns. A marker's pflag bit = its position
+      // among @MA columns (the convention cohort/viewer use). *p (gate) columns are
+      // deferred to pass 2, which needs the complete marker set. Order matters:
+      // ignore wins over everything, and an exact marker match wins over the *p rule
+      // (so a marker whose name ends in 'p' is still a marker, not a gate).
       std::unordered_map<std::string,int> marker_bit;
       std::vector<size_t> pcols;
       int ma_index = 0;
-      int xt = -1, yt = -1, x_fb = -1, y_fb = -1;
       for (size_t i = 0; i < ncol; ++i) {
         const std::string& s = hdr[i];
-        if (s == "CellID")                                 { kind[i] = CerealProcessor::COL_ID; id_index = (int)i; }
-        else if (s == "Xt")                                { xt = (int)i; }
-        else if (s == "Yt")                                { yt = (int)i; }
-        else if (s == "X" || s == "X_centroid")            { x_fb = (int)i; }
-        else if (s == "Y" || s == "Y_centroid")            { y_fb = (int)i; }
-        else if (s == "tX_centroid" || s == "tY_centroid") { kind[i] = CerealProcessor::COL_IGNORE; }
-        else if (s == "Region")                            { kind[i] = CerealProcessor::COL_REGION; }
+        if (ignore.count(s))               { kind[i] = CerealProcessor::COL_IGNORE; }
+        else if (s == xcol)                { kind[i] = CerealProcessor::COL_X; x_index = (int)i; }
+        else if (s == ycol)                { kind[i] = CerealProcessor::COL_Y; y_index = (int)i; }
+        else if (s == "CellID")            { kind[i] = CerealProcessor::COL_ID; id_index = (int)i; }
+        else if (s == "Region")            { kind[i] = CerealProcessor::COL_REGION; }
         else if (s == "IC") {
           kind[i] = CerealProcessor::COL_IC;
           m_header.addTag(Tag(Tag::CA_TAG, "IC", "", (int)i));
         }
-        else if (meta_items.find(s) != meta_items.end()) {
-          kind[i] = CerealProcessor::COL_CA;
-          m_header.addTag(Tag(Tag::CA_TAG, clean_marker_string(s), "", (int)i));
-        }
-        else if (!s.empty() && s.back() == 'p') {          // gate candidate (*p)
-          pcols.push_back(i);
-        }
-        else {                                             // marker intensity -> @MA
+        else if (markers.count(s)) {                       // declared marker -> @MA
           kind[i] = CerealProcessor::COL_MARKER;
           m_header.addTag(Tag(Tag::MA_TAG, clean_marker_string(s), "", (int)i));
           marker_bit[s] = ma_index++;
         }
+        else if (!s.empty() && s.back() == 'p') {          // gate candidate (*p)
+          pcols.push_back(i);
+        }
+        else {                                             // anything else -> CA annotation
+          kind[i] = CerealProcessor::COL_CA;
+          m_header.addTag(Tag(Tag::CA_TAG, clean_marker_string(s), "", (int)i));
+        }
       }
 
-      // x/y: prefer Xt/Yt, else fall back to plain X/Y; the unused one stays ignored.
-      const int xi = (xt >= 0) ? xt : x_fb;
-      const int yi = (yt >= 0) ? yt : y_fb;
-      if (xi >= 0) { kind[xi] = CerealProcessor::COL_X; x_index = xi; }
-      if (yi >= 0) { kind[yi] = CerealProcessor::COL_Y; y_index = yi; }
-
-      // Pass 2: a *p column is a gate iff stripping the trailing 'p' yields a known
-      // marker; double-marker (e.g. CD8apKi_67_2p) and orphan *p are ignored.
+      // Pass 2: a *p column is a gate iff stripping the trailing 'p' yields a declared
+      // marker; non-gate *p (double-marker combos, orphans) stay ignored.
       for (size_t i : pcols) {
         const std::string stem = hdr[i].substr(0, hdr[i].size() - 1);
         auto it = marker_bit.find(stem);
         if (it != marker_bit.end()) { kind[i] = CerealProcessor::COL_GATE; gate_bit[i] = it->second; }
       }
 
-      if (x_index < 0) { std::cerr << "Error: cyftools convert -- X/Xt/X_centroid not found" << std::endl; assert(false); }
-      if (y_index < 0) { std::cerr << "Error: cyftools convert -- Y/Yt/Y_centroid not found" << std::endl; assert(false); }
+      if (x_index < 0) { std::cerr << "Error: cyftools convert -- x column '" << xcol << "' not found in CSV header" << std::endl; assert(false); }
+      if (y_index < 0) { std::cerr << "Error: cyftools convert -- y column '" << ycol << "' not found in CSV header" << std::endl; assert(false); }
       if (id_index < 0)  std::cerr << "Warning: cyftools convert -- CellID not found; auto-numbering cells" << std::endl;
 
       proc.SetXInd(x_index);

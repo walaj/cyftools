@@ -298,7 +298,7 @@ int main(int argc, char **argv) {
   } else if (opt::module == "magnify") {
     val = magnifyfunc(argc, argv);
   } else if (opt::module == "convert") {
-    val = convertfunc(argc, argv);
+    return convertfunc(argc, argv);
   } else if (opt::module == "validate") {
     return validatefunc(argc, argv);
   } else if (opt::module == "mean") {
@@ -4084,27 +4084,70 @@ int debugfunc(int argc, char** argv) {
   return 0;
 }
 
+// Load a name list for `cyftools convert`: either an inline comma-separated list
+// ("CD4,CD8a,...") or "@path" to read the names from a file (separated by commas,
+// whitespace, or newlines). Returns the set of names.
+static StringSet load_name_set(const std::string& arg) {
+  StringSet out;
+  if (arg.empty())
+    return out;
+
+  std::string text = arg;
+  if (arg[0] == '@') {
+    std::ifstream ifs(arg.substr(1));
+    if (!ifs) {
+      std::cerr << "cyftools convert: cannot open list file '" << arg.substr(1) << "'" << std::endl;
+      return out;
+    }
+    std::stringstream ss; ss << ifs.rdbuf();
+    text = ss.str();
+  }
+
+  std::string tok;
+  for (char ch : text) {
+    if (ch == ',' || ch == '\n' || ch == '\r' || ch == '\t' || ch == ' ') {
+      if (!tok.empty()) { out.insert(tok); tok.clear(); }
+    } else {
+      tok += ch;
+    }
+  }
+  if (!tok.empty())
+    out.insert(tok);
+
+  return out;
+}
+
 static int convertfunc(int argc, char** argv) {
   static const struct option convert_longopts[] = {
     {"sampleid", required_argument, NULL, 's'},
     {"mpp",      required_argument, NULL, 'c'},
     {"units",    required_argument, NULL, 'u'},
+    {"xcol",     required_argument, NULL, 'x'},
+    {"ycol",     required_argument, NULL, 'y'},
+    {"markers",  required_argument, NULL, 'M'},
+    {"ignore",   required_argument, NULL, 'i'},
     {NULL, 0, NULL, 0}
   };
-  const char* shortopts = "s:vm:u:c:";
+  const char* shortopts = "s:vu:c:x:y:M:i:";
   uint32_t sampleid = 0;
-  std::string metacols;
   std::string units;
   std::string mpp;
+  std::string xcol = "X";
+  std::string ycol = "Y";
+  std::string markers_arg;
+  std::string ignore_arg;
 
   for (int c; (c = getopt_long(argc, argv, shortopts, convert_longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 's' : arg >> sampleid; break;
     case 'v' : opt::verbose = true; break;
-    case 'm' : arg >> metacols; break;
     case 'u' : arg >> units; break;
     case 'c' : arg >> mpp; break;
+    case 'x' : xcol = optarg ? optarg : xcol; break;
+    case 'y' : ycol = optarg ? optarg : ycol; break;
+    case 'M' : markers_arg = optarg ? optarg : ""; break;
+    case 'i' : ignore_arg  = optarg ? optarg : ""; break;
     default: die = true;
     }
   }
@@ -4119,24 +4162,38 @@ static int convertfunc(int argc, char** argv) {
   bool mpp_ok = false;
   if (!mpp.empty()) { try { mpp_ok = std::stod(mpp) > 0; } catch (...) { mpp_ok = false; } }
 
-  if (die || in_out_process(argc, argv) || un.empty() || !mpp_ok) {
+  // which columns are markers (REQUIRED) and which to drop entirely (optional)
+  StringSet markers = load_name_set(markers_arg);
+  StringSet ignore  = load_name_set(ignore_arg);
+
+  if (die || in_out_process(argc, argv) || un.empty() || !mpp_ok || markers.empty()) {
     const char *USAGE_MESSAGE =
-      "Usage: cyftools convert <csvfile> <out.byf> -c <mpp> -u <micron|pixel> [options]\n"
-      "  Convert a CSV to a .cyf/.byf file. Microns-per-pixel and the coordinate\n"
-      "  units are REQUIRED and recorded on the @HD header line (MP and UN), so\n"
-      "  every file is self-describing about its coordinate scale.\n"
+      "Usage: cyftools convert <csvfile> <out.byf> -c <mpp> -u <micron|pixel> -M <markers> [options]\n"
+      "  Convert a CSV to a .cyf/.byf file. You declare which columns are markers;\n"
+      "  the x/y coordinate columns, the microns-per-pixel and the coordinate units\n"
+      "  are recorded on the @HD header line so every file is self-describing.\n"
+      "\n"
+      "  Column roles: the named x/y columns become coordinates; --markers columns\n"
+      "  become @MA marker intensities; CellID/Region/IC keep their special roles;\n"
+      "  a <marker>p column becomes that marker's gate bit; --ignore columns are\n"
+      "  dropped; EVERY other column is kept as a CA annotation.\n"
       "\n"
       "Required:\n"
       "  -c, --mpp <float>           Microns per pixel (> 0).\n"
       "  -u, --units <micron|pixel>  Units of the x/y coordinates in the CSV.\n"
+      "  -M, --markers <list|@file>  Marker columns: comma-separated, or @file (one\n"
+      "                              per line / comma- / space-separated).\n"
       "\n"
       "Optional:\n"
+      "  -x, --xcol <name>           X coordinate column (default 'X').\n"
+      "  -y, --ycol <name>           Y coordinate column (default 'Y').\n"
+      "  -i, --ignore <list|@file>   Columns to drop entirely (same format as -M).\n"
       "  -s, --sampleid <int>        Unique sample id (default 0).\n"
-      "  -m <list>                   Extra non-marker columns, comma-separated (e.g. 'Area,LDA').\n"
       "  -v, --verbose               Increase output to stderr.\n"
       "\n"
       "Example:\n"
-      "  cyftools convert input.csv out.byf -c 0.325 -u pixel -s 12345\n";
+      "  cyftools convert input.csv out.byf -c 0.325 -u micron \\\n"
+      "      -x tX_centroid -y tY_centroid -M @markers.txt -i Xt,Yt,X,Y -s 12345\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
@@ -4144,7 +4201,7 @@ static int convertfunc(int argc, char** argv) {
   CerealProcessor cerp;
   cerp.SetParams(opt::outfile, cmd_input, sampleid);
   cerp.SetScale(mpp, un);
-  table.StreamTableCSV(cerp, opt::infile, metacols);
+  table.StreamTableCSV(cerp, opt::infile, xcol, ycol, markers, ignore);
 
   return 0;
 }

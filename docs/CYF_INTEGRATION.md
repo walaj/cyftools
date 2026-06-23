@@ -51,6 +51,7 @@ Writing is selected by the output file's extension — no environment variable, 
 CLI flag:
 
 ```sh
+# (convert also needs -c <mpp> -u <units> -M <markers>; elided to show extension->format)
 cyftools convert in.csv out.cyf     # text  (.cyf)
 cyftools convert in.csv out.byf    # BGZF binary (.byf)
 cyftools convert in.csv -           # stdout -> binary (the default)

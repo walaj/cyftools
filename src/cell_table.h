@@ -55,7 +55,9 @@ public:
   //////
   // Table IO
   //////
-  void StreamTableCSV(CerealProcessor& proc, const std::string& file, const std::string& metac);
+  void StreamTableCSV(CerealProcessor& proc, const std::string& file,
+                      const std::string& xcol, const std::string& ycol,
+                      const StringSet& markers, const StringSet& ignore);
 
   int StreamTable(CellProcessor& proc, const std::string& file);
   
