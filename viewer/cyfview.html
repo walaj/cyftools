@@ -6,14 +6,17 @@
 <title>cyfview — CYF viewer</title>
 <script src="https://unpkg.com/deck.gl@9.0.38/dist.min.js"></script>
 <style>
-  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#c9d1d9; --accent:#58a6ff; --gate:#ffd60a; }
+  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#c9d1d9; --accent:#58a6ff; --gate:#ffd60a; --pw:380px; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
               font:13px/1.45 -apple-system,Segoe UI,Roboto,sans-serif; overflow:hidden; }
   #deck-canvas { position:absolute; inset:0; width:100%; height:100%; }
-  #panel { position:absolute; top:0; right:0; width:424px; height:100%; overflow-y:auto;
+  #panel { position:absolute; top:0; right:0; width:var(--pw); height:100%; overflow-y:auto;
            background:var(--panel); border-left:1px solid var(--line); padding:14px; z-index:5; }
-  #panel h1 { font-size:15px; margin:0 0 2px; } #panel .sub { color:#8b949e; font-size:11px; margin-bottom:12px; }
+  #panelL { position:absolute; top:0; left:0; width:var(--pw); height:100%; overflow-y:auto;
+           background:var(--panel); border-right:1px solid var(--line); padding:14px; z-index:5; }
+  #panel h1, #panelL h1 { font-size:15px; margin:0 0 2px; }
+  #panel .sub, #panelL .sub { color:#8b949e; font-size:11px; margin-bottom:12px; }
   .sec { border-top:1px solid var(--line); padding:11px 0; }
   .sec h2 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#8b949e; margin:0 0 8px; }
   label { display:block; margin:5px 0 3px; color:#8b949e; font-size:11px; }
@@ -52,38 +55,54 @@
   @keyframes spin { to { transform:rotate(360deg); } }
   #tooltip { position:absolute; z-index:20; pointer-events:none; background:#000a; color:#fff; border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:11px; white-space:pre; display:none; }
   #stat { color:#8b949e; font-size:11px; }
+  #scalebar { position:absolute; left:calc(var(--pw) + 14px); bottom:12px; z-index:6; pointer-events:none; display:none;
+              color:#e6edf3; font:11px -apple-system,Segoe UI,Roboto,sans-serif; text-shadow:0 1px 2px #000,0 0 2px #000; }
+  #scalebar .sb-bar { height:6px; border:2px solid #e6edf3; border-top:none; box-sizing:border-box; }
+  #scalebar .sb-label { text-align:center; margin-top:1px; }
 </style>
 </head>
 <body>
 <canvas id="deck-canvas"></canvas>
 <div id="tooltip"></div>
+<div id="scalebar"><div class="sb-bar"></div><div class="sb-label"></div></div>
 
 <div id="drop">
   <div id="dropPrompt">
     <div class="big">cyfview</div>
     <div class="muted">drop a <b>.byf</b> file here, or</div>
     <button class="primary" onclick="document.getElementById('file').click()">Choose .byf file</button>
+    <button onclick="document.getElementById('folder').click()" style="margin-top:2px">Convert a folder of .byf…</button>
     <!-- no accept filter: .byf/.cyfv have no macOS UTI and would be greyed out; we
          validate by magic bytes after selection instead -->
     <input id="file" type="file" style="display:none" />
+    <input id="folder" type="file" webkitdirectory style="display:none" />
     <div class="hint">tip: <code>python3 viewer/view.py cells.byf</code> opens a file directly</div>
   </div>
   <div id="dropBusy" style="display:none">
     <div class="spinner"></div>
     <div class="big" id="dropMsg">Working…</div>
     <div class="muted" id="dropSub"></div>
+    <div id="dropProg" style="display:none; width:260px; height:6px; background:#21262d; border:1px solid var(--line); border-radius:3px; overflow:hidden;"><div id="dropProgBar" style="height:100%; width:0; background:var(--accent); transition:width .2s;"></div></div>
   </div>
 </div>
 
 <div id="panel">
-  <h1>cyfview</h1>
-  <div class="sub" id="stat">no file loaded</div>
-  <button id="loadBtn" onclick="document.getElementById('file').click()" style="margin:-6px 0 12px;font-size:11px">Load .byf…</button>
 
   <div class="sec">
     <h2>Channels &nbsp;<span class="muted" id="chCount">0 / 5</span></h2>
     <div id="chList"></div>
-    <div class="hint">click a channel to expand · white handles = color window · <span style="color:var(--gate)">yellow</span> = gate (cells above get a ring)</div>
+    <div class="hint">click a channel to expand · white handles = color window · <span style="color:var(--gate)">&phi;</span> = marker is gated (≥1 cell has its pflag bit set)</div>
+  </div>
+
+  <div class="sec">
+    <h2>Gate rings (pflag)</h2>
+    <div class="muted">ring cells positive for a baked phenotype gate. check markers to AND them (e.g. FOXP3 + CD4 = double-positive), or type the pflag mask as a decimal (samtools-style). default: nothing &rarr; no rings.</div>
+    <div id="pfChips" style="display:flex; flex-wrap:wrap; gap:5px; margin-top:7px;"></div>
+    <div class="muted" id="nopf" style="display:none">no gated markers in this file</div>
+    <div class="row" style="margin-top:8px;align-items:flex-end">
+      <div style="flex:1"><label>pflag mask (decimal)</label><input id="pfMask" type="text" inputmode="numeric" value="0"></div>
+      <button id="pfClear" style="flex:0 0 auto">clear</button></div>
+    <div class="hint" id="pfInfo">no gate selected — no rings</div>
   </div>
 
   <div class="sec">
@@ -94,7 +113,7 @@
       <button id="snap2" title="snap both gates to the baked phenotype gate">&phi; snap</button></div>
     <canvas id="flow" class="plot" width="392" height="288" style="cursor:crosshair"></canvas>
     <div class="muted">drag the crosshair (= the two channel gates); <span style="color:var(--gate)">dashed</span> = baked phenotype gate</div>
-    <div class="row" style="margin-top:8px"><label style="flex:0 0 auto;margin:0">ring on map:</label>
+    <div class="row" style="margin-top:8px"><label style="flex:0 0 auto;margin:0" title="the live 2D flow gate; a selected quadrant drives the rings and overrides the pflag mask above">ring on map:</label>
       <select id="quadMode" style="flex:1">
         <option value="dp">double-positive (X+ Y+)</option>
         <option value="xp">X+ only</option>
@@ -102,9 +121,20 @@
         <option value="single">any single-positive</option>
         <option value="dn">double-negative (X&minus; Y&minus;)</option>
         <option value="diff">changed vs &phi;-gate (differential)</option>
-        <option value="off">nothing</option>
+        <option value="off" selected>nothing</option>
       </select></div>
     <div id="quad" style="margin-top:9px"></div>
+  </div>
+</div>
+
+<div id="panelL">
+  <h1>cyfview</h1>
+  <div class="sub" id="filename" title="loaded file" style="color:var(--accent);font-weight:600;word-break:break-all;margin:0 0 3px">no file loaded</div>
+  <select id="gallery" style="display:none; margin:0 0 8px" title="switch between the converted files in this folder"></select>
+  <div class="sub" id="stat"></div>
+  <div class="row" style="margin:-6px 0 12px">
+    <button id="loadBtn" onclick="document.getElementById('file').click()" style="font-size:11px">Load .byf…</button>
+    <button onclick="document.getElementById('folder').click()" style="font-size:11px">Load folder…</button>
   </div>
 
   <div class="sec">
@@ -112,6 +142,7 @@
     <div class="roi"><input type="checkbox" id="roiAll" checked onchange="toggleAllRoi()"><span><b>show all</b></span></div>
     <div id="rois"></div>
     <div class="muted" id="noroi" style="display:none">none in this file</div>
+    <div class="muted" id="roiAreas" style="margin-top:6px"></div>
 
     <div id="roi-xform" style="display:none; margin-top:10px; border-top:1px solid var(--line); padding-top:9px;">
       <div class="grp">Align ROIs (live preview — does not change the file)</div>
@@ -134,13 +165,17 @@
 
   <div class="sec">
     <h2>cflag region overlay</h2>
-    <div class="muted">paint a semi-transparent region from a cflag combo (AND-ed). cflag = region flags.</div>
+    <div class="muted">paint a semi-transparent region from a cflag combo (AND-ed), drawn <b>on top</b> of the cells. cflag = region flags.</div>
     <div id="cflagChips" style="display:flex; flex-wrap:wrap; gap:5px; margin-top:7px;"></div>
     <div class="muted" id="nocflag" style="display:none">no cflag bits declared in this file</div>
     <label style="margin-top:8px">paint radius: <span id="regrv">20</span></label>
     <input id="regRadius" type="range" min="1" max="200" step="1" value="20">
     <label>opacity: <span id="regov">0.30</span></label>
     <input id="regOpacity" type="range" min="0.05" max="1" step="0.05" value="0.3">
+    <div class="row" style="margin-top:8px;align-items:center">
+      <label style="flex:0 0 auto;margin:0;display:flex;align-items:center;gap:5px"><input type="checkbox" id="regShow" checked style="width:auto"> show on top</label>
+      <label style="flex:0 0 auto;margin:0;display:flex;align-items:center;gap:5px">color <input type="color" id="regColor" value="#5ab4ff" style="width:36px;height:22px;padding:1px;background:#0d1117;border:1px solid var(--line);border-radius:6px"></label>
+    </div>
     <div class="row" style="margin-top:7px"><span class="hint" id="regInfo" style="flex:1"></span>
       <button id="regClear" style="flex:0 0 auto">clear</button></div>
   </div>
@@ -151,8 +186,10 @@
     <input id="psize" type="range" min="0.5" max="8" step="0.5" value="2" oninput="psv.textContent=(+this.value).toFixed(1); render()">
     <label>opacity: <span id="pov">0.9</span></label>
     <input id="popacity" type="range" min="0.05" max="1" step="0.05" value="0.9" oninput="pov.textContent=(+this.value).toFixed(2); refresh()">
-    <label>gate ring size: <span id="rsv">6</span></label>
-    <input id="ringSize" type="range" min="2" max="16" step="1" value="6" oninput="rsv.textContent=this.value; render()">
+    <label>gate ring size: <span id="rsv">3</span></label>
+    <input id="ringSize" type="range" min="1" max="16" step="1" value="3" oninput="rsv.textContent=this.value; render()">
+    <label>gate ring color</label>
+    <input id="ringColor" type="color" value="#ffd60a" style="width:48px;height:24px;padding:1px;background:#0d1117;border:1px solid var(--line);border-radius:6px" oninput="render()">
     <div class="row" style="margin-top:9px"><button onclick="fitView()">Reset view</button>
       <button onclick="document.getElementById('file').click()">Load file…</button></div>
   </div>
@@ -160,7 +197,7 @@
 
 <script>
 "use strict";
-let DATA=null, POS=null, COLORS=null, COLORVER=0, MM={}, deckgl=null;
+let DATA=null, POS=null, COLORS=null, COLORVER=0, MM={}, deckgl=null, LOADED_NAME='', GALLERY=[];
 let RX={ scale:1, ox:0, oy:0, fx:false, fy:false }, RXVER=0;   // ROI alignment transform (preview)
 let REGSEL=new Set(), REGION=null, REGVER=0;   // painted cflag-region overlay
 const REGION_COLOR=[90,180,255];
@@ -169,9 +206,12 @@ const CFLAG_NAMES={0:'Tumor',1:'Mark',2:'Margin',3:'TumorManual',4:'Tcell',5:'TL
   6:'MarginManual',7:'Normal',8:'NormalMargin',9:'Artifact',12:'Gleason1',13:'Gleason2',
   14:'Gleason3',15:'Gleason4',16:'Gleason5',17:'Perineural',18:'SeminalVes',21:'BuildGraph'};
 let GBUF=null, GCOUNT=0, GVER=0;       // gated-cell overlay buffer
+let PFMASK=0n, PFLAG_OR=0n;            // pflag ring mask (AND of checked gates); OR of all cells' pflags
 let viewState={ target:[0,0,0], zoom:0 };
 const $ = id => document.getElementById(id);
 const EPS=1e-6, HB=96, FB=150;
+const MIN_VIEW=10;   // tightest zoom-in: the screen width never spans fewer than this many coord-units (≈µm here)
+const CELL_DIAM=5;   // at high zoom each dot grows to this many coord-units across (≈µm); one dot ≈ one cell
 
 // ---------- CYFV loader (docs/VIEWER_PACK.md, v3) ----------
 function loadCyfv(buf){
@@ -208,9 +248,15 @@ function loadCyfv(buf){
 // ---------- helpers ----------
 function colMinMax(a){ let mn=Infinity,mx=-Infinity; for(let i=0;i<a.length;i++){const v=a[i]; if(v<mn)mn=v; if(v>mx)mx=v;} return {min:mn,max:mx}; }
 function fmt(v){ return Math.abs(v)>=100? Math.round(v): (+(+v).toFixed(4)); }
+// polygon area via the shoelace formula, in coordinate units² (µm² for these files)
+function polyArea(ring){ let a=0; const n=ring.length; if(n<3) return 0;
+  for(let i=0,j=n-1;i<n;j=i++) a += (ring[j][0]+ring[i][0])*(ring[j][1]-ring[i][1]);
+  return Math.abs(a/2); }
+function fmtArea(a){ if(!isFinite(a)||a<=0) return '0'; const mm=a/1e6;
+  return mm>=0.01 ? mm.toFixed(mm>=10?1:2)+' mm²' : Math.round(a).toLocaleString()+' µm²'; }
 function tlog(v,on){ return on? Math.log10(Math.max(v,EPS)) : v; }
 function tinv(t,on){ return on? Math.pow(10,t) : t; }
-function fillMarkerSel(sel){ sel.innerHTML=''; DATA.names.forEach(n=> sel.appendChild(new Option(n,n))); }
+function fillMarkerSel(sel){ sel.innerHTML=''; sel.appendChild(new Option('— pick marker —','')); DATA.names.forEach(n=> sel.appendChild(new Option(n,n))); }
 function hex2rgb(h){ const n=parseInt(h.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255]; }
 function rgb2hex(c){ return '#'+c.map(v=>Math.round(v).toString(16).padStart(2,'0')).join(''); }
 function domainOf(m,log){ const r=MM[m]; let lo=tlog(log&&r.min<=0?EPS:r.min,log), hi=tlog(r.max,log); if(hi<=lo)hi=lo+1; return [lo,hi]; }
@@ -266,7 +312,10 @@ function recolor(){
 // class as the crosshair moves off the baked phenotype (pflag) gate.
 function buildGated(){
   if(!DATA) return; if(!GBUF) GBUF=new Float32Array(DATA.N*2);
-  let n=0; const sel=$('quadMode'); const mode=sel?sel.value:'dp';
+  let n=0;
+  // Primary ring driver: the LIVE 2D flow gate. When a quadrant is selected, the
+  // crosshair's continuous gates drive the rings, so dragging updates them live.
+  const sel=$('quadMode'); const mode=sel?sel.value:'off';
   const xc=xCh(), yc=yCh();
   if(mode!=='off' && xc && yc){
     ensureChannel(xc); ensureChannel(yc);
@@ -282,9 +331,46 @@ function buildGated(){
       else if(mode==='single') hit=X!==Y;
       else if(mode==='dn') hit=!X&&!Y;
       if(hit){ GBUF[2*n]=DATA.x[i]; GBUF[2*n+1]=DATA.y[i]; n++; } }
+    GCOUNT=n; GVER++; return;
+  }
+  // Fallback: the baked pflag mask (checked phenotype gates, AND-ed). A cell is
+  // ringed when ALL the masked bits are set in its pflag (samtools -f semantics).
+  if(PFMASK!==0n){
+    const {lo,hi}=pflagLoHi(), mLo=Number(PFMASK & 0xffffffffn)>>>0, mHi=Number((PFMASK>>32n)&0xffffffffn)>>>0;
+    for(let i=0;i<DATA.N;i++){ if(((lo[i]&mLo)>>>0)===mLo && ((hi[i]&mHi)>>>0)===mHi){ GBUF[2*n]=DATA.x[i]; GBUF[2*n+1]=DATA.y[i]; n++; } }
   }
   GCOUNT=n; GVER++;
 }
+// ---------- pflag ring gate (baked phenotype combos) ----------
+// pflag split into low/high 32-bit halves for fast Number math (bits span 0..63).
+function pflagLoHi(){ if(DATA._pfLo) return {lo:DATA._pfLo,hi:DATA._pfHi};
+  const pf=DATA.pflag, N=DATA.N, lo=new Uint32Array(N), hi=new Uint32Array(N);
+  for(let i=0;i<N;i++){ const v=pf[i]; lo[i]=Number(v & 0xffffffffn)>>>0; hi[i]=Number((v>>32n)&0xffffffffn)>>>0; }
+  return (DATA._pfLo=lo, DATA._pfHi=hi, {lo,hi}); }
+// markers actually gated in this file (their pflag bit is set in ≥1 cell), in bit order
+function gatedChannels(){ return channels.filter(c=>c.pbit>=0 && c.gatedInData).sort((a,b)=>a.pbit-b.pbit); }
+function renderPfChips(){
+  const box=$('pfChips'); if(!box) return; box.innerHTML='';
+  const gm=gatedChannels(); $('nopf').style.display=gm.length?'none':'block';
+  for(const c of gm){ const bit=BigInt(c.pbit), on=((PFMASK>>bit)&1n)===1n;
+    const b=document.createElement('button'); b.className='tg gate'+(on?' on':'');
+    b.textContent=c.name; b.title='pflag bit '+c.pbit;
+    b.onclick=()=>{ PFMASK = ((PFMASK>>bit)&1n)===1n ? (PFMASK & ~(1n<<bit)) : (PFMASK | (1n<<bit)); syncPf(); };
+    box.appendChild(b); }
+}
+function updatePfInfo(){ const el=$('pfInfo'); if(!el) return;
+  if(PFMASK===0n){ el.textContent='no gate selected — no rings'; return; }
+  const names=gatedChannels().filter(c=>((PFMASK>>BigInt(c.pbit))&1n)===1n).map(c=>c.name);
+  el.textContent = GCOUNT.toLocaleString()+' cells match mask '+PFMASK.toString()+(names.length?' ('+names.join(' & ')+')':''); }
+// re-sync everything from PFMASK: chips, the decimal box, the rings, the info line
+function syncPf(){ const m=$('pfMask'); if(m) m.value=PFMASK.toString(); renderPfChips(); buildGated(); updatePfInfo(); render(); }
+// add a marker's bit to the mask (used when a flow marker is picked)
+function pfAdd(c){ if(!c||c.pbit<0||!c.gatedInData) return; PFMASK |= (1n<<BigInt(c.pbit)); }
+$('pfMask').oninput=()=>{ const v=$('pfMask').value.trim(); let m;
+  try { m = v===''?0n:BigInt(v); } catch { return; }                 // ignore mid-typing junk
+  if(m<0n) m=0n; const MAX=(1n<<64n)-1n; if(m>MAX) m=MAX;
+  PFMASK=m; renderPfChips(); buildGated(); updatePfInfo(); render(); };
+$('pfClear').onclick=()=>{ PFMASK=0n; syncPf(); };
 // quadrant counts for the 2D plot's two markers, relative to their crosshair gates
 function drawQuad(){
   if(!DATA) return; const xc=xCh(), yc=yCh(); const box=$('quad'); if(!box) return;
@@ -292,12 +378,17 @@ function drawQuad(){
   const xg=xc.gate, yg=yc.gate, ax=DATA.markers[xc.name], ay=DATA.markers[yc.name], N=DATA.N;
   let dp=0,xp=0,yp=0,dn=0;
   for(let i=0;i<N;i++){ const X=ax[i]>=xg, Y=ay[i]>=yg; if(X&&Y)dp++; else if(X)xp++; else if(Y)yp++; else dn++; }
-  const mx=Math.max(dp,xp,yp,dn,1);
+  const xpos=dp+xp, ypos=dp+yp, pos=dp+xp+yp;          // marker-positive populations
+  const mx=Math.max(dp,xp,yp,dn,1), pct=(n,d)=> d? (n/d*100).toFixed(1)+'%' : '—';
   const rows=[[`${xc.name}+ ${yc.name}+`,dp,'#ffd60a'],[`${xc.name}+ only`,xp,rgb2hex(xc.color)],
               [`${yc.name}+ only`,yp,rgb2hex(yc.color)],['neither',dn,'#5a6270']];
   box.innerHTML=rows.map(([lab,n,col])=>`<div class="qrow"><span class="qlab" title="${lab}">${lab}</span>`+
     `<span class="qbar"><span style="width:${(n/mx*100).toFixed(1)}%;background:${col}"></span></span>`+
-    `<span class="qval">${n.toLocaleString()} · ${(n/N*100).toFixed(1)}%</span></div>`).join('');
+    `<span class="qval">${n.toLocaleString()} · ${pct(n,N)}</span></div>`).join('')
+    + `<div class="muted" style="margin-top:6px;line-height:1.6">`
+    + `of ${xc.name}+ (${xpos.toLocaleString()}): <b style="color:var(--gate)">${pct(dp,xpos)}</b> also ${yc.name}+`
+    + `<br>of ${yc.name}+ (${ypos.toLocaleString()}): <b style="color:var(--gate)">${pct(dp,ypos)}</b> also ${xc.name}+`
+    + `<br><span style="color:#6e7681">double-positive among any-positive (${pos.toLocaleString()}): ${pct(dp,pos)}</span></div>`;
 }
 let _rq=false;
 function refresh(){ recolor(); buildGated(); drawQuad(); render(); }
@@ -308,14 +399,14 @@ function roiColor(i){ const p=[[255,214,10],[255,123,114],[126,231,135],[121,192
 function makeLayers(){
   if (!DATA) return [];
   const layers=[];
-  // painted cflag region (a translucent backdrop under the cells)
-  if (REGION && REGION.canvas) layers.push(new deck.BitmapLayer({
-    id:'cflag-region', image:REGION.canvas, bounds:REGION.bounds,
-    opacity:+$('regOpacity').value, updateTriggers:{ image:REGVER } }));
   layers.push(new deck.ScatterplotLayer({ id:'cells',
     data:{ length:DATA.N, attributes:{ getPosition:{value:POS,size:2}, getFillColor:{value:COLORS,size:4,normalized:true} }},
-    radiusUnits:'pixels', getRadius:+$('psize').value, radiusMinPixels:0.4, radiusMaxPixels:60, stroked:false, pickable:true,
-    updateTriggers:{ getFillColor:COLORVER, getRadius:+$('psize').value } }));
+    radiusUnits:'common', getRadius:CELL_DIAM/2, radiusMinPixels:+$('psize').value, radiusMaxPixels:1000, stroked:false, pickable:true,
+    updateTriggers:{ getFillColor:COLORVER, getRadius:CELL_DIAM } }));
+  // painted cflag region — drawn ON TOP of the cells (toggle with "show on top")
+  if (REGION && REGION.canvas && $('regShow').checked) layers.push(new deck.BitmapLayer({
+    id:'cflag-region', image:REGION.canvas, bounds:REGION.bounds,
+    opacity:+$('regOpacity').value, updateTriggers:{ image:REGVER } }));
   const vis=DATA.rois.filter(r=>r.visible);
   if (vis.length) layers.push(new deck.PolygonLayer({ id:'rois', data:vis,
     getPolygon:d=>d.ring.map(roiXformPt),   // live alignment transform (preview)
@@ -324,28 +415,45 @@ function makeLayers(){
     getLineColor:[120,0,0],               // dark red outline connecting the polygon dots
     getLineWidth:1.8, lineWidthUnits:'pixels',
     updateTriggers:{ getPolygon:RXVER } }));
-  if (GCOUNT>0) layers.push(new deck.ScatterplotLayer({ id:'gated',
+  if (GCOUNT>0){ const rc=hex2rgb($('ringColor').value); layers.push(new deck.ScatterplotLayer({ id:'gated',
     data:{ length:GCOUNT, attributes:{ getPosition:{ value:GBUF.subarray(0,GCOUNT*2), size:2 } }},
-    radiusUnits:'pixels', getRadius:+$('ringSize').value, radiusMinPixels:2, stroked:true, filled:false,
-    getLineColor:[255,214,10], getLineWidth:1.5, lineWidthUnits:'pixels',
-    updateTriggers:{ getPosition:GVER, getRadius:+$('ringSize').value } }));
+    radiusUnits:'pixels', getRadius:+$('ringSize').value, radiusMinPixels:1, stroked:true, filled:false,
+    getLineColor:rc, getLineWidth:1.5, lineWidthUnits:'pixels',
+    updateTriggers:{ getPosition:GVER, getRadius:+$('ringSize').value, getLineColor:$('ringColor').value } })); }
   return layers;
 }
 function render(){ if (deckgl) deckgl.setProps({ layers: makeLayers() }); }
 
 // ---------- zoom/pan clamp ----------
 let VB=null;
-function viewport(){ return { W:Math.max(window.innerWidth-424,50), H:Math.max(window.innerHeight,50) }; }
+function viewport(){ const l=$('panelL'), r=$('panel'), lw=l?l.offsetWidth:0, rw=r?r.offsetWidth:0;
+  return { W:Math.max(window.innerWidth-lw-rw,50), H:Math.max(window.innerHeight,50) }; }
 function fitZoom(){ const {W,H}=viewport(); return Math.log2(Math.min(W/VB.w, H/VB.h)); }
-// bound only the zoom (free pan); ~21 zoom levels around the framing -> generous but finite
+// Zoom limits (free pan): out only until the data is ~half the screen (no postage
+// stamp), in only until the screen width spans MIN_VIEW coord-units (≈10 µm).
+function setZoomBounds(){ const {W}=viewport(); const fit=fitZoom();
+  VB.ZMIN=fit-1; VB.ZMAX=Math.max(fit+0.5, Math.log2(W/MIN_VIEW)); return fit; }
 function clampZoom(vs){ if(!VB || !vs || typeof vs.zoom!=='number') return vs;
   const z=Math.max(VB.ZMIN, Math.min(VB.ZMAX, vs.zoom));
   return { ...vs, zoom:z, minZoom:VB.ZMIN, maxZoom:VB.ZMAX }; }
 function fitView(){ if(!DATA) return; const bx=colMinMax(DATA.x), by=colMinMax(DATA.y);
   VB={ w:Math.max(bx.max-bx.min,1), h:Math.max(by.max-by.min,1) };
-  const fit=fitZoom(); VB.ZMIN=fit-3; VB.ZMAX=fit+18;
+  const fit=setZoomBounds();
   viewState={ target:[(bx.min+bx.max)/2,(by.min+by.max)/2,0], zoom:fit-0.12, minZoom:VB.ZMIN, maxZoom:VB.ZMAX };
-  deckgl.setProps({ viewState }); }
+  deckgl.setProps({ viewState }); updateScaleBar(); }
+// ---------- scale bar ----------
+function niceLen(raw){ if(!(raw>0)) return 1; const p=Math.pow(10,Math.floor(Math.log10(raw))); const f=raw/p; return (f>=5?5:f>=2?2:1)*p; }
+function fmtLen(u){ return u>=1000 ? (u/1000)+' mm' : u+' µm'; }   // assumes µm coordinates
+// pick a "nice" length (1/2/5 ×10ⁿ) ~100 px wide at the current zoom, then size + label the bar
+function updateScaleBar(){
+  const sb=$('scalebar'); if(!sb) return;
+  if(!VB || !viewState || typeof viewState.zoom!=='number'){ sb.style.display='none'; return; }
+  const ppu=Math.pow(2, viewState.zoom);                 // screen pixels per coordinate unit (µm)
+  const L=niceLen(100/ppu), px=Math.max(1, L*ppu);
+  sb.style.display='block';
+  sb.querySelector('.sb-bar').style.width=px+'px';
+  sb.querySelector('.sb-label').textContent=fmtLen(L);
+}
 
 // ---------- channel UI ----------
 function renderChannels(){
@@ -360,7 +468,7 @@ function renderChannels(){
         `<input type="checkbox" ${c.on?'checked':''} data-on="${i}">`+
         `<span class="sw" style="background:${rgb2hex(c.color)}"></span>`+
         `<span class="name">${c.name}</span>`+
-        (c.pbit>=0?`<span class="pf${c.gateFromPflag?' on':''}" title="phenotype available (pflag bit ${c.pbit})${c.gateFromPflag?' — gate set from it':''}">&phi;</span>`:'')+
+        (c.gatedInData?`<span class="pf${c.gateFromPflag?' on':''}" title="gated — pflag bit ${c.pbit} is set in ≥1 cell${c.gateFromPflag?'; gate set from it':''}">&phi;</span>`:'')+
         (c.gateOn?'<span class="gdot" title="gated"></span>':'')+`</div>`;
       if(i===selCh) html+=bcHTML(c);
     }
@@ -500,6 +608,7 @@ function drawFlow(){ const mx=$('xMarker').value, my=$('yMarker').value; if(!mx|
     return { vx:tinv(x0+dx/PW*sx,x2log), vy:tinv(y0+(PH-dy)/PH*sy,y2log) }; }
   $('flow').addEventListener('mousedown', e=>{ if(!flowMeta) return; e.preventDefault();
     const xc=xCh(), yc=yCh(); if(!xc||!yc) return;
+    if($('quadMode').value==='off') $('quadMode').value='dp';   // dragging the crosshair turns the flow-gate rings on
     const cv=$('flow'), W=cv.width, H=cv.height, PW=W-FML-FMR, PH=H-FMT-FMB, {x0,sx,y0,sy}=flowMeta;
     const cx=FML+(tlog(xc.gate,x2log)-x0)/sx*PW, cy=FMT+PH-(tlog(yc.gate,y2log)-y0)/sy*PH, p=px(e);
     const dxp=Math.abs(p.x-cx), dyp=Math.abs(p.y-cy);
@@ -511,8 +620,8 @@ function drawFlow(){ const mx=$('xMarker').value, my=$('yMarker').value; if(!mx|
   window.addEventListener('mousemove', e=>{ if(mode) mv(e); });
   window.addEventListener('mouseup', ()=>{ if(mode){ mode=null; renderChannels(); } });
 })();
-$('xMarker').onchange=()=>{ flowMeta=null; ensureChannel(xCh()); drawFlow(); drawQuad(); buildGated(); render(); };
-$('yMarker').onchange=()=>{ flowMeta=null; ensureChannel(yCh()); drawFlow(); drawQuad(); buildGated(); render(); };
+$('xMarker').onchange=()=>{ flowMeta=null; const c=xCh(); ensureChannel(c); pfAdd(c); $('pfMask').value=PFMASK.toString(); renderPfChips(); drawFlow(); drawQuad(); buildGated(); updatePfInfo(); render(); };
+$('yMarker').onchange=()=>{ flowMeta=null; const c=yCh(); ensureChannel(c); pfAdd(c); $('pfMask').value=PFMASK.toString(); renderPfChips(); drawFlow(); drawQuad(); buildGated(); updatePfInfo(); render(); };
 $('quadMode').onchange=()=>{ buildGated(); render(); };
 $('x2log').onclick=()=>{ x2log=!x2log; $('x2log').classList.toggle('on',x2log); flowMeta=null; drawFlow(); };
 $('y2log').onclick=()=>{ y2log=!y2log; $('y2log').classList.toggle('on',y2log); flowMeta=null; drawFlow(); };
@@ -530,17 +639,28 @@ function onLoaded(){
   // truth — no separate @FL legend to drift out of sync.
   let _mi=0;
   channels=DATA.names.map((n,i)=>{ const kind=DATA.kinds[i]||'M'; const pbit = kind==='M' ? _mi++ : -1;
-    return { name:n, kind, on:false, color:CHCOLORS[i%CHCOLORS.length].slice(), low:MM[n].min, high:MM[n].max, log:false, gateOn:false, gate:MM[n].max, _win:false, pbit, gateFromPflag:false }; });
+    return { name:n, kind, on:false, color:CHCOLORS[i%CHCOLORS.length].slice(), low:MM[n].min, high:MM[n].max, log:false, gateOn:false, gate:MM[n].max, _win:false, pbit, gateFromPflag:false, gatedInData:false }; });
+  // A marker is "gated" only if its pflag bit is set in ≥1 cell. PFLAG_OR = OR of
+  // every cell's pflag (computed from the fast lo/hi halves), so occupying a bit
+  // position is not enough — there must be real gated cells.
+  PFMASK=0n; { const {lo,hi}=pflagLoHi(); let lor=0,hir=0; for(let i=0;i<DATA.N;i++){ lor|=lo[i]; hir|=hi[i]; }
+    PFLAG_OR=(BigInt(hir>>>0)<<32n)|BigInt(lor>>>0); }
+  channels.forEach(c=>{ c.gatedInData = c.pbit>=0 && ((PFLAG_OR>>BigInt(c.pbit))&1n)===1n; });
   selCh = channels.length? 0 : -1;
   if (channels.length){ ensureChannel(channels[0]); channels[0].on=true; }
   renderChannels();
+  $('pfMask').value='0'; renderPfChips(); updatePfInfo();
   flowMeta=null;
   fillMarkerSel($('xMarker')); fillMarkerSel($('yMarker'));
-  if (DATA.names.length){ $('xMarker').value=DATA.names[0]; $('yMarker').value=DATA.names[Math.min(1,DATA.names.length-1)]; ensureChannel(xCh()); ensureChannel(yCh()); drawFlow(); }
+  $('xMarker').value=''; $('yMarker').value=''; drawFlow();   // flow starts empty; picking a marker enables its pflag ring
   const rb=$('rois'); rb.innerHTML=''; $('noroi').style.display=DATA.rois.length?'none':'block';
-  DATA.rois.forEach((r,i)=>{ const d=document.createElement('div'); d.className='roi';
-    d.innerHTML=`<input type="checkbox" ${r.visible?'checked':''}><span class="sw" style="background:rgba(220,40,40,.55);border-color:#780000"></span><span title="${r.name}">${r.name||r.id}</span>`;
+  let tumorA=0, allA=0;
+  DATA.rois.forEach((r,i)=>{ const a=polyArea(r.ring); r._area=a; allA+=a; if(/tumor/i.test(r.name||'')) tumorA+=a;
+    const d=document.createElement('div'); d.className='roi';
+    d.innerHTML=`<input type="checkbox" ${r.visible?'checked':''}><span class="sw" style="background:rgba(220,40,40,.55);border-color:#780000"></span><span title="${r.name}" style="flex:1">${r.name||r.id}</span><span class="muted" style="flex:0 0 auto" title="polygon area">${fmtArea(a)}</span>`;
     d.querySelector('input').onchange=e=>{ DATA.rois[i].visible=e.target.checked; syncRoiAll(); render(); }; rb.appendChild(d); });
+  $('roiAreas').innerHTML = DATA.rois.length ? `<b>tumor</b> total: ${fmtArea(tumorA)} &nbsp;·&nbsp; <b>all</b> ROIs: ${fmtArea(allA)}` : '';
+  $('filename').textContent = LOADED_NAME || 'unnamed file';
   $('stat').textContent=`${DATA.N.toLocaleString()} cells · ${DATA.names.length} markers · ${DATA.rois.length} ROIs`;
   setupRoiXform();
   REGSEL.clear(); REGION=null; renderCflagChips();
@@ -651,15 +771,17 @@ function buildRegion(){
     const cx=Math.round((X[i]-xmin)/pxsize), cy=Math.round((ymax-Y[i])/pxsize);   // image row 0 = ymax
     for (let s=0;s<sten.length;s+=2){ const px=cx+sten[s], py=cy+sten[s+1];
       if (px<0||px>=W||py<0||py>=H) continue; grid[py*W+px]=1; } }
-  const data=new Uint8ClampedArray(W*H*4), c=REGION_COLOR;
-  for (let p=0;p<W*H;p++) if(grid[p]){ const o=p*4; data[o]=c[0]; data[o+1]=c[1]; data[o+2]=c[2]; data[o+3]=255; }
+  const data=new Uint8ClampedArray(W*H*4), c=hex2rgb($('regColor').value); let paintedPx=0;
+  for (let p=0;p<W*H;p++) if(grid[p]){ paintedPx++; const o=p*4; data[o]=c[0]; data[o+1]=c[1]; data[o+2]=c[2]; data[o+3]=255; }
   const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
   cv.getContext('2d').putImageData(new ImageData(data,W,H),0,0);
   REGION={ canvas:cv, bounds:[xmin,ymin,xmax,ymax], n };
-  $('regInfo').textContent = `${n.toLocaleString()} cells · ${W}×${H} px raster`;
+  $('regInfo').textContent = `${n.toLocaleString()} cells · painted area ~${fmtArea(paintedPx*pxsize*pxsize)}`;
 }
 $('regRadius').addEventListener('input', ()=>{ $('regrv').textContent=$('regRadius').value; buildRegion(); render(); });
 $('regOpacity').addEventListener('input', ()=>{ $('regov').textContent=(+$('regOpacity').value).toFixed(2); render(); });
+$('regShow').onchange=()=>{ render(); };
+$('regColor').oninput=()=>{ buildRegion(); render(); };
 $('regClear').onclick=()=>{ REGSEL.clear(); renderCflagChips(); buildRegion(); render(); };
 
 // ---------- file handling ----------
@@ -687,6 +809,7 @@ function endBusy(){ $('dropBusy').style.display='none'; $('dropPrompt').style.di
 //    then ask the server to build a render-capped pack and fetch it.
 //  • fallback: if the server has no staged API, POST the raw bytes to /convert.
 async function handleFile(file){
+  LOADED_NAME=file.name; GALLERY=[]; renderGallery();
   showBusy('Reading file…', file.name);
   try {
     const head = new Uint8Array(await file.slice(0,4).arrayBuffer());
@@ -737,6 +860,60 @@ async function handleFile(file){
   }
 }
 $('file').onchange=e=>{ const f=e.target.files[0]; e.target.value=''; if(f) handleFile(f); };
+
+// ----- folder mode: convert every .byf in a picked folder, then browse via a dropdown -----
+function setProg(frac){ const b=$('dropProgBar'); if(b) b.style.width=Math.round(Math.max(0,Math.min(1,frac))*100)+'%'; }
+// Stage one .byf through the server (upload → build pack); returns its pack meta.
+async function stageConvert(file, onStage){
+  const r = await fetch('/api/upload-url', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ name:file.name, size:file.size }) });
+  if (!r.ok) throw new Error('staged upload API unavailable (HTTP '+r.status+')');
+  const up = await r.json();
+  if (!(up && up.id && up.put_url)) throw new Error('bad upload-url response');
+  onStage && onStage('uploading');
+  const putRes = await fetch(up.put_url, { method:up.method||'PUT', headers:up.headers||{}, body:file });
+  if (!putRes.ok) throw new Error('upload failed (HTTP '+putRes.status+')');
+  onStage && onStage('converting');
+  const packRes = await fetch('/api/pack', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id:up.id }) });
+  if (!packRes.ok) throw new Error('convert failed (HTTP '+packRes.status+')');
+  return await packRes.json();   // {pack_url, cells, rendered, subsampled}
+}
+async function handleFolder(fileList){
+  const byfs = [...fileList].filter(f=>/\.byf$/i.test(f.name)).sort((a,b)=>a.name.localeCompare(b.name));
+  if(!byfs.length){ alert('No .byf files found in that folder.'); return; }
+  GALLERY=[]; let failed=0;
+  showBusy('Converting folder…', byfs.length+' .byf files');
+  $('dropProg').style.display='block'; setProg(0);
+  for(let i=0;i<byfs.length;i++){ const f=byfs[i];
+    showBusy(`Converting ${i+1} / ${byfs.length}`, f.name);
+    try { const meta = await stageConvert(f, st=> showBusy(`Converting ${i+1} / ${byfs.length} (${st})`, f.name));
+      GALLERY.push({ name:f.name, packUrl:meta.pack_url, cells:meta.cells, rendered:meta.rendered, subsampled:meta.subsampled }); }
+    catch(e){ failed++; console.error('convert failed:', f.name, e); }
+    setProg((i+1)/byfs.length);
+  }
+  $('dropProg').style.display='none';
+  if(!GALLERY.length){ endBusy(); alert('All '+byfs.length+' conversion(s) failed — see the console.'); return; }
+  renderGallery();
+  if(failed) console.warn(failed+' of '+byfs.length+' file(s) failed to convert');
+  await loadFromGallery(0);
+}
+function renderGallery(){
+  const sel=$('gallery'); if(!sel) return;
+  if(!GALLERY.length){ sel.style.display='none'; sel.innerHTML=''; return; }
+  sel.style.display='block'; sel.innerHTML='';
+  GALLERY.forEach((g,i)=> sel.appendChild(new Option(g.name+(g.subsampled?' ·sub':''), String(i))));
+}
+async function loadFromGallery(idx){
+  const g=GALLERY[idx]; if(!g) return;
+  showBusy('Loading…', g.name);
+  try { const ab = await (await fetch(g.packUrl)).arrayBuffer();
+    LOADED_NAME=g.name; loadArrayBuffer(ab); endBusy();
+    const sel=$('gallery'); if(sel) sel.value=String(idx);
+    if (g.subsampled) $('stat').textContent='showing '+g.rendered.toLocaleString()+' of '+g.cells.toLocaleString()+' cells (subsampled to fit)';
+  } catch(err){ console.error(err); endBusy(); alert('Could not load '+g.name+'\n'+err.message); }
+}
+$('folder').onchange=e=>{ const fs=e.target.files; e.target.value=''; if(fs&&fs.length) handleFolder(fs); };
+$('gallery').onchange=()=>{ loadFromGallery(+$('gallery').value); };
 ['dragover','drop'].forEach(ev=> document.addEventListener(ev, e=> e.preventDefault()));
 document.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
 
@@ -746,13 +923,13 @@ function tooltipFor(i){ if(i<0||!DATA) return null; const id=DATA.id[i], sid=id>
   channels.filter(c=>c.on).forEach(c=> s+=`\n${c.name} ${DATA.markers[c.name][i].toFixed(3)}`); return s; }
 window.addEventListener('load', ()=>{
   deckgl=new deck.Deck({ canvas:'deck-canvas', views:new deck.OrthographicView({flipY:true}), controller:true, viewState,
-    onViewStateChange:e=>{ viewState=clampZoom(e.viewState); deckgl.setProps({viewState}); }, layers:[],
+    onViewStateChange:e=>{ viewState=clampZoom(e.viewState); deckgl.setProps({viewState}); updateScaleBar(); }, layers:[],
     onHover:info=>{ const t=$('tooltip');
       if (info&&info.layer&&info.layer.id==='cells'&&info.index>=0){ t.style.display='block'; t.style.left=(info.x+14)+'px'; t.style.top=(info.y+10)+'px'; t.textContent=tooltipFor(info.index); }
       else t.style.display='none'; } });
-  window.addEventListener('resize', ()=>{ if(!DATA||!VB) return; const fit=fitZoom(); VB.ZMIN=fit-3; VB.ZMAX=fit+18; viewState=clampZoom(viewState); deckgl.setProps({viewState}); });
+  window.addEventListener('resize', ()=>{ if(!DATA||!VB) return; setZoomBounds(); viewState=clampZoom(viewState); deckgl.setProps({viewState}); updateScaleBar(); });
   const pre=new URLSearchParams(location.search).get('file');
-  if (pre){ showBusy('Converting…', 'preparing '+pre+' on the server');
+  if (pre){ LOADED_NAME=decodeURIComponent(pre.split('/').pop().split('?')[0]); GALLERY=[]; renderGallery(); showBusy('Converting…', 'preparing '+pre+' on the server');
     fetch(pre).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
       .then(ab=>{ loadArrayBuffer(ab); endBusy(); })
       .catch(err=>{ console.error(err); endBusy(); $('stat').textContent='auto-load failed'; alert('Could not auto-load '+pre+'\n'+err.message); }); }
