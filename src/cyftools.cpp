@@ -1,6 +1,7 @@
 #include "cell_column.h"
 #include "cell_table.h"
 #include "cell_processor.h"
+#include "cyf_io.h"
 #include "color_map.h"
 
 #include <unistd.h> // or #include <getopt.h> on Windows systems
@@ -775,6 +776,23 @@ static int flagsetfunc(int argc, char** argv) {
 }
 
 
+// Try the fast block-copy reheader for a header-only command. `edit(h)` mutates the
+// header in place (returns false to abort the whole command). Returns 0 (fast path
+// succeeded — caller should `return 0`), 1 (the edit refused — caller should
+// `return 1`), or -1 (not applicable — caller should fall back to streaming).
+// The fast path never decodes a cell: it copies the compressed record blocks
+// verbatim into a brand-new output file. The input file is never modified.
+template <typename EditFn>
+static int tryFastReheader(const std::string& infile, const std::string& outfile, EditFn edit) {
+  if (infile == "-" || outfile == "-") return -1;        // need real seekable files
+  CellHeader h;
+  if (!cyf::readByfHeader(infile, h)) return -1;          // unreadable / not a CYF header
+  if (!edit(h)) return 1;                                 // command refused the edit
+  if (!cyf::fastReheaderByf(infile, outfile, h)) return -1;  // old layout / schema change
+  if (opt::verbose) std::cerr << "...fast reheader (records copied verbatim)" << std::endl;
+  return 0;
+}
+
 static int reheaderfunc(int argc, char** argv) {
 
   const char* shortopts = "vr:s:";
@@ -941,6 +959,11 @@ static int addtagfunc(int argc, char** argv) {
     if (sid.empty() || opt::infile == "-") sid = "sample";
     proc.SetGroup(group, sid);
   }
+
+  // fast path: a header-only edit, so copy the compressed records verbatim
+  { int fr = tryFastReheader(opt::infile, opt::outfile,
+        [&](CellHeader& h){ return proc.computeNewHeader(h); });
+    if (fr >= 0) return fr; }
 
   if (!table.StreamTable(proc, opt::infile))
     return 1;
@@ -1202,6 +1225,11 @@ static int addroifunc(int argc, char** argv) {
                   : do_add     ? AddTagProcessor::ROI_ADD
                                : AddTagProcessor::ROI_REQUIRE);
 
+  // fast path: ROIs live in the header, so copy the compressed records verbatim
+  { int fr = tryFastReheader(opt::infile, opt::outfile,
+        [&](CellHeader& h){ return proc.computeNewHeader(h); });
+    if (fr >= 0) return fr; }
+
   if (table.StreamTable(proc, opt::infile))   // non-zero => read/IO error
     return 1;
   if (proc.aborted())                          // existing ROIs, no --add/--overwrite
@@ -1310,6 +1338,11 @@ static int scaleroifunc(int argc, char** argv) {
   proc.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   proc.SetParams(factor, xoff, yoff, flipx, flipy);
 
+  // fast path: header-only @RO transform -> copy the compressed records verbatim
+  { int fr = tryFastReheader(opt::infile, opt::outfile,
+        [&](CellHeader& h){ return proc.computeNewHeader(h); });
+    if (fr >= 0) return fr; }
+
   if (table.StreamTable(proc, opt::infile))
     return 1;
 
@@ -1352,6 +1385,11 @@ static int clearroifunc(int argc, char** argv) {
   ClearRoiProcessor proc;
   proc.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
   proc.SetParams(name, sample);
+
+  // fast path: header-only @RO removal -> copy the compressed records verbatim
+  { int fr = tryFastReheader(opt::infile, opt::outfile,
+        [&](CellHeader& h){ return proc.computeNewHeader(h); });
+    if (fr >= 0) return fr; }
 
   if (!table.StreamTable(proc, opt::infile))
     return 1;

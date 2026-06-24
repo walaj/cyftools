@@ -342,6 +342,12 @@ public:
     m_group = label; m_group_default_id = default_sa_id;
   }
 
+  // Apply this command's header edit to `h` (add/merge tags, ROI policy, group,
+  // provenance, sort). Shared by ProcessHeader and the fast block-copy reheader so
+  // both produce a byte-identical header. Returns false if the edit is refused
+  // (ROI_REQUIRE hit existing @RO without --add/--overwrite).
+  bool computeNewHeader(CellHeader& h);
+
   int ProcessHeader(CellHeader& header) override;
 
   int ProcessLine(Cell& cell) override;
@@ -369,6 +375,10 @@ public:
     m_factor = factor; m_xoff = xoff; m_yoff = yoff; m_flipx = flipx; m_flipy = flipy;
   }
 
+  // Apply the @RO coordinate transform to `h` (+ provenance, sort). Shared by
+  // ProcessHeader and the fast block-copy reheader.
+  bool computeNewHeader(CellHeader& h);
+
   int ProcessHeader(CellHeader& header) override;
   int ProcessLine(Cell& cell) override;
 
@@ -387,6 +397,10 @@ public:
   void SetParams(const std::string& name_filter, long sample_filter) {
     m_name = name_filter; m_sample = sample_filter;
   }
+
+  // Apply the @RO removal to `h` (+ provenance, sort). Shared by ProcessHeader and
+  // the fast block-copy reheader. Always succeeds.
+  bool computeNewHeader(CellHeader& h);
 
   int ProcessHeader(CellHeader& header) override;
   int ProcessLine(Cell& cell) override;

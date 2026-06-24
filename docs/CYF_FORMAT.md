@@ -273,13 +273,15 @@ All multi-byte integers and floats are **little-endian**. The binary stream is a
 |--------|-------|------|-----------------|
 | 0 | `magic` | `char[4]` | `43 59 46 01` = `"CYF\x01"` |
 | 4 | `version` | `u16` | format major version (1 for this spec) |
-| 6 | `reserved` | `u16` | 0 |
+| 6 | `flags` | `u16` | layout flags (was reserved=0). Bit 0 = **reheader-friendly** (§10.1) |
 | 8 | `l_header` | `u32` | byte length of the header text block |
-| 12 | `header_text` | `char[l_header]` | the full text header (the `@`-lines), UTF-8, newline-separated, stored verbatim |
+| 12 | `header_text` | `char[l_header]` | the full text header (the `@`-lines), UTF-8, newline-separated, stored verbatim. May be padded past the last `@`-line with filler (any non-`@` lines), which readers ignore. |
 | 12+`l_header` | `n_dcol` | `u32` | number of data columns |
 | … | `dcol_types` | `u8[n_dcol]` | the type code of each data column, in header order |
 
 The header is stored as the same UTF-8 text used by the text format, making text↔binary conversion lossless. The `dcol_types` array lets a reader decode records by offset arithmetic without parsing the header text, and lets a reader verify that its header parse agrees with the writer.
+
+The `flags` field was a reserved zero in earlier writers; readers must ignore unknown bits, and a zero value is always valid (it just means the fast-reheader optimization below is unavailable). Padding the `header_text` is invisible to any reader: `l_header` covers the padding and the header grammar skips non-`@` lines.
 
 ### 7.2 Record stream
 
@@ -349,6 +351,15 @@ An implementation selects the form to write from the output extension: `.cyf` �
 
 - **BGZF container.** The §7 byte stream is wrapped, unchanged, in BGZF — blocked gzip with a `BC` extra field per block and the standard 28-byte EOF block. A `.byf` file begins with the gzip magic `1f 8b`; decompressing it yields the §7 stream, beginning with the `CYF\x01` magic. Because it is gzip, `.byf` is readable by `zcat`/`bgzip`. Readers detect the encoding from the leading bytes (`@` → text; `1f 8b` → BGZF; `CYF\x01` → bare binary). BGZF also carries the virtual file offsets (block offset + in-block offset) used for random access.
 - **Index (`.cyi`, deferred).** A coordinate index (binning the slide in x/y, after `.bai`/`.csi`) or a sample/id index, built on BGZF virtual offsets, would allow fetching the cells in a region or sample without a full scan. The `@HD SO:` sort-order field is the hook that makes an index meaningful.
+
+### 10.1 Reheader-friendly layout (fast reheader)
+
+When the preamble `flags` bit 0 is set, the writer has laid the file out so the header can be replaced without touching the cell records — the same trick `samtools reheader` uses for BAM:
+
+- The `header_text` is **padded** to a capacity (the writer rounds up to a 64 KiB granularity), so a replacement header has room to grow without re-laying-out the file.
+- A **BGZF block boundary is flushed immediately after the preamble** (`magic`…`dcol_types`), so the cell records begin on their own BGZF block(s).
+
+A reheader then walks BGZF blocks until the cumulative uncompressed size equals the preamble size, writes new header block(s), and **copies the remaining compressed record blocks verbatim** (followed by a fresh EOF block) — no cell is decoded. This requires the column schema (`n_dcol`/`dcol_types`) to be unchanged; header-only commands (`addtag`, `addroi`, `clearroi`, `scaleroi`) qualify, and fall back to a full streaming rewrite for files without the flag. Because the padding and flag are transparent (§7.1), files written this way are read identically by older readers.
 
 ---
 

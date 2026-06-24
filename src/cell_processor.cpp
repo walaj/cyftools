@@ -1076,31 +1076,30 @@ int CleanProcessor::ProcessLine(Cell& cell) {
 
 }
 
-int AddTagProcessor::ProcessHeader(CellHeader& header) {
-
-  m_header = header;
+// The header edit, shared by ProcessHeader (full rewrite) and the fast block-copy
+// reheader. Returns false if the ROI add policy refuses the operation.
+bool AddTagProcessor::computeNewHeader(CellHeader& h) {
 
   // ROI add/overwrite policy (used by addroi): refuse to silently add onto a file
   // that already has ROIs unless the user picked --add or --overwrite.
   if (m_roi_mode != ROI_NONE) {
     size_t existing = 0;
-    for (const auto& t : m_header) if (t.type == Tag::RO_TAG) ++existing;
+    for (const auto& t : h) if (t.type == Tag::RO_TAG) ++existing;
     if (existing > 0 && m_roi_mode == ROI_REQUIRE) {
       std::cerr << "cyftools addroi: file already has " << existing
                 << " ROI(s). Pass --add to append or --overwrite to replace." << std::endl;
-      m_aborted = true;
-      return ONLY_WRITE_HEADER;   // stop before opening output -> no file written
+      return false;
     }
     if (existing > 0 && m_roi_mode == ROI_OVERWRITE)
-      m_header.RemoveRoiTags("", -1);
+      h.RemoveRoiTags("", -1);
   }
 
   // ROIs are appended (each polygon is its own @RO; an --add of the same file
   // really appends, even when ids collide). Non-ROI tags merge their fields into
   // an existing same-class/same-id tag (the addtag behavior).
   for (const auto& t : m_tags) {
-    if (m_roi_mode != ROI_NONE) m_header.appendRawTag(t);
-    else                        m_header.UpsertTag(t);
+    if (m_roi_mode != ROI_NONE) h.appendRawTag(t);
+    else                        h.UpsertTag(t);
   }
 
   // optional sample group/category -> @SA GP field. Merge into the file's
@@ -1108,19 +1107,24 @@ int AddTagProcessor::ProcessHeader(CellHeader& header) {
   // (the input filename stem) only if the file has no @SA tag yet.
   if (!m_group.empty()) {
     std::string sid = m_group_default_id;
-    for (const auto& t : m_header) if (t.type == Tag::SA_TAG) { sid = t.id; break; }
-    m_header.UpsertTag(Tag(Tag::SA_TAG, sid, std::string("GP:") + m_group));
+    for (const auto& t : h) if (t.type == Tag::SA_TAG) { sid = t.id; break; }
+    h.UpsertTag(Tag(Tag::SA_TAG, sid, std::string("GP:") + m_group));
   }
 
-  // just in time, make the output stream
-  this->SetupOutputStream();
+  h.addTag(Tag(Tag::PG_TAG, "", m_cmd));   // provenance
+  h.SortTags();
+  return true;
+}
 
-  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));   // provenance
-  m_header.SortTags();
-
+int AddTagProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+  if (!computeNewHeader(m_header)) {
+    m_aborted = true;
+    return ONLY_WRITE_HEADER;   // stop before opening output -> no file written
+  }
+  this->SetupOutputStream();    // just in time, make the output stream
   assert(m_archive);
   (*m_archive)(m_header);
-
   return HEADER_NO_ACTION;
 }
 
@@ -1128,9 +1132,7 @@ int AddTagProcessor::ProcessLine(Cell& cell) {
   return WRITE_CELL;   // pass every cell through unchanged
 }
 
-int ScaleRoiProcessor::ProcessHeader(CellHeader& header) {
-  m_header = header;
-
+bool ScaleRoiProcessor::computeNewHeader(CellHeader& h) {
   // clean number formatting (no scientific notation for typical coords)
   auto fmtnum = [](double v) {
     char buf[32];
@@ -1141,7 +1143,7 @@ int ScaleRoiProcessor::ProcessHeader(CellHeader& header) {
   // scale every @RO polygon's PT coordinates; collect first, then upsert (so we
   // don't mutate the tag vector while iterating it).
   std::vector<Tag> updates;
-  for (const auto& t : m_header) {
+  for (const auto& t : h) {
     if (t.type != Tag::RO_TAG) continue;
     std::istringstream ps(t.GetField("PT"));
     std::string pair, out;
@@ -1160,11 +1162,17 @@ int ScaleRoiProcessor::ProcessHeader(CellHeader& header) {
     }
     updates.push_back(Tag(Tag::RO_TAG, t.id, std::string("PT:") + out));   // by-value ctor: no ODR-use of RO_TAG
   }
-  for (auto& u : updates) m_header.UpsertTag(u);   // PT field overrides the old one
+  for (auto& u : updates) h.UpsertTag(u);   // PT field overrides the old one
 
+  h.addTag(Tag(Tag::PG_TAG, "", m_cmd));     // provenance
+  h.SortTags();
+  return true;
+}
+
+int ScaleRoiProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+  computeNewHeader(m_header);
   this->SetupOutputStream();
-  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));     // provenance
-  m_header.SortTags();
   (*m_archive)(m_header);
   return HEADER_NO_ACTION;
 }
@@ -1173,15 +1181,19 @@ int ScaleRoiProcessor::ProcessLine(Cell& cell) {
   return WRITE_CELL;   // pass every cell through unchanged
 }
 
-int ClearRoiProcessor::ProcessHeader(CellHeader& header) {
-  m_header = header;
-  const size_t n = m_header.RemoveRoiTags(m_name, m_sample);
+bool ClearRoiProcessor::computeNewHeader(CellHeader& h) {
+  const size_t n = h.RemoveRoiTags(m_name, m_sample);
   if (m_verbose)
     std::cerr << "cyftools clearroi: removed " << n << " @RO tag(s)" << std::endl;
+  h.addTag(Tag(Tag::PG_TAG, "", m_cmd));     // provenance
+  h.SortTags();
+  return true;
+}
 
+int ClearRoiProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+  computeNewHeader(m_header);
   this->SetupOutputStream();
-  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));     // provenance
-  m_header.SortTags();
   (*m_archive)(m_header);
   return HEADER_NO_ACTION;
 }

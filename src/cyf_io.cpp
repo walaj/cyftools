@@ -1,10 +1,17 @@
 #include "cyf_io.h"
+#include "bgzf.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
+
+#include <zlib.h>
 
 namespace cyf {
 
@@ -227,6 +234,42 @@ CellHeader parseHeaderText(const std::string& text) {
 }
 
 // ============================================================ CyfWriter
+// Reheader-friendly layout (reserved-u16 flag = 1): the header text is padded up
+// to a capacity and a BGZF block boundary is flushed right after the header, so
+// the cell records start on their own BGZF block(s). `reheader` can then rewrite
+// the header (within the padded capacity) and copy the compressed record blocks
+// verbatim, without re-encoding any cell. Fully backward-compatible: l_header
+// covers the padding, the parser skips the non-@ filler, and old readers that
+// ignore the reserved field read the file unchanged.
+static const uint16_t REHEADER_FRIENDLY = 1;
+static uint32_t headerCapacityFor(std::size_t hlen) {
+  const uint32_t unit = 64u * 1024u;                 // 64 KiB granularity; storage is cheap
+  uint32_t cap = unit;
+  while (cap < hlen + 1024) cap += unit;             // keep ≥ ~1 KiB slack for growth
+  return cap;
+}
+
+// Serialize the binary CYF header (reheader-friendly layout) into `os` and flush a
+// BGZF block boundary after it. Shared by CyfWriter::writeHeader and fastReheaderByf
+// so the two always emit byte-identical header framing.
+static void writeBinaryHeader(std::ostream& os, const CellHeader& h) {
+  const std::vector<CyfValueType> types = h.ColumnTypes();
+  std::string htext = renderHeaderText(h);
+  const uint32_t cap = headerCapacityFor(htext.size());
+  if (htext.size() < cap) {                          // pad with a non-@ filler line
+    htext.push_back('\n');
+    htext.append(cap - htext.size(), ' ');
+  }
+  os.write((const char*)MAGIC, 4);
+  putu16(os, FORMAT_VERSION);
+  putu16(os, REHEADER_FRIENDLY);                     // reserved -> layout flag
+  putu32(os, (uint32_t)htext.size());
+  os.write(htext.data(), (std::streamsize)htext.size());
+  putu32(os, (uint32_t)types.size());
+  for (CyfValueType t : types) os.put(cyfTypeCode(t));
+  os.flush();                                        // close the header's BGZF block(s)
+}
+
 void CyfWriter::writeHeader(const CellHeader& h) {
   if (m_header_written) throw std::runtime_error("CYF: header already written");
 
@@ -238,17 +281,7 @@ void CyfWriter::writeHeader(const CellHeader& h) {
   for (CyfValueType t : m_types)
     if (t != CyfValueType::Float) { m_all_float = false; break; }
 
-  const std::string htext = renderHeaderText(h);
-
-  m_os.write((const char*)MAGIC, 4);
-  putu16(m_os, FORMAT_VERSION);
-  putu16(m_os, 0);                                  // reserved
-  putu32(m_os, (uint32_t)htext.size());
-  m_os.write(htext.data(), (std::streamsize)htext.size());
-  putu32(m_os, (uint32_t)m_types.size());
-  for (CyfValueType t : m_types)
-    m_os.put(cyfTypeCode(t));                        // per-column type codes
-
+  writeBinaryHeader(m_os, h);
   m_header_written = true;
 }
 
@@ -523,6 +556,109 @@ CyfTextReader::Status CyfTextReader::readCell(Cell& c) {
     for (std::size_t i = 5; i < f.size(); ++i) c.cols.push_back(std::stof(f[i]));
   } catch (const std::exception&) { return BADFORMAT; }
   return OK;
+}
+
+// ============================================================ fast reheader
+// Read only the header of a (possibly BGZF) byf/cyf file into `out`.
+bool readByfHeader(const std::string& file, CellHeader& out) {
+  std::ifstream f(file, std::ios::binary);
+  if (!f) return false;
+  std::unique_ptr<std::istream> dec;
+  openMaybeBgzfInput(f, dec);                  // dec = decompressed (or pass-through) bytes
+  if (!dec) return false;
+  CyfReader r(*dec);
+  return r.readHeader(out);
+}
+
+static uint32_t getu32s(const std::string& s, std::size_t off) {
+  return getu32(reinterpret_cast<const unsigned char*>(s.data()) + off);
+}
+
+// Rewrite ONLY the header of `infile` into `outfile`, copying the compressed cell
+// records verbatim — no cell is ever decoded. Requires the reheader-friendly layout
+// (records block-aligned, reserved flag set) and an UNCHANGED column schema. Returns
+// false (caller should fall back to a full streaming rewrite) for old/un-flagged
+// files, a header that straddles a block boundary, or any schema change.
+bool fastReheaderByf(const std::string& infile, const std::string& outfile,
+                     const CellHeader& newHeader) {
+  std::ifstream in(infile, std::ios::binary);
+  if (!in) return false;
+
+  // Walk BGZF blocks, decompressing the header block(s), until the cumulative
+  // uncompressed size reaches the header region (12 + l_header + 4 + ncol bytes).
+  std::string hbuf;
+  uint64_t cum = 0, record_offset = 0;
+  uint32_t lh = 0, ncol = 0; uint16_t reserved = 0;
+  bool have_lh = false, found = false;
+  for (;;) {
+    unsigned char bh[18];
+    in.read((char*)bh, 18);
+    if (in.gcount() != 18) break;
+    if (bh[0] != 0x1f || bh[1] != 0x8b) break;
+    const unsigned blocklen = (unsigned)(bh[16] | (bh[17] << 8)) + 1;
+    if (blocklen < 26) break;
+    const unsigned clen = blocklen - 18 - 8;
+    std::vector<unsigned char> cdata(clen);
+    if (clen && in.read((char*)cdata.data(), clen).gcount() != (std::streamsize)clen) break;
+    unsigned char tail[8];
+    if (in.read((char*)tail, 8).gcount() != 8) break;
+    const uint32_t isize = tail[4] | (tail[5] << 8) | (tail[6] << 16) | ((uint32_t)tail[7] << 24);
+    std::string un(isize, '\0');
+    if (isize) {
+      z_stream zs; std::memset(&zs, 0, sizeof(zs));
+      if (inflateInit2(&zs, -15) != Z_OK) return false;
+      zs.next_in = cdata.data(); zs.avail_in = clen;
+      zs.next_out = (Bytef*)&un[0]; zs.avail_out = isize;
+      const int rc = inflate(&zs, Z_FINISH); inflateEnd(&zs);
+      if (rc != Z_STREAM_END) return false;
+    }
+    hbuf += un; cum += isize;
+    if (!have_lh && hbuf.size() >= 12) {
+      if (std::memcmp(hbuf.data(), MAGIC, 4) != 0) return false;
+      reserved = (unsigned char)hbuf[6] | ((unsigned char)hbuf[7] << 8);
+      lh = getu32s(hbuf, 8);
+      have_lh = true;
+    }
+    if (have_lh && hbuf.size() >= (std::size_t)12 + lh + 4) {
+      ncol = getu32s(hbuf, 12 + lh);
+      const uint64_t hregion = 12ull + lh + 4 + ncol;
+      if (cum == hregion) { record_offset = (uint64_t)in.tellg(); found = true; break; }
+      if (cum > hregion) return false;        // header straddles a block boundary
+    }
+  }
+  if (!found || reserved != REHEADER_FRIENDLY) return false;
+
+  // The column schema must be unchanged (records depend on it byte-for-byte).
+  const std::vector<CyfValueType> nt = newHeader.ColumnTypes();
+  if (nt.size() != ncol) return false;
+  for (uint32_t i = 0; i < ncol; ++i)
+    if ((unsigned char)cyfTypeCode(nt[i]) != (unsigned char)hbuf[12 + lh + 4 + i]) return false;
+
+  // record-block region = [record_offset, filesize - 28)  (minus the BGZF EOF marker)
+  in.clear(); in.seekg(0, std::ios::end);
+  const uint64_t fsize = (uint64_t)in.tellg();
+  if (fsize < record_offset + 28) return false;
+  uint64_t left = fsize - 28 - record_offset;
+
+  std::ofstream out(outfile, std::ios::binary);
+  if (!out) return false;
+  {
+    BgzfOStreambuf zbuf(out);
+    std::ostream zos(&zbuf);
+    writeBinaryHeader(zos, newHeader);          // new header block(s) + flush -> out
+    in.clear(); in.seekg((std::streamoff)record_offset);
+    std::vector<char> buf(1 << 16);
+    while (left > 0) {
+      const std::streamsize chunk = (std::streamsize)std::min<uint64_t>(left, buf.size());
+      in.read(buf.data(), chunk);
+      const std::streamsize got = in.gcount();
+      if (got <= 0) return false;
+      out.write(buf.data(), got);
+      left -= (uint64_t)got;
+    }
+  }   // ~BgzfOStreambuf appends the BGZF EOF marker after the copied record blocks
+  out.flush();
+  return out.good();
 }
 
 } // namespace cyf

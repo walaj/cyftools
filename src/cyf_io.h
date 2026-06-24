@@ -168,4 +168,15 @@ private:
 // into *out, like detectCyf.
 bool detectText(std::istream& src, std::unique_ptr<std::istream>& out);
 
+// Read only the header of a byf/cyf file into `out`. Returns false on I/O error.
+bool readByfHeader(const std::string& file, CellHeader& out);
+
+// Fast reheader: rewrite ONLY the header of `infile` into `outfile`, copying the
+// compressed cell records verbatim (no cell is decoded). Returns false — caller
+// should fall back to a full streaming rewrite — for a non-reheader-friendly
+// layout (old/un-flagged file or a header that straddles a BGZF block) or any
+// column-schema change. Writes a brand-new file; the input is never modified.
+bool fastReheaderByf(const std::string& infile, const std::string& outfile,
+                     const CellHeader& newHeader);
+
 } // namespace cyf
