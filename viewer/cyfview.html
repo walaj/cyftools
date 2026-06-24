@@ -82,6 +82,7 @@
     <div class="spinner"></div>
     <div class="big" id="dropMsg">Working…</div>
     <div class="muted" id="dropSub"></div>
+    <div id="dropProc" style="display:none; font:11px/1.4 Menlo,Consolas,monospace; color:#6e7681; max-width:320px; text-align:center;"></div>
     <div id="dropProg" style="display:none; width:260px; height:6px; background:#21262d; border:1px solid var(--line); border-radius:3px; overflow:hidden;"><div id="dropProgBar" style="height:100%; width:0; background:var(--accent); transition:width .2s;"></div></div>
   </div>
 </div>
@@ -144,6 +145,25 @@
     <div class="muted" id="noroi" style="display:none">none in this file</div>
     <div class="muted" id="roiAreas" style="margin-top:6px"></div>
 
+    <div style="border-top:1px solid var(--line); margin-top:9px; padding-top:9px;">
+      <div class="row">
+        <button id="drawToggle" class="tg" style="flex:0 0 auto">✏️ draw ROI</button>
+        <input id="drawName" type="text" placeholder="name (e.g. tumor2)">
+      </div>
+      <div id="drawCtl" class="row" style="display:none; margin-top:5px">
+        <button id="drawFinish" class="primary" style="flex:1">finish polygon</button>
+        <button id="drawUndo" style="flex:0 0 auto">undo pt</button>
+        <button id="drawCancel" style="flex:0 0 auto">cancel</button>
+      </div>
+      <div class="hint" id="drawHint" style="display:none">click the map to add vertices · drag to pan · ≥3 points, then “finish”. delete any ROI with its ✕.</div>
+    </div>
+
+    <div id="roi-edits" style="display:none; border-top:1px solid var(--line); margin-top:9px; padding-top:9px;">
+      <div class="grp">Save ROI edits — run this (the viewer never writes your file)</div>
+      <textarea id="roiEditCmd" readonly rows="4" style="width:100%; background:#0d1117; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:5px 7px; font:11px/1.4 Menlo,Consolas,monospace; resize:vertical;"></textarea>
+      <div class="row" style="margin-top:5px"><button id="roiEditCopy" class="primary" style="flex:0 0 auto">copy command</button><span class="hint" id="roiEditCopied" style="flex:1"></span></div>
+    </div>
+
     <div id="roi-xform" style="display:none; margin-top:10px; border-top:1px solid var(--line); padding-top:9px;">
       <div class="grp">Align ROIs (live preview — does not change the file)</div>
       <div class="row">
@@ -200,6 +220,11 @@
 let DATA=null, POS=null, COLORS=null, COLORVER=0, MM={}, deckgl=null, LOADED_NAME='', GALLERY=[];
 let RX={ scale:1, ox:0, oy:0, fx:false, fy:false }, RXVER=0;   // ROI alignment transform (preview)
 let REGSEL=new Set(), REGION=null, REGVER=0;   // painted cflag-region overlay
+let ROICOLORVER=0;   // bumps when an ROI's color changes
+let DRAWING=false, DRAWVERTS=[], DRAWVER=0, DRAWN_N=0, DELETED=[];   // draw new ROIs / mark deletions — persisted via a generated command, never written from the browser
+// default ROI fill color by name (case-insensitive); the user can override per ROI
+const ROI_CATS=[ {re:/tumor/i, rgb:[220,55,55]}, {re:/normal/i, rgb:[235,205,55]}, {re:/artifact|error|blacklist/i, rgb:[40,200,210]} ];
+function roiDefaultColor(name){ for(const c of ROI_CATS) if(c.re.test(name||'')) return c.rgb.slice(); return [150,160,180]; }
 const REGION_COLOR=[90,180,255];
 // fallback cflag names (cysift.h vocabulary) when the file has no @FL cflag tags
 const CFLAG_NAMES={0:'Tumor',1:'Mark',2:'Margin',3:'TumorManual',4:'Tcell',5:'TLS',
@@ -411,10 +436,16 @@ function makeLayers(){
   if (vis.length) layers.push(new deck.PolygonLayer({ id:'rois', data:vis,
     getPolygon:d=>d.ring.map(roiXformPt),   // live alignment transform (preview)
     stroked:true, filled:true,
-    getFillColor:[220,40,40,55],          // semi-transparent red fill
-    getLineColor:[120,0,0],               // dark red outline connecting the polygon dots
+    getFillColor:d=>{ const c=d.color||[150,160,180]; return [c[0],c[1],c[2],70]; },           // per-ROI fill (default by name, user-editable)
+    getLineColor:d=>{ const c=d.color||[150,160,180]; return [c[0]>>1,c[1]>>1,c[2]>>1,255]; }, // darker outline
     getLineWidth:1.8, lineWidthUnits:'pixels',
-    updateTriggers:{ getPolygon:RXVER } }));
+    updateTriggers:{ getPolygon:RXVER, getFillColor:ROICOLORVER, getLineColor:ROICOLORVER } }));
+  if (DRAWING && DRAWVERTS.length){     // in-progress hand-drawn polygon
+    if (DRAWVERTS.length>=2) layers.push(new deck.PathLayer({ id:'draw-path', data:[DRAWVERTS],
+      getPath:d=>d, getColor:[88,166,255,230], getWidth:2, widthUnits:'pixels', updateTriggers:{ getPath:DRAWVER } }));
+    layers.push(new deck.ScatterplotLayer({ id:'draw-verts', data:DRAWVERTS,
+      getPosition:d=>d, getRadius:4, radiusUnits:'pixels', radiusMinPixels:3, getFillColor:[88,166,255], updateTriggers:{ getPosition:DRAWVER } }));
+  }
   if (GCOUNT>0){ const rc=hex2rgb($('ringColor').value); layers.push(new deck.ScatterplotLayer({ id:'gated',
     data:{ length:GCOUNT, attributes:{ getPosition:{ value:GBUF.subarray(0,GCOUNT*2), size:2 } }},
     radiusUnits:'pixels', getRadius:+$('ringSize').value, radiusMinPixels:1, stroked:true, filled:false,
@@ -653,13 +684,7 @@ function onLoaded(){
   flowMeta=null;
   fillMarkerSel($('xMarker')); fillMarkerSel($('yMarker'));
   $('xMarker').value=''; $('yMarker').value=''; drawFlow();   // flow starts empty; picking a marker enables its pflag ring
-  const rb=$('rois'); rb.innerHTML=''; $('noroi').style.display=DATA.rois.length?'none':'block';
-  let tumorA=0, allA=0;
-  DATA.rois.forEach((r,i)=>{ const a=polyArea(r.ring); r._area=a; allA+=a; if(/tumor/i.test(r.name||'')) tumorA+=a;
-    const d=document.createElement('div'); d.className='roi';
-    d.innerHTML=`<input type="checkbox" ${r.visible?'checked':''}><span class="sw" style="background:rgba(220,40,40,.55);border-color:#780000"></span><span title="${r.name}" style="flex:1">${r.name||r.id}</span><span class="muted" style="flex:0 0 auto" title="polygon area">${fmtArea(a)}</span>`;
-    d.querySelector('input').onchange=e=>{ DATA.rois[i].visible=e.target.checked; syncRoiAll(); render(); }; rb.appendChild(d); });
-  $('roiAreas').innerHTML = DATA.rois.length ? `<b>tumor</b> total: ${fmtArea(tumorA)} &nbsp;·&nbsp; <b>all</b> ROIs: ${fmtArea(allA)}` : '';
+  DELETED=[]; DRAWVERTS=[]; setDraw(false); renderRoiList(); renderRoiEdits();
   $('filename').textContent = LOADED_NAME || 'unnamed file';
   $('stat').textContent=`${DATA.N.toLocaleString()} cells · ${DATA.names.length} markers · ${DATA.rois.length} ROIs`;
   setupRoiXform();
@@ -667,7 +692,78 @@ function onLoaded(){
   refresh(); fitView();
 }
 function syncRoiAll(){ $('roiAll').checked=DATA.rois.every(r=>r.visible); }
-function toggleAllRoi(){ const on=$('roiAll').checked; DATA.rois.forEach(r=>r.visible=on); $('rois').querySelectorAll('input').forEach(c=>c.checked=on); render(); }
+function toggleAllRoi(){ const on=$('roiAll').checked; DATA.rois.forEach(r=>r.visible=on); $('rois').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=on); render(); }
+
+// ----- ROI list rows + draw new polygons / delete ROIs (saved via a command) -----
+function renderRoiList(){
+  const rb=$('rois'); if(!rb) return; rb.innerHTML='';
+  $('noroi').style.display=DATA.rois.length?'none':'block';
+  let tumorA=0, allA=0;
+  DATA.rois.forEach((r,i)=>{ const a=polyArea(r.ring); r._area=a; allA+=a; if(/tumor/i.test(r.name||'')) tumorA+=a;
+    if(!r.color) r.color=roiDefaultColor(r.name);
+    const d=document.createElement('div'); d.className='roi';
+    d.innerHTML=`<input type="checkbox" ${r.visible?'checked':''}>`+
+      `<input type="color" value="${rgb2hex(r.color)}" title="ROI color (default by name)" style="width:18px;height:18px;padding:0;border:1px solid var(--line);border-radius:3px;flex:0 0 auto;background:#0d1117">`+
+      `<span title="${r.name}" style="flex:1">${r.drawn?'✏️ ':''}${r.name||r.id}</span>`+
+      `<span class="muted" style="flex:0 0 auto" title="polygon area">${fmtArea(a)}</span>`+
+      `<button title="delete this ROI" style="flex:0 0 auto;padding:0 6px;line-height:18px;color:#f0a0a0">✕</button>`;
+    d.querySelector('input[type=checkbox]').onchange=e=>{ DATA.rois[i].visible=e.target.checked; syncRoiAll(); render(); };
+    d.querySelector('input[type=color]').oninput=e=>{ DATA.rois[i].color=hex2rgb(e.target.value); ROICOLORVER++; render(); };
+    d.querySelector('button').onclick=()=>deleteRoi(i);
+    rb.appendChild(d); });
+  $('roiAreas').innerHTML = DATA.rois.length ? `<b>tumor</b> total: ${fmtArea(tumorA)} &nbsp;·&nbsp; <b>all</b> ROIs: ${fmtArea(allA)}` : '';
+}
+function deleteRoi(i){
+  const r=DATA.rois[i]; if(!r) return;
+  if(!r.drawn && r.name) DELETED.push(r.name);   // a file ROI -> emit a clearroi for it
+  DATA.rois.splice(i,1);
+  ROICOLORVER++; renderRoiList(); renderRoiEdits(); render();
+}
+function setDraw(on){ DRAWING=on;
+  const t=$('drawToggle'); if(t) t.classList.toggle('on',on);
+  const c=$('drawCtl');    if(c) c.style.display=on?'flex':'none';
+  const h=$('drawHint');   if(h) h.style.display=on?'block':'none';
+  const cv=$('deck-canvas'); if(cv) cv.style.cursor=on?'crosshair':'';
+  if(deckgl) deckgl.setProps({ controller: on ? {doubleClickZoom:false} : true });
+}
+function cancelDraw(){ DRAWVERTS=[]; DRAWVER++; setDraw(false); render(); }
+function finishDraw(){
+  if(DRAWVERTS.length<3){ alert('A polygon needs at least 3 points.'); return; }
+  const name=($('drawName').value.trim() || ('roi'+(DRAWN_N+1))).replace(/[^A-Za-z0-9_\-]/g,'_');
+  DRAWN_N++;
+  DATA.rois.push({ id:'drawn'+DRAWN_N, name, ring:DRAWVERTS.slice(), visible:true, color:roiDefaultColor(name), drawn:true });
+  DRAWVERTS=[]; DRAWVER++; setDraw(false); $('drawName').value='';
+  ROICOLORVER++; renderRoiList(); renderRoiEdits(); render();
+}
+// Build the cyftools command(s) that persist the drawn/deleted ROIs. IN/OUT are
+// placeholders the user edits; the browser never writes the file itself.
+function roiEditCmd(){
+  const drawn=DATA.rois.filter(r=>r.drawn), dels=DELETED;
+  const nSteps=(drawn.length?1:0)+dels.length;
+  if(!nSteps) return '';
+  const CSV='/tmp/drawn_rois.csv', rn=v=> Number.isInteger(v)?String(v):String(+v.toFixed(2));
+  let si=0, cur='IN.byf'; const steps=[];
+  const dst=()=> (++si===nSteps)?'OUT.byf':`/tmp/cyfedit.${si}.byf`;
+  if(drawn.length){
+    let rows='Id,Name,type,all_points\\n';
+    drawn.forEach((r,i)=>{ const pts=r.ring.map(p=>rn(p[0])+','+rn(p[1])).join(' ');
+      rows+=(i+1)+','+r.name+',Polygon,"'+pts+'"\\n'; });
+    steps.push(`printf '${rows}' > ${CSV}`);
+    const o=dst(); steps.push(`cyftools addroi ${cur} ${o} -r ${CSV} --add --microns`); cur=o;
+  }
+  dels.forEach(name=>{ const o=dst(); steps.push(`cyftools clearroi ${cur} ${o} -n '${name}'`); cur=o; });
+  return steps.join(' && \\\n') + ' && \\\nrm -f '+CSV+' /tmp/cyfedit.*.byf';
+}
+function renderRoiEdits(){
+  const box=$('roi-edits'), ta=$('roiEditCmd'); if(!box||!ta) return;
+  const cmd=roiEditCmd(); box.style.display=cmd?'block':'none'; ta.value=cmd;
+}
+$('drawToggle').onclick=()=>{ if(!DATA) return; if(DRAWING){ cancelDraw(); } else { DRAWVERTS=[]; DRAWVER++; setDraw(true); render(); } };
+$('drawFinish').onclick=finishDraw;
+$('drawUndo').onclick=()=>{ DRAWVERTS.pop(); DRAWVER++; render(); };
+$('drawCancel').onclick=cancelDraw;
+$('roiEditCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText($('roiEditCmd').value); $('roiEditCopied').textContent='copied ✓'; }
+  catch{ $('roiEditCmd').focus(); $('roiEditCmd').select(); $('roiEditCopied').textContent='select + copy'; } setTimeout(()=>{ $('roiEditCopied').textContent=''; },1500); };
 
 // ----- ROI alignment transform: live preview + bake command -----------------
 // Applies scale -> invert -> offset to each ROI vertex for display only; the
@@ -793,12 +889,15 @@ function loadArrayBuffer(ab){
 }
 // Show the overlay with a spinner + message so the user can see the server is
 // working (the conversion runs cyftools on the server, not in the browser).
-function showBusy(msg, sub){
+function fmtBytes(n){ if(!n) return ''; const u=['B','KB','MB','GB','TB']; let i=0;
+  while(n>=1024 && i<u.length-1){ n/=1024; i++; } return n.toFixed(i===0||n>=10?0:1)+' '+u[i]; }
+function showBusy(msg, sub, proc){
   $('drop').classList.remove('hidden');
   $('dropPrompt').style.display='none';
   $('dropBusy').style.display='flex';
   $('dropMsg').textContent=msg;
   $('dropSub').textContent=sub||'';
+  const pe=$('dropProc'); if(pe){ pe.textContent=proc||''; pe.style.display=proc?'block':'none'; }
   $('stat').textContent=msg;
 }
 function endBusy(){ $('dropBusy').style.display='none'; $('dropPrompt').style.display='flex'; }
@@ -810,11 +909,11 @@ function endBusy(){ $('dropBusy').style.display='none'; $('dropPrompt').style.di
 //  • fallback: if the server has no staged API, POST the raw bytes to /convert.
 async function handleFile(file){
   LOADED_NAME=file.name; GALLERY=[]; renderGallery();
-  showBusy('Reading file…', file.name);
+  showBusy('Reading file…', file.name+' · '+fmtBytes(file.size), 'checking the file type (magic bytes)');
   try {
     const head = new Uint8Array(await file.slice(0,4).arrayBuffer());
     const isPack = head[0]===67 && head[1]===89 && head[2]===70 && head[3]===86;  // "CYFV"
-    if (isPack){ showBusy('Loading…', 'rendering cells'); loadArrayBuffer(await file.arrayBuffer()); endBusy(); return; }
+    if (isPack){ showBusy('Loading…', file.name, 'already a .cyfv pack — rendering directly'); loadArrayBuffer(await file.arrayBuffer()); endBusy(); return; }
 
     // --- staged upload → pack → fetch ---
     let up = null;
@@ -826,16 +925,16 @@ async function handleFile(file){
     } catch(_) { /* no staged API → fall back below */ }
 
     if (up && up.id && up.put_url){
-      showBusy('Uploading…', file.name+' → server');
+      showBusy('Uploading…', file.name+' · '+fmtBytes(file.size), '↑ sending the .byf to the server');
       const putRes = await fetch(up.put_url, { method: up.method||'PUT',
         headers: up.headers||{}, body: file });
       if (!putRes.ok) throw new Error('upload failed (HTTP '+putRes.status+')');
-      showBusy('Converting…', 'running cyftools on the server');
+      showBusy('Converting…', file.name, 'server: cyftools count + export → .cyfv render pack');
       const packRes = await fetch('/api/pack', { method:'POST',
         headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id:up.id }) });
       if (!packRes.ok) throw new Error('convert failed (HTTP '+packRes.status+')');
       const meta = await packRes.json();
-      showBusy('Loading…', 'downloading + rendering the pack');
+      showBusy('Loading…', file.name, '↓ downloading + rendering the packed cells');
       const ab = await (await fetch(meta.pack_url)).arrayBuffer();
       loadArrayBuffer(ab);
       endBusy();
@@ -845,10 +944,10 @@ async function handleFile(file){
     }
 
     // --- fallback: direct convert (small files / simple server) ---
-    showBusy('Converting…', 'running cyftools on the server');
+    showBusy('Converting…', file.name+' · '+fmtBytes(file.size), 'server: cyftools export → .cyfv pack (direct upload)');
     const res = await fetch('/convert', { method:'POST', headers:{'X-Filename':file.name}, body:file });
     if (!res.ok) throw new Error('server convert failed (HTTP '+res.status+')');
-    showBusy('Loading…', 'rendering cells');
+    showBusy('Loading…', file.name, 'rendering the packed cells');
     loadArrayBuffer(await res.arrayBuffer());
     endBusy();
   } catch(err){
@@ -863,6 +962,16 @@ $('file').onchange=e=>{ const f=e.target.files[0]; e.target.value=''; if(f) hand
 
 // ----- folder mode: convert every .byf in a picked folder, then browse via a dropdown -----
 function setProg(frac){ const b=$('dropProgBar'); if(b) b.style.width=Math.round(Math.max(0,Math.min(1,frac))*100)+'%'; }
+const CONVERT_CONCURRENCY = Math.min(6, navigator.hardwareConcurrency || 4);   // files converted in parallel on the server
+// Run worker(item,i) over items with bounded concurrency. The server is a
+// ThreadingHTTPServer that runs one cyftools process per request, so concurrent
+// requests convert in parallel across cores.
+async function runPool(items, worker, concurrency){
+  let idx=0; const n=Math.max(1, Math.min(concurrency, items.length));
+  await Promise.all(Array.from({length:n}, async ()=>{
+    while(idx < items.length){ const i=idx++; await worker(items[i], i); }
+  }));
+}
 // Stage one .byf through the server (upload → build pack); returns its pack meta.
 async function stageConvert(file, onStage){
   const r = await fetch('/api/upload-url', { method:'POST', headers:{'Content-Type':'application/json'},
@@ -870,10 +979,10 @@ async function stageConvert(file, onStage){
   if (!r.ok) throw new Error('staged upload API unavailable (HTTP '+r.status+')');
   const up = await r.json();
   if (!(up && up.id && up.put_url)) throw new Error('bad upload-url response');
-  onStage && onStage('uploading');
+  onStage && onStage('↑ uploading the .byf to the server');
   const putRes = await fetch(up.put_url, { method:up.method||'PUT', headers:up.headers||{}, body:file });
   if (!putRes.ok) throw new Error('upload failed (HTTP '+putRes.status+')');
-  onStage && onStage('converting');
+  onStage && onStage('server: cyftools count + export → .cyfv render pack');
   const packRes = await fetch('/api/pack', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id:up.id }) });
   if (!packRes.ok) throw new Error('convert failed (HTTP '+packRes.status+')');
   return await packRes.json();   // {pack_url, cells, rendered, subsampled}
@@ -881,16 +990,22 @@ async function stageConvert(file, onStage){
 async function handleFolder(fileList){
   const byfs = [...fileList].filter(f=>/\.byf$/i.test(f.name)).sort((a,b)=>a.name.localeCompare(b.name));
   if(!byfs.length){ alert('No .byf files found in that folder.'); return; }
-  GALLERY=[]; let failed=0;
-  showBusy('Converting folder…', byfs.length+' .byf files');
-  $('dropProg').style.display='block'; setProg(0);
-  for(let i=0;i<byfs.length;i++){ const f=byfs[i];
-    showBusy(`Converting ${i+1} / ${byfs.length}`, f.name);
-    try { const meta = await stageConvert(f, st=> showBusy(`Converting ${i+1} / ${byfs.length} (${st})`, f.name));
-      GALLERY.push({ name:f.name, packUrl:meta.pack_url, cells:meta.cells, rendered:meta.rendered, subsampled:meta.subsampled }); }
+  GALLERY=[]; let done=0, failed=0;
+  const results=new Array(byfs.length), inflight=new Set();
+  const refresh=()=>{ const r=[...inflight];
+    showBusy(`Converting · ${done} / ${byfs.length} done`,
+      r.length ? r.length+' running: '+r.slice(0,3).join(', ')+(r.length>3?` +${r.length-3}`:'') : 'finishing…',
+      `server: cyftools export ×${Math.max(1,Math.min(CONVERT_CONCURRENCY, byfs.length-done))} in parallel`);
+    setProg(done/byfs.length); };
+  $('dropProg').style.display='block'; refresh();
+  await runPool(byfs, async (f,i)=>{
+    inflight.add(f.name); refresh();
+    try { const meta = await stageConvert(f);
+      results[i]={ name:f.name, packUrl:meta.pack_url, cells:meta.cells, rendered:meta.rendered, subsampled:meta.subsampled }; }
     catch(e){ failed++; console.error('convert failed:', f.name, e); }
-    setProg((i+1)/byfs.length);
-  }
+    inflight.delete(f.name); done++; refresh();
+  }, CONVERT_CONCURRENCY);
+  GALLERY = results.filter(Boolean);                 // keep original folder order, drop failures
   $('dropProg').style.display='none';
   if(!GALLERY.length){ endBusy(); alert('All '+byfs.length+' conversion(s) failed — see the console.'); return; }
   renderGallery();
@@ -905,14 +1020,14 @@ function renderGallery(){
 }
 async function loadFromGallery(idx){
   const g=GALLERY[idx]; if(!g) return;
-  showBusy('Loading…', g.name);
+  showBusy('Loading…', g.name, '↓ fetching the pre-converted pack from the cache');
   try { const ab = await (await fetch(g.packUrl)).arrayBuffer();
     LOADED_NAME=g.name; loadArrayBuffer(ab); endBusy();
     const sel=$('gallery'); if(sel) sel.value=String(idx);
     if (g.subsampled) $('stat').textContent='showing '+g.rendered.toLocaleString()+' of '+g.cells.toLocaleString()+' cells (subsampled to fit)';
   } catch(err){ console.error(err); endBusy(); alert('Could not load '+g.name+'\n'+err.message); }
 }
-$('folder').onchange=e=>{ const fs=e.target.files; e.target.value=''; if(fs&&fs.length) handleFolder(fs); };
+$('folder').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; if(fs.length) handleFolder(fs); };
 $('gallery').onchange=()=>{ loadFromGallery(+$('gallery').value); };
 ['dragover','drop'].forEach(ev=> document.addEventListener(ev, e=> e.preventDefault()));
 document.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
@@ -924,12 +1039,13 @@ function tooltipFor(i){ if(i<0||!DATA) return null; const id=DATA.id[i], sid=id>
 window.addEventListener('load', ()=>{
   deckgl=new deck.Deck({ canvas:'deck-canvas', views:new deck.OrthographicView({flipY:true}), controller:true, viewState,
     onViewStateChange:e=>{ viewState=clampZoom(e.viewState); deckgl.setProps({viewState}); updateScaleBar(); }, layers:[],
+    onClick:info=>{ if(DRAWING && info && info.coordinate){ DRAWVERTS.push([info.coordinate[0], info.coordinate[1]]); DRAWVER++; render(); } },
     onHover:info=>{ const t=$('tooltip');
       if (info&&info.layer&&info.layer.id==='cells'&&info.index>=0){ t.style.display='block'; t.style.left=(info.x+14)+'px'; t.style.top=(info.y+10)+'px'; t.textContent=tooltipFor(info.index); }
       else t.style.display='none'; } });
   window.addEventListener('resize', ()=>{ if(!DATA||!VB) return; setZoomBounds(); viewState=clampZoom(viewState); deckgl.setProps({viewState}); updateScaleBar(); });
   const pre=new URLSearchParams(location.search).get('file');
-  if (pre){ LOADED_NAME=decodeURIComponent(pre.split('/').pop().split('?')[0]); GALLERY=[]; renderGallery(); showBusy('Converting…', 'preparing '+pre+' on the server');
+  if (pre){ LOADED_NAME=decodeURIComponent(pre.split('/').pop().split('?')[0]); GALLERY=[]; renderGallery(); showBusy('Converting…', LOADED_NAME, 'server: building/fetching the .cyfv pack with cyftools');
     fetch(pre).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
       .then(ab=>{ loadArrayBuffer(ab); endBusy(); })
       .catch(err=>{ console.error(err); endBusy(); $('stat').textContent='auto-load failed'; alert('Could not auto-load '+pre+'\n'+err.message); }); }
