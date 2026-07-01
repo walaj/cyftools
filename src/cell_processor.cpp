@@ -1182,7 +1182,7 @@ int ScaleRoiProcessor::ProcessLine(Cell& cell) {
 }
 
 bool ClearRoiProcessor::computeNewHeader(CellHeader& h) {
-  const size_t n = h.RemoveRoiTags(m_name, m_sample);
+  const size_t n = h.RemoveRoiTags(m_name, m_sample, m_id);
   if (m_verbose)
     std::cerr << "cyftools clearroi: removed " << n << " @RO tag(s)" << std::endl;
   h.addTag(Tag(Tag::PG_TAG, "", m_cmd));     // provenance
@@ -1207,6 +1207,37 @@ int ValidateProcessor::ProcessHeader(CellHeader& header) {
   sort_order = header.GetHeaderField("SO");
   mpp        = header.GetHeaderField("MP");
   units      = header.GetHeaderField("UN");
+  return ONLY_WRITE_HEADER;   // header is all we need; stop before the cells
+}
+
+int RoiInfoProcessor::ProcessHeader(CellHeader& header) {
+  mpp   = header.GetHeaderField("MP");
+  units = header.GetHeaderField("UN");
+
+  for (const auto& t : header.GetAllTags()) {
+    if (t.type != Tag::RO_TAG) continue;
+
+    std::vector<JPoint> verts;
+    std::istringstream ps(t.GetField("PT"));
+    std::string pair;
+    while (ps >> pair) {
+      const size_t comma = pair.find(',');
+      if (comma == std::string::npos) continue;
+      try {
+        verts.emplace_back(std::stof(pair.substr(0, comma)),
+                           std::stof(pair.substr(comma + 1)));
+      } catch (...) { /* skip malformed coordinate */ }
+    }
+
+    RoiEntry e;
+    e.id     = t.id;
+    e.name   = t.GetField("NM");
+    e.sample = t.GetField("SA");
+    e.nverts = verts.size();
+    e.area   = Polygon(verts).Area();
+    rois.push_back(std::move(e));
+  }
+
   return ONLY_WRITE_HEADER;   // header is all we need; stop before the cells
 }
 
@@ -1252,11 +1283,16 @@ int FlagRoiProcessor::ProcessHeader(CellHeader& header) {
 }
 
 int FlagRoiProcessor::ProcessLine(Cell& cell) {
-  const uint64_t mask = static_cast<uint64_t>(1) << m_bit;
+  uint64_t& reg = (m_reg == 'c') ? cell.cflag : cell.pflag;
+
+  // overwrite mode: clear the bit on every cell first, so that after the full
+  // pass the bit is set on exactly the cells inside the ROIs (and nowhere else).
+  if (m_overwrite)
+    reg &= ~m_mask;
+
   for (const auto& poly : m_polys) {
     if (poly.PointIn(cell.x, cell.y)) {
-      if (m_reg == 'c') cell.cflag |= mask;
-      else              cell.pflag |= mask;
+      reg |= m_mask;
       break;   // one containing region is enough to set the bit
     }
   }
@@ -1456,6 +1492,36 @@ void paint_discs(PaintGrid& g, const std::vector<size_t>& idx,
 int CohortProcessor::ProcessHeader(CellHeader& header) {
   m_header = header;
 
+  // Resolve this file's coordinate scale. Cohort paints in microns (the radius and
+  // grid are micron-valued), so cells stored in pixels must be converted with the
+  // file's own @HD MP (microns/pixel). This is per-file by design: each table
+  // carries its own calibration; the cohort never assumes a shared pixel size.
+  {
+    const std::string un = header.GetHeaderField("UN");
+    const std::string mp = header.GetHeaderField("MP");
+    if (un == "micron") {
+      m_scale = 1.0; m_scale_ok = true;
+      m_scale_note = "coords already in microns (@HD UN:micron)";
+    } else if (un == "pixel") {
+      double mpv = 0.0;
+      try { mpv = std::stod(mp); } catch (...) { mpv = 0.0; }
+      if (mpv > 0.0) {
+        m_scale = mpv; m_scale_ok = true;
+        m_scale_note = "converted pixels -> microns via @HD MP:" + mp;
+      } else {
+        m_scale = 1.0; m_scale_ok = false;
+        m_scale_note = "@HD UN:pixel but MP missing/invalid - cannot convert to microns";
+      }
+    } else if (un.empty()) {
+      // legacy file with no declared units: assume microns (prior behavior)
+      m_scale = 1.0; m_scale_ok = true;
+      m_scale_note = "no @HD UN tag - assuming coords are already in microns";
+    } else {
+      m_scale = 1.0; m_scale_ok = false;
+      m_scale_note = "unrecognized @HD UN:" + un + " - expected micron or pixel";
+    }
+  }
+
   // @FL bit -> name maps (the self-describing flag vocabulary, when present)
   for (const auto& t : header.GetFlagTags()) {
     const std::string reg = t.GetField("RG");
@@ -1482,8 +1548,9 @@ int CohortProcessor::ProcessHeader(CellHeader& header) {
 int CohortProcessor::ProcessLine(Cell& cell) {
   if (m_x.empty())
     m_sample_id = static_cast<uint64_t>(cell.id) >> 32;   // (sample_id<<32)|cell_id
-  m_x.push_back(cell.x);
-  m_y.push_back(cell.y);
+  // store coordinates in microns (m_scale == 1 when already micron-valued)
+  m_x.push_back(static_cast<float>(cell.x * m_scale));
+  m_y.push_back(static_cast<float>(cell.y * m_scale));
   m_cflag.push_back(static_cast<uint64_t>(cell.cflag));
   m_pflag.push_back(static_cast<uint64_t>(cell.pflag));
   return NO_WRITE_CELL;       // cohort never re-emits cells

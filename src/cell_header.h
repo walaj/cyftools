@@ -146,10 +146,13 @@ class CellHeader {
 
   void CleanProgramTags();
 
-  // Remove @RO polygon tags. name_filter: only those whose NM contains it
-  // ("" = any); sample_filter: only those with this SA sample id (< 0 = any).
-  // Returns the number removed.
-  size_t RemoveRoiTags(const std::string& name_filter, long sample_filter);
+  // Remove @RO polygon tags. Filters are AND-combined; an empty/negative filter
+  // matches anything. name_filter: only those whose NM contains it ("" = any);
+  // sample_filter: only those with this SA sample id (< 0 = any); id_filter:
+  // only the @RO whose ID equals it exactly ("" = any) -- use to target one
+  // region when several share a name. Returns the number removed.
+  size_t RemoveRoiTags(const std::string& name_filter, long sample_filter,
+                       const std::string& id_filter = "");
 
   void Cut(const std::unordered_set<size_t> to_remove);
 

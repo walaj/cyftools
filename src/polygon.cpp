@@ -1,5 +1,7 @@
 #include "polygon.h"
 
+#include <cmath>
+
 Polygon::Polygon(const std::vector<JPoint>& vec) {
   Id = -1;
   Name = "na";
@@ -42,6 +44,20 @@ bool Polygon::PointIn(float x, float y) const {
   }
   
   return inside;
+}
+
+double Polygon::Area() const {
+
+  const size_t n = vertices.size();
+  if (n < 3)
+    return 0.0;
+
+  // shoelace formula; accumulate in double to avoid float cancellation on large coords
+  double sum = 0.0;
+  for (size_t i = 0, j = n - 1; i < n; j = i++)
+    sum += (double)vertices[j].x * vertices[i].y - (double)vertices[i].x * vertices[j].y;
+
+  return std::fabs(sum) * 0.5;
 }
 
 std::vector<Polygon> read_polygons_from_file(const std::string& file_path) {

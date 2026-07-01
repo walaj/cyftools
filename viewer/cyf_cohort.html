@@ -225,9 +225,9 @@
         title="Unselect all region bits → the region becomes EVERY cell in the sample (the whole specimen). Density then uses the whole-specimen painted area as the denominator.">Use all cells</button>
     </div>
 
-    <!-- Per-group color pickers (shown after at least one row has a group label). -->
+    <!-- Per-group color pickers + reorder arrows (shown after a group label exists). -->
     <div id="group-colors-row" class="controls" style="margin-top: 8px; display: none; align-items: center;">
-      <span class="group-label" style="padding-top: 3px;">Group colors</span>
+      <span class="group-label" style="padding-top: 3px;" title="◀ ▶ set the left-to-right order of groups in the box plot">Group order &amp; colors</span>
       <div id="group-colors-list" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
     </div>
 
@@ -453,6 +453,10 @@ const state = {
   // User-customized colors per group label, persisted via settings.
   // Falls back to SET2 alphabetical-order default when missing.
   groupColors: {},
+  // User-chosen display order of group labels for the box plot / stats / R export.
+  // Groups listed here come first (in this order); any others fall to an
+  // alphabetical tail. Persisted via settings; see orderedGroups().
+  groupOrder: [],
   // Which metric to plot/test on: 'density' (cells/mm²) or 'percent' (% in region).
   // Persisted via settings.
   plotMetric: 'density',
@@ -615,6 +619,7 @@ async function loadCohortFile(file){
 
 // ----- optional preferences file (small, all keys optional) ----------------
 // { "group_colors": { "Responder": "#2a73d8", ... },
+//   "group_order": ["Responder", "Non-responder", ...],
 //   "default_metric": "density"|"percent",
 //   "default_compartment": "Tumor"|"all"|<bit>,
 //   "export": { "format":"png", "width":1100, "height":700, "scale":2 } }
@@ -624,6 +629,8 @@ function applyConfig(cfg){
   CONFIG = cfg;
   if (cfg.group_colors && typeof cfg.group_colors === 'object')
     Object.assign(state.groupColors, cfg.group_colors);
+  if (Array.isArray(cfg.group_order))
+    state.groupOrder = cfg.group_order.filter(g => typeof g === 'string');
   if (typeof cfg.default_metric === 'string') state.plotMetric = cfg.default_metric;
   if (COHORT && cfg.default_compartment != null) {
     const legend = cohortCflagBits() || [];
@@ -1006,6 +1013,7 @@ function settingsSnapshot() {
     radiusPx:   state.radiusPx,
     markerBits: state.markerBits.slice(),
     groupColors: Object.assign({}, state.groupColors),
+    groupOrder: state.groupOrder.slice(),
     densityColScale: state.densityColScale,
     roiScale:   state.roiScale,
     plotMetric: state.plotMetric,
@@ -1022,6 +1030,7 @@ function applySettings(s) {
   if (typeof s.radiusPx === 'number')   state.radiusPx   = s.radiusPx;
   if (Array.isArray(s.markerBits))      state.markerBits = s.markerBits.slice();
   if (s.groupColors && typeof s.groupColors === 'object') state.groupColors = Object.assign({}, s.groupColors);
+  if (Array.isArray(s.groupOrder)) state.groupOrder = s.groupOrder.filter(g => typeof g === 'string');
   if (typeof s.densityColScale === 'number' && isFinite(s.densityColScale) && s.densityColScale > 0) state.densityColScale = s.densityColScale;
   if (typeof s.roiScale === 'number' && isFinite(s.roiScale) && s.roiScale > 0) state.roiScale = s.roiScale;
   if (s.plotMetric === 'density' || s.plotMetric === 'percent' || s.plotMetric === 'roiDensity') state.plotMetric = s.plotMetric;
@@ -1989,22 +1998,60 @@ function render() {
   updateMarkerChipColors();    // keep red/yellow/green current as files resolve
 }
 
-/** Render one color picker per unique group label currently in use. */
+/** Every group label currently assigned to a file (deduped, unordered). */
+function currentGroupList() {
+  return Array.from(new Set(state.files.map(f => f.group).filter(g => g)));
+}
+
+/**
+ * Groups in the user's chosen display order: those named in state.groupOrder
+ * first (in that order, if present in `list`), then any remaining groups
+ * alphabetically. Accepts any iterable of group labels and dedups. A group the
+ * user hasn't placed yet just falls to the alphabetical tail, so new groups
+ * never disappear.
+ */
+function orderedGroups(list) {
+  const present = Array.from(new Set(Array.from(list).filter(g => g)));
+  const seen = new Set();
+  const out = [];
+  for (const g of (state.groupOrder || []))
+    if (present.includes(g) && !seen.has(g)) { out.push(g); seen.add(g); }
+  for (const g of present.slice().sort())
+    if (!seen.has(g)) { out.push(g); seen.add(g); }
+  return out;
+}
+
+/** Move group `g` one slot earlier (-1) or later (+1) in the display order. */
+function moveGroup(g, dir) {
+  const cur = orderedGroups(currentGroupList());
+  const i = cur.indexOf(g), j = i + dir;
+  if (i < 0 || j < 0 || j >= cur.length) return;
+  [cur[i], cur[j]] = [cur[j], cur[i]];
+  state.groupOrder = cur;
+  saveSettings();
+  render();
+}
+
+/** Render one color picker (and reorder arrows) per group label in use. */
 function renderGroupColors() {
   const wrap = document.getElementById('group-colors-row');
   const list = document.getElementById('group-colors-list');
-  const groups = Array.from(new Set(state.files.map(f => f.group).filter(g => g))).sort();
+  const groups = orderedGroups(currentGroupList());
   if (groups.length === 0) { wrap.style.display = 'none'; return; }
   wrap.style.display = '';
   list.innerHTML = '';
-  for (const g of groups) {
+  groups.forEach((g, gi) => {
     const color = getGroupColor(g);
     const lbl = document.createElement('label');
-    lbl.style.cssText = 'display:inline-flex; align-items:center; gap:4px; font-size:11px;';
-    // type=color uses native picker; lightweight + universally supported.
+    lbl.style.cssText = 'display:inline-flex; align-items:center; gap:3px; font-size:11px;';
+    // ◀ ▶ set the box-plot order; type=color uses the native picker.
     lbl.innerHTML = `
+      <button type="button" class="group-move" data-dir="-1" title="Move earlier in plot order"
+        style="border:none; background:none; cursor:pointer; padding:0 1px; color:#888; ${gi === 0 ? 'visibility:hidden;' : ''}">◀</button>
       <input type="color" data-group="${escapeHtml(g)}" value="${color}" style="width:24px; height:22px; padding:0; border:1px solid #ccc; background:#fff; cursor:pointer;" />
       <span style="color: ${color}; font-weight: 600;">${escapeHtml(g)}</span>
+      <button type="button" class="group-move" data-dir="1" title="Move later in plot order"
+        style="border:none; background:none; cursor:pointer; padding:0 1px; color:#888; ${gi === groups.length - 1 ? 'visibility:hidden;' : ''}">▶</button>
     `;
     const input = lbl.querySelector('input');
     input.addEventListener('change', () => {
@@ -2012,8 +2059,10 @@ function renderGroupColors() {
       saveSettings();
       render();
     });
+    lbl.querySelectorAll('.group-move').forEach(btn =>
+      btn.addEventListener('click', () => moveGroup(g, Number(btn.dataset.dir))));
     list.appendChild(lbl);
-  }
+  });
 }
 
 // (Reset button removed — group colors persist; clear individually via the color picker.)
@@ -2273,7 +2322,7 @@ function renderBarPlot() {
   for (const f of completed) {
     (byGroup[f.group] = byGroup[f.group] || []).push(f);
   }
-  const groups = Object.keys(byGroup).sort();
+  const groups = orderedGroups(Object.keys(byGroup));
 
   // No groups yet → clear the box plot + hint how to get it, but still draw the
   // waterfall for every computed sample below.
@@ -2337,6 +2386,9 @@ function renderBarPlot() {
     xaxis: {
       title: '',
       tickfont: { size: 12 },
+      // honor the user's chosen group order (◀ ▶), not Plotly's trace-appearance default
+      categoryorder: 'array',
+      categoryarray: groups,
       // Add n= annotations under each group label
       tickmode: 'array',
       tickvals: groups,
@@ -2617,9 +2669,11 @@ function mannWhitneyU(a, b) {
   const varU = (n1 * n2 / 12) * ((N + 1) - tieAdj / (N * (N - 1)));
   const sdU = Math.sqrt(Math.max(varU, 0));
   if (sdU === 0) return { U, U1, U2, z: 0, p: 1, n1, n2 };
-  // Two-sided p with 0.5 continuity correction
-  const z = (Math.abs(U1 - meanU) - 0.5) / sdU;
-  const p = 2 * (1 - normCdf(z));
+  // Two-sided p with 0.5 continuity correction. Clamp the corrected gap at 0 so
+  // near-tied groups (|U1-meanU| < 0.5) don't yield a negative z -> p > 1; also
+  // clamp p itself since normCdf(0) is only ~0.5 under the A&S approximation.
+  const z = Math.max(0, Math.abs(U1 - meanU) - 0.5) / sdU;
+  const p = Math.min(1, 2 * (1 - normCdf(z)));
   return { U, U1, U2, z, p, n1, n2 };
 }
 
@@ -2702,7 +2756,46 @@ function rExportHeader(extra) {
 # Method   : ${state.method === 'hull' ? 'convex hull (DBSCAN-style)' : `painted ${state.radiusPx}px discs`}, ${state.scaling} µm/px
 # Markers  : ${ml}
 # Y metric : ${metric}
+# Font     : Arial, 7pt absolute (theme base_size/base_family). Saved via
+#            cairo_pdf so text is editable, Arial-embedded, and does not scale
+#            with the plot area (see footer).
 # ---------------------------------------------------------------`;
+}
+
+/**
+ * R snippet (placed right after the library() calls) that GUARANTEES editable
+ * text. If showtext was ever turned on earlier in the R session it keeps drawing
+ * every glyph as vector outlines (not editable) on ALL later devices — a sticky,
+ * session-global setting. This forces it back off before we plot, so pdf() /
+ * cairo_pdf() emit real text. No-op if showtext was never loaded.
+ */
+function rEditableText() {
+  return `# Make sure text stays EDITABLE: showtext (if it was enabled earlier in this R
+# session) outlines glyphs on every device. Force it off before plotting.
+if ("showtext" %in% loadedNamespaces()) showtext::showtext_auto(FALSE)
+`;
+}
+
+/**
+ * R footer that SAVES the figure itself as an editable, embedded-Arial vector PDF
+ * via cairo_pdf. Run the script — do NOT wrap it in pdf()/dev.off(): the base
+ * pdf() device can't embed Arial (it errors on base_family="Arial"), while
+ * cairo_pdf keeps text editable, embeds Arial, and renders sizes as ABSOLUTE
+ * points (7pt stays 7pt at any width/height — it does not scale with the plot
+ * area). print(g) is guarded to interactive sessions so a headless Rscript
+ * (default pdf device) doesn't hit the Arial error on the preview.
+ */
+function rSavePlot(file, w, h) {
+  return `# --- Save an editable, embedded-Arial vector PDF -----------------------------
+# Just RUN this script as-is; it writes the PDF itself. Do NOT wrap it in
+# pdf()/dev.off(): the base pdf() device can't embed Arial (it errors on it).
+# cairo_pdf keeps text editable and renders 7pt as ABSOLUTE 7pt — changing the
+# width/height rescales the panel, NOT the font.
+if (!isTRUE(capabilities("cairo")))
+  stop("This R build lacks cairo; cannot embed Arial. Rebuild R with cairo support.")
+ggsave(${rString(file)}, g, width = ${w}, height = ${h}, device = cairo_pdf)
+if (interactive()) print(g)   # on-screen preview; skipped under headless Rscript
+`;
 }
 
 /**
@@ -2715,7 +2808,7 @@ function buildBoxPlotR() {
   if (!rows.length) return { ok: false, msg: 'Nothing to export — group some computed samples first.' };
   rows.sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
 
-  const groups = Array.from(new Set(rows.map(r => r.group))).sort();
+  const groups = orderedGroups(rows.map(r => r.group));
   const colorLines = groups.map(g => `  ${rString(g)} = ${rString(getGroupColor(g))}`).join(',\n');
   const pairs = [];
   for (let i = 0; i < groups.length; i++) {
@@ -2745,6 +2838,7 @@ library(ggplot2)
 library(ggbeeswarm)
 library(ggpubr)
 
+${rEditableText()}
 cohort <- data.frame(
 ${cohortBlock},
   stringsAsFactors = FALSE
@@ -2768,22 +2862,24 @@ create_beeswarm_plot <- function(data, x_var, y_var, withbox = FALSE, dx_combos 
       shape = 21, color = "black", alpha = 1, size = 2,
       aes(fill = .data[[fill_var]])
     ) +
-    theme_bw() +
+    theme_bw(base_size = 7, base_family = "Arial") +
     theme(
       legend.position = "none",
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
-      axis.title = element_text(size = 10, face = "bold"),
-      axis.text  = element_text(size = 10)
+      # every text element pinned to an absolute 7pt, full black (no gray / rel() scaling)
+      text       = element_text(size = 7, colour = "black"),
+      axis.title = element_text(size = 7, face = "bold", colour = "black"),
+      axis.text  = element_text(size = 7, colour = "black")
     )
   if (length(dx_combos) || !is.na(dx_combos)) {
     g <- g + ggpubr::stat_compare_means(
       comparisons = dx_combos, label = "p.signif",
-      method = "wilcox.test"
+      method = "wilcox.test", size = 2.46, family = "Arial"   # ~7pt Arial (in mm)
     )
   }
   if (withbox) {
-    g <- g + geom_boxplot(width = 0.2, outlier.shape = NA,
+    g <- g + geom_boxplot(width = 0.2, outlier.shape = NA, linewidth = 0.25,
                           alpha = 0.5, fill = NA, color = "black")
   }
   g
@@ -2798,16 +2894,17 @@ g <- create_beeswarm_plot(
   fill_var  = "group"
 ) +
   scale_fill_manual(values = group_colors) +
-  labs(y = ${rString(ylab)}, x = NULL)
+  labs(y = ${rString(ylab)}, x = NULL) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10))   # ~2x the default tick density
 
-print(g)
+${rSavePlot('cohort_boxplot.pdf', 1.7, 1.6)}
 ` };
 }
 
 /**
  * R script: horizontal "waterfall" bar plot, sorted by value ascending so
  * the top bars are the highest after coord_flip. Black bar outline,
- * Helvetica, transparent background — the style from the user's snippet.
+ * Arial, transparent background — the style from the user's snippet.
  */
 function buildWaterfallR() {
   const rows = currentViewRowsForR();
@@ -2815,7 +2912,7 @@ function buildWaterfallR() {
   // Sort ascending in R-space so that after coord_flip the highest sits on top.
   rows.sort((a, b) => a.value - b.value);
 
-  const groups = Array.from(new Set(rows.map(r => r.group))).sort();
+  const groups = orderedGroups(rows.map(r => r.group));
   const colorLines = groups.map(g => `  ${rString(g)} = ${rString(getGroupColor(g))}`).join(',\n');
   const ylab = (state.plotMetric === 'percent') ? '% in region' : 'Cells / mm²';
 
@@ -2831,6 +2928,7 @@ function buildWaterfallR() {
 
 library(ggplot2)
 
+${rEditableText()}
 cohort <- data.frame(
 ${cohortBlock},
   stringsAsFactors = FALSE
@@ -2850,7 +2948,7 @@ g <- ggplot(cohort, aes(x = name, y = value, fill = group)) +
   ylab(${rString(ylab)}) + xlab("Sample ID") +
   coord_flip() +
   scale_fill_manual(values = group_colors) +
-  theme_classic() +
+  theme_classic(base_size = 7, base_family = "Arial") +
   theme(
     # axis.line + axis.ticks together (single entry — ggplot2 rejects duplicates)
     axis.line   = element_line(colour = "black"),
@@ -2859,14 +2957,14 @@ g <- ggplot(cohort, aes(x = name, y = value, fill = group)) +
     legend.justification = c(-0.2, -0.3),
     legend.box.margin = margin(6, 6, 6, 6),
     legend.margin = margin(-10, -10, -10, -10),
-    text        = element_text(family = "Helvetica"),
-    axis.text.x = element_text(color = "black"),
-    axis.text.y = element_text(color = "black"),
-    axis.title.y = element_text(size = 9, margin = margin(r = 5)),
-    axis.title.x = element_text(size = 9, margin = margin(t = 2)),
-    plot.title  = element_text(size = 9),
+    # every text element pinned to an absolute 7pt (no rel() scaling)
+    text        = element_text(family = "Arial", size = 7),
+    axis.text.x = element_text(color = "black", size = 7),
+    axis.text.y = element_text(color = "black", size = 7),
+    axis.title.y = element_text(size = 7, margin = margin(r = 5)),
+    axis.title.x = element_text(size = 7, margin = margin(t = 2)),
+    legend.text  = element_text(size = 7),
     legend.title = element_blank(),
-    legend.text  = element_text(size = 9),
     legend.background = element_blank(),
     legend.key   = element_blank(),
     panel.background = element_rect(fill = "transparent", colour = NA),
@@ -2874,7 +2972,7 @@ g <- ggplot(cohort, aes(x = name, y = value, fill = group)) +
   ) +
   scale_y_continuous(expand = c(0, 0))
 
-print(g)
+${rSavePlot('cohort_waterfall.pdf', 6, 5)}
 ` };
 }
 
@@ -2928,7 +3026,7 @@ function buildRExportOriginal() {
   );
 
   // Per-group colors: prefer user-customized hex (if any), else SET2 by sort order.
-  const groups = Array.from(new Set(finalRows.map(r => r.group))).sort();
+  const groups = orderedGroups(finalRows.map(r => r.group));
   const colorLines = groups.map(g => `  ${rString(g)} = ${rString(getGroupColor(g))}`).join(',\n');
 
   // All pairwise comparisons (used by stat_compare_means)
@@ -2992,6 +3090,7 @@ library(ggplot2)
 library(ggbeeswarm)
 library(ggpubr)
 
+${rEditableText()}
 # Long-format data: one row per (sample, marker-variant).
 # 'value' is cells / mm² of the region area (paint or hull, see header above).
 cohort <- data.frame(
@@ -3025,22 +3124,24 @@ create_beeswarm_plot <- function(data, x_var, y_var, withbox = FALSE, dx_combos 
       shape = 21, color = "black", alpha = 1, size = 2,
       aes(fill = .data[[fill_var]])
     ) +
-    theme_bw() +
+    theme_bw(base_size = 7, base_family = "Arial") +
     theme(
       legend.position = "none",
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
-      axis.title = element_text(size = 10, face = "bold"),
-      axis.text  = element_text(size = 10)
+      # every text element pinned to an absolute 7pt, full black (no gray / rel() scaling)
+      text       = element_text(size = 7, colour = "black"),
+      axis.title = element_text(size = 7, face = "bold", colour = "black"),
+      axis.text  = element_text(size = 7, colour = "black")
     )
   if (length(dx_combos) || !is.na(dx_combos)) {
     g <- g + ggpubr::stat_compare_means(
       comparisons = dx_combos, label = "p.signif",
-      method = "wilcox.test"
+      method = "wilcox.test", size = 2.46, family = "Arial"   # ~7pt Arial (in mm)
     )
   }
   if (withbox) {
-    g <- g + geom_boxplot(width = 0.2, outlier.shape = NA,
+    g <- g + geom_boxplot(width = 0.2, outlier.shape = NA, linewidth = 0.25,
                           alpha = 0.5, fill = NA, color = "black")
   }
   g
@@ -3067,7 +3168,7 @@ g <- create_beeswarm_plot(
   scale_fill_manual(values = group_colors) +
   labs(y = "cells / mm² of region area", x = NULL)
 
-print(g)
+${rSavePlot('cohort_markers.pdf', 7, 5)}
 `;
 
   return { ok: true, script };

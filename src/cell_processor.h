@@ -394,8 +394,9 @@ class ClearRoiProcessor : public CellProcessor {
 
 public:
 
-  void SetParams(const std::string& name_filter, long sample_filter) {
-    m_name = name_filter; m_sample = sample_filter;
+  void SetParams(const std::string& name_filter, long sample_filter,
+                 const std::string& id_filter) {
+    m_name = name_filter; m_sample = sample_filter; m_id = id_filter;
   }
 
   // Apply the @RO removal to `h` (+ provenance, sort). Shared by ProcessHeader and
@@ -409,6 +410,31 @@ private:
 
   std::string m_name;       // only @RO whose NM contains this ("" = all)
   long        m_sample = -1; // only @RO with this SA sample id (< 0 = all)
+  std::string m_id;         // only the @RO whose ID equals this exactly ("" = all)
+};
+
+// Read-only header reader for `cyftools roiinfo`: walks the @RO tags and records
+// each region's id, name, vertex count and polygon area (in the file's coordinate
+// units, via the shoelace formula). Also captures @HD MP/UN so the caller can
+// convert pixel areas to microns^2. Stops after the header (no cell reading).
+class RoiInfoProcessor : public CellProcessor {
+
+public:
+
+  struct RoiEntry {
+    std::string id;
+    std::string name;
+    std::string sample;
+    size_t      nverts = 0;
+    double      area   = 0.0;   // coordinate-units^2 (see units below)
+  };
+
+  int ProcessHeader(CellHeader& header) override;
+  int ProcessLine(Cell& cell) override { return NO_WRITE_CELL; }
+
+  std::vector<RoiEntry> rois;
+  std::string mpp;     // @HD MP (microns per pixel), "" if absent
+  std::string units;   // @HD UN (micron|pixel),      "" if absent
 };
 
 // Read-only header check for `cyftools validate`: pulls the @HD format fields
@@ -428,12 +454,18 @@ class FlagRoiProcessor : public CellProcessor {
 
 public:
 
-  // reg: 'c' or 'p' (which flag register); bit: 0-based bit index to set;
+  // reg: 'c' or 'p' (which flag register); mask: the flag bit to set, given as
+  //   its decimal value (a single power of two, e.g. 8 == bit index 3);
+  // overwrite: if true, clear the bit on every cell first, then set it only
+  //   inside a region (so the final on-set is exactly the cells in the ROIs);
+  //   if false, OR the bit on for cells inside a region, leaving others as-is;
   // name_filter: only @RO whose NM contains this substring ("" = all);
   // sample_filter: only @RO with this SA sample id (< 0 = all).
-  void SetParams(char reg, int bit, const std::string& name_filter, long sample_filter) {
+  void SetParams(char reg, uint64_t mask, bool overwrite,
+                 const std::string& name_filter, long sample_filter) {
     m_reg = reg;
-    m_bit = bit;
+    m_mask = mask;
+    m_overwrite = overwrite;
     m_name_filter = name_filter;
     m_sample_filter = sample_filter;
   }
@@ -445,7 +477,8 @@ public:
 private:
 
   char m_reg = 'p';
-  int m_bit = 0;
+  uint64_t m_mask = 0;
+  bool m_overwrite = false;
   std::string m_name_filter;
   long m_sample_filter = -1;
   std::vector<Polygon> m_polys;
@@ -506,12 +539,25 @@ public:
 
   size_t CellCount() const { return m_x.size(); }
 
+  // Per-file coordinate scale, resolved from @HD UN/MP in ProcessHeader. Cohort
+  // areas are computed in microns, so cells stored in pixels are converted using
+  // the file's own microns-per-pixel. ScaleResolved() is false when the file is
+  // in pixel units but carries no usable @HD MP (the cohort then skips it).
+  bool        ScaleResolved() const { return m_scale_ok; }
+  double      ScaleToMicrons() const { return m_scale; }
+  const std::string& ScaleNote() const { return m_scale_note; }
+
 private:
 
   // params
   double m_radius   = 20.0;   // paint disc radius, microns
   double m_pixel    = 1.0;    // raster pixel size, microns
   size_t m_nthreads = 1;
+
+  // per-file coordinate -> micron conversion, resolved from @HD UN/MP
+  double      m_scale     = 1.0;    // multiply stored x/y by this to get microns
+  bool        m_scale_ok  = true;   // false => file unusable (pixel units, no MP)
+  std::string m_scale_note;         // human-readable description of what was used
 
   // collected per-cell columns
   std::vector<float>    m_x, m_y;

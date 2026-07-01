@@ -32,6 +32,10 @@ public:
   
   bool PointIn(float x, float y) const;
 
+  // Polygon area in the vertices' coordinate units^2 (shoelace formula;
+  // orientation-independent). Returns 0 for degenerate (< 3 vertices) shapes.
+  double Area() const;
+
   size_t size() const { return vertices.size(); }
   
   // Non-const iterator overloads

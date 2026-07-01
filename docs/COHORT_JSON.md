@@ -42,15 +42,26 @@ painted — see "Limitations".
 
 A compartment's area is estimated by **painting**: every cell in it stamps a
 filled disc (default radius **20 µm**, `-r`) onto a raster grid (default **1 µm**
-pixels, `-p`); the area is the count of touched pixels × pixel². Overlapping
-discs paint shared pixels once, so the result is the **union** area of the discs
+cells, `-p`/`--grid`); the area is the count of touched grid cells × cell². Overlapping
+discs paint shared cells once, so the result is the **union** area of the discs
 — a compact approximation of the tissue those cells occupy.
 
-- `-r` (radius, µm): larger fills gaps more aggressively → larger area, lower density.
-- `-p` (pixel, µm): trades accuracy for speed/memory. Area is insensitive to it
-  (1.6 M cells: p=1 → 198.8 mm² vs p=4 → 200.2 mm², ≈0.7 %). `-p 2` is ≈4× faster
-  and ≈4× less memory. Painting is multithreaded (`-t`) and the result is
-  independent of thread count.
+- `-r`, `--radius` (µm): larger fills gaps more aggressively → larger area, lower density.
+- `-p`, `--grid` (µm): the area-raster resolution — the internal rasterization cell
+  size, **not** an image pixel size. It trades accuracy for speed/memory; area is
+  insensitive to it (1.6 M cells: grid=1 → 198.8 mm² vs grid=4 → 200.2 mm², ≈0.7 %).
+  `--grid 2` is ≈4× faster and ≈4× less memory. Painting is multithreaded (`-t`) and
+  the result is independent of thread count.
+
+## Coordinate units (per file, not per cohort)
+
+All painting is done in **microns**. Each input is converted to microns using **its
+own** `@HD` calibration — `UN:micron` is used as-is; `UN:pixel` is scaled by that
+file's `MP` (microns per pixel). The calibration therefore lives in each file, never
+at the cohort level, so a cohort can mix differently-scaled inputs safely. A file in
+`UN:pixel` with a missing/invalid `MP` cannot be converted and is **skipped** (add it
+with `cyftools addtag in.byf out.byf -t HD -f MP:<µm-per-px> -f UN:pixel`). A legacy
+file with no `UN` tag is assumed to already be in microns.
 
 ## Computing a density in the viewer
 

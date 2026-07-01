@@ -10,6 +10,7 @@
 #include <regex>
 #include <climits>   // PATH_MAX
 #include <cstdlib>   // realpath
+#include <iomanip>   // std::setprecision (roiinfo area formatting)
 
 #include "cell_row.h"
 #include "cell_selector.h"
@@ -94,7 +95,8 @@ static const char *RUN_USAGE_MESSAGE =
 " --- ROI (region-of-interest polygons) ---\n"
 "  addroi      - Import ROI polygons (OMERO/QuPath CSV) into the header as @RO tags\n"
 "  scaleroi    - Transform header @RO coordinates (scale, flip, shift)\n"
-"  clearroi    - Remove @RO polygons from the header (all, or by name/sample)\n"
+"  clearroi    - Remove @RO polygons from the header (all, or by id/name/sample)\n"
+"  roiinfo     - List each @RO region's id, name and polygon area\n"
 "  flagroi     - Set a pflag/cflag bit on cells inside the header's @RO polygons\n"
 "  roi         - Trim cells to those inside a polygon from an ROI file\n"
 " --- Marker ops ---\n"
@@ -198,6 +200,7 @@ static int addroifunc(int argc, char** argv);
 static int flagroifunc(int argc, char** argv);
 static int scaleroifunc(int argc, char** argv);
 static int clearroifunc(int argc, char** argv);
+static int roiinfofunc(int argc, char** argv);
 static int exportfunc(int argc, char** argv);
 static int cohortfunc(int argc, char** argv);
 
@@ -336,6 +339,8 @@ int main(int argc, char **argv) {
     val = scaleroifunc(argc, argv);
   } else if (opt::module == "clearroi") {
     val = clearroifunc(argc, argv);
+  } else if (opt::module == "roiinfo") {
+    return roiinfofunc(argc, argv);
   } else if (opt::module == "export") {
     val = exportfunc(argc, argv);
   } else if (opt::module == "cohort") {
@@ -1240,44 +1245,62 @@ static int addroifunc(int argc, char** argv) {
 
 static int flagroifunc(int argc, char** argv) {
 
-  const char* shortopts = "vc:p:n:s:";
-  int cbit = -1, pbit = -1;
+  static const struct option flagroi_longopts[] = {
+    {"overwrite", no_argument, NULL, 'O'},
+    {NULL, 0, NULL, 0}
+  };
+  const char* shortopts = "vc:p:n:s:O";
+  long cval = 0, pval = 0;          // decimal flag value (power of two); 0 = unset
+  bool overwrite = false;
   std::string name_filter;
   long sample_filter = -1;
 
-  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, flagroi_longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
-    case 'c' : arg >> cbit; break;
-    case 'p' : arg >> pbit; break;
+    case 'c' : arg >> cval; break;
+    case 'p' : arg >> pval; break;
+    case 'O' : overwrite = true; break;
     case 'n' : name_filter = (optarg ? optarg : ""); break;
     case 's' : arg >> sample_filter; break;
     default: die = true;
     }
   }
 
-  // require exactly one of -c / -p
-  if (die || (cbit < 0 && pbit < 0) || (cbit >= 0 && pbit >= 0) || in_out_process(argc, argv)) {
+  // require exactly one of -c / -p, and a single-bit (power-of-two) value
+  const bool have_c = cval != 0, have_p = pval != 0;
+  const long value = have_c ? cval : pval;
+  const bool pow2  = value > 0 && (value & (value - 1)) == 0;
+  if (die || have_c == have_p || !pow2 || in_out_process(argc, argv)) {
     const char *USAGE_MESSAGE =
-      "Usage: cyftools flagroi <in> <out> (-p <bit> | -c <bit>) [options]\n"
-      "  Set a flag bit on every cell inside a header @RO polygon, then stream out.\n"
+      "Usage: cyftools flagroi <in> <out> (-p <value> | -c <value>) [options]\n"
+      "  Set one flag bit on every cell inside a header @RO polygon, then stream out.\n"
       "  Pairs with `addroi` to round-trip a viewer lasso into pflag/cflag bits.\n"
       "\n"
-      "  -p <bit>     Set this pflag bit (0-based) for cells inside a region\n"
-      "  -c <bit>     Set this cflag bit (0-based) for cells inside a region\n"
+      "  -p <value>   Set this bit of the pflag register for cells inside a region\n"
+      "  -c <value>   Set this bit of the cflag register for cells inside a region\n"
+      "                 <value> is the bit's DECIMAL value -- a single power of two,\n"
+      "                 e.g. 1, 2, 4, 8, 16 (8 == bit index 3, NOT the literal '3').\n"
+      "  -O, --overwrite\n"
+      "               Clear this bit on ALL cells first, then set it inside the\n"
+      "                 regions, so afterwards exactly the in-ROI cells carry it.\n"
+      "                 Default (without -O) only ADDs: the bit is OR'd on for\n"
+      "                 in-ROI cells and left untouched on every other cell.\n"
       "  -n <name>    Only @RO regions whose name contains <name> (default: all)\n"
       "  -s <id>      Only @RO regions for this sample id (default: all)\n"
       "\n"
       "Example:\n"
-      "  cyftools flagroi in.byf out.byf -p 3 -n tumor\n";
+      "  cyftools flagroi in.byf out.byf -p 8 -n tumor          # add bit 8 (index 3)\n"
+      "  cyftools flagroi in.byf out.byf -c 8 --overwrite       # bit 8 = exactly in-ROI\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
   FlagRoiProcessor proc;
   proc.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  proc.SetParams(cbit >= 0 ? 'c' : 'p', cbit >= 0 ? cbit : pbit, name_filter, sample_filter);
+  proc.SetParams(have_c ? 'c' : 'p', static_cast<uint64_t>(value), overwrite,
+                 name_filter, sample_filter);
 
   if (!table.StreamTable(proc, opt::infile))
     return 1;
@@ -1351,8 +1374,9 @@ static int scaleroifunc(int argc, char** argv) {
 
 static int clearroifunc(int argc, char** argv) {
 
-  const char* shortopts = "vn:s:";
+  const char* shortopts = "vn:s:i:";
   std::string name;
+  std::string id;
   long sample = -1;
 
   for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
@@ -1360,6 +1384,7 @@ static int clearroifunc(int argc, char** argv) {
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'n' : name = (optarg ? optarg : ""); break;
+    case 'i' : id = (optarg ? optarg : ""); break;
     case 's' : arg >> sample; break;
     default: die = true;
     }
@@ -1369,22 +1394,27 @@ static int clearroifunc(int argc, char** argv) {
     const char *USAGE_MESSAGE =
       "Usage: cyftools clearroi <in> <out> [options]\n"
       "  Remove @RO polygons from the header, then stream all cells through\n"
-      "  unchanged. With no filter, removes ALL ROIs.\n"
+      "  unchanged. With no filter, removes ALL ROIs. Filters are AND-combined.\n"
       "\n"
-      "  -n <name>      Only @RO whose name (NM) contains <name>\n"
+      "  -i <id>        Only the @RO whose ID equals <id> exactly. Use this to\n"
+      "                   target one region when several share a name (the ID is\n"
+      "                   the per-ROI identifier in the @RO header line, e.g.\n"
+      "                   shown by `cyftools view -H`).\n"
+      "  -n <name>      Only @RO whose name (NM) contains <name> (substring)\n"
       "  -s <id>        Only @RO for this sample id (SA)\n"
       "  -v, --verbose  Report how many @RO were removed.\n"
       "\n"
       "Example:\n"
       "  cyftools clearroi in.byf out.byf            # remove all ROIs\n"
-      "  cyftools clearroi in.byf out.byf -n tumor   # remove only 'tumor' ROIs\n";
+      "  cyftools clearroi in.byf out.byf -n tumor   # remove every 'tumor' ROI\n"
+      "  cyftools clearroi in.byf out.byf -i 3       # remove just the ROI with ID 3\n";
     std::cerr << USAGE_MESSAGE;
     return 1;
   }
 
   ClearRoiProcessor proc;
   proc.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
-  proc.SetParams(name, sample);
+  proc.SetParams(name, sample, id);
 
   // fast path: header-only @RO removal -> copy the compressed records verbatim
   { int fr = tryFastReheader(opt::infile, opt::outfile,
@@ -1393,6 +1423,67 @@ static int clearroifunc(int argc, char** argv) {
 
   if (!table.StreamTable(proc, opt::infile))
     return 1;
+
+  return 0;
+}
+
+static int roiinfofunc(int argc, char** argv) {
+
+  const char* shortopts = "v";
+  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_only_process(argc, argv)) {
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools roiinfo <in>\n"
+      "  List every @RO region in the header, one per line, tab-separated:\n"
+      "    id  name  sample  vertices  area  area_um2\n"
+      "  'area' is in the file's coordinate units squared (the @HD UN unit);\n"
+      "  'area_um2' is microns^2 when @HD UN/MP allow the conversion, else '.'.\n"
+      "\n"
+      "Example:\n"
+      "  cyftools roiinfo cells.byf\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  RoiInfoProcessor proc;
+  proc.SetCommonParams("", cmd_input, opt::verbose);
+  CellTable t;
+  t.setVerbose(opt::verbose);
+  if (t.StreamTable(proc, opt::infile)) {
+    std::cerr << "cyftools roiinfo: could not read " << opt::infile << std::endl;
+    return 1;
+  }
+
+  // microns^2 per coordinate-unit^2, when derivable from @HD (else 0 = unknown)
+  double um2_per_unit2 = 0.0;
+  if (proc.units == "micron") {
+    um2_per_unit2 = 1.0;
+  } else if (proc.units == "pixel" && !proc.mpp.empty()) {
+    try { const double mp = std::stod(proc.mpp); um2_per_unit2 = mp * mp; }
+    catch (...) { um2_per_unit2 = 0.0; }
+  }
+
+  const std::string unit = proc.units.empty() ? "unit" : proc.units;
+  std::cout << "#id\tname\tsample\tvertices\tarea(" << unit << "^2)\tarea(um^2)\n";
+  std::cout << std::fixed << std::setprecision(3);
+  for (const auto& e : proc.rois) {
+    std::cout << e.id << '\t'
+              << (e.name.empty()   ? "." : e.name)   << '\t'
+              << (e.sample.empty() ? "." : e.sample) << '\t'
+              << e.nverts << '\t'
+              << e.area << '\t';
+    if (um2_per_unit2 > 0.0) std::cout << (e.area * um2_per_unit2) << '\n';
+    else                     std::cout << ".\n";
+  }
+
+  if (opt::verbose)
+    std::cerr << "cyftools roiinfo: " << proc.rois.size() << " @RO region(s)" << std::endl;
 
   return 0;
 }
@@ -1447,17 +1538,24 @@ static std::string cohort_abspath(const std::string& p) {
 
 static int cohortfunc(int argc, char** argv) {
 
+  static const struct option cohort_longopts[] = {
+    {"grid",    required_argument, NULL, 'p'},   // area-raster cell size (microns)
+    {"radius",  required_argument, NULL, 'r'},
+    {"out",     required_argument, NULL, 'o'},
+    {"threads", required_argument, NULL, 't'},
+    {NULL, 0, NULL, 0}
+  };
   const char* shortopts = "vr:p:o:t:";
   double radius = 20.0;          // paint disc radius, microns
-  double pixel  = 1.0;           // raster pixel size, microns
+  double grid   = 1.0;           // area-raster cell size, microns
   std::string outjson = "-";     // JSON destination; "-" = stdout
 
-  for (int c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;) {
+  for (int c; (c = getopt_long(argc, argv, shortopts, cohort_longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
     switch (c) {
     case 'v' : opt::verbose = true; break;
     case 'r' : arg >> radius; break;
-    case 'p' : arg >> pixel; break;
+    case 'p' : arg >> grid; break;
     case 'o' : arg >> outjson; break;
     case 't' : arg >> opt::threads; break;
     default: die = true;
@@ -1469,7 +1567,7 @@ static int cohortfunc(int argc, char** argv) {
   optind++;
   while (optind < argc) files.push_back(argv[optind++]);
 
-  if (die || files.empty() || radius <= 0 || pixel <= 0) {
+  if (die || files.empty() || radius <= 0 || grid <= 0) {
     const char *USAGE_MESSAGE =
       "Usage: cyftools cohort [options] <in1> <in2> ... \n"
       "  Summarize a cohort of CYF tables into a single JSON. For each input and each\n"
@@ -1478,12 +1576,20 @@ static int cohortfunc(int argc, char** argv) {
       "  (cflag,pflag) histogram lets a viewer count any pflag combination in any\n"
       "  compartment and divide by its area for cells/mm^2. See docs/COHORT_JSON.md.\n"
       "\n"
+      "  All distances are in MICRONS. Each input's coordinates are converted to\n"
+      "  microns using ITS OWN @HD UN/MP (microns-per-pixel) - the calibration lives\n"
+      "  per-file, not at the cohort level. A file in pixel units with no usable @HD\n"
+      "  MP is skipped (run `cyftools addtag ... -t HD -f MP:<umpp> -f UN:pixel`).\n"
+      "\n"
       "Options:\n"
-      "  -o <file.json>   Output JSON path (default: stdout). Progress goes to stderr.\n"
-      "  -r <microns>     Paint disc radius (default: 20).\n"
-      "  -p <microns>     Raster pixel size; larger = faster, less memory (default: 1).\n"
-      "  -t <int>         Threads for painting (default: 1).\n"
-      "  -v               Verbose.\n"
+      "  -o, --out <file.json>  Output JSON path (default: stdout). Progress -> stderr.\n"
+      "  -r, --radius <um>      Paint disc radius in microns (default: 20).\n"
+      "  -p, --grid <um>        Area-raster cell size in microns; this is the internal\n"
+      "                           rasterization resolution for the painted-area union,\n"
+      "                           NOT an image pixel size. Larger = faster / less\n"
+      "                           memory / coarser area (default: 1).\n"
+      "  -t, --threads <int>    Threads for painting (default: 1).\n"
+      "  -v                     Verbose.\n"
       "\n"
       "Example:\n"
       "  cyftools cohort -o cohort.json *.byf\n";
@@ -1505,7 +1611,7 @@ static int cohortfunc(int argc, char** argv) {
   os->precision(10);
 
   std::cerr << "cyftools cohort: " << files.size() << " file(s), radius "
-            << radius << "um, pixel " << pixel << "um, threads "
+            << radius << "um, grid " << grid << "um, threads "
             << opt::threads << std::endl;
 
   // stream each file and build its per-sample JSON object. Cells are not retained
@@ -1523,7 +1629,7 @@ static int cohortfunc(int argc, char** argv) {
 
     CohortProcessor proc;
     proc.SetCommonParams(outjson, cmd_input, opt::verbose);
-    proc.SetParams(radius, pixel, static_cast<size_t>(opt::threads));
+    proc.SetParams(radius, grid, static_cast<size_t>(opt::threads));
 
     CellTable t;
     t.setVerbose(opt::verbose);
@@ -1533,6 +1639,15 @@ static int cohortfunc(int argc, char** argv) {
                 << " - skipping" << std::endl;
       continue;
     }
+
+    // coordinates must be in (or convertible to) microns; skip if not
+    if (!proc.ScaleResolved()) {
+      std::cerr << "cyftools cohort: " << files[i] << ": " << proc.ScaleNote()
+                << " - skipping" << std::endl;
+      continue;
+    }
+    if (opt::verbose)
+      std::cerr << "cyftools cohort: " << files[i] << ": " << proc.ScaleNote() << std::endl;
 
     std::ostringstream ss;
     ss.precision(10);
@@ -1551,7 +1666,7 @@ static int cohortfunc(int argc, char** argv) {
   (*os) << "  \"version\": \"" << CYFTOOLS_VERSION << "\",\n";
   (*os) << "  \"command\": \"cohort\",\n";
   (*os) << "  \"params\": { \"paint_radius_um\": " << radius
-        << ", \"paint_pixel_um\": " << pixel << " },\n";
+        << ", \"paint_pixel_um\": " << grid << " },\n";
   (*os) << "  \"n_samples\": " << sample_jsons.size() << ",\n";
   (*os) << "  \"samples\": [\n";
   for (size_t i = 0; i < sample_jsons.size(); ++i)
@@ -3010,7 +3125,8 @@ static void parseRunOptions(int argc, char** argv) {
   // make sure module is implemented
   if (! (opt::module == "debug" || opt::module == "subsample" ||
 	 opt::module == "addtag" || opt::module == "addroi" ||
-	 opt::module == "flagroi" || opt::module == "scaleroi" || opt::module == "clearroi" || opt::module == "export" ||
+	 opt::module == "flagroi" || opt::module == "scaleroi" || opt::module == "clearroi" ||
+	 opt::module == "roiinfo" || opt::module == "export" ||
 	 opt::module == "plot"  || opt::module == "roi" ||
 	 opt::module == "histogram" || opt::module == "log10" ||
 	 opt::module == "crop"  ||

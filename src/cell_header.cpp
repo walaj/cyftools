@@ -427,11 +427,14 @@ void CellHeader::CleanProgramTags() {
 
 }
 
-size_t CellHeader::RemoveRoiTags(const std::string& name_filter, long sample_filter) {
+size_t CellHeader::RemoveRoiTags(const std::string& name_filter, long sample_filter,
+                                 const std::string& id_filter) {
   const size_t before = tags.size();
   tags.erase(std::remove_if(tags.begin(), tags.end(),
     [&](const Tag& t) {
       if (t.type != Tag::RO_TAG) return false;
+      if (!id_filter.empty() && t.id != id_filter)   // exact ID match (disambiguates dup names)
+        return false;
       if (!name_filter.empty() && t.GetField("NM").find(name_filter) == std::string::npos)
         return false;
       if (sample_filter >= 0) {
