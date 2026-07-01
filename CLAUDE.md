@@ -130,6 +130,16 @@ object store is pluggable: `LocalStore` (cache dir; PUT to `/blob/...`) or `GcsS
 (signed URLs to a GCS bucket). A raw `POST /convert` (whole body) is the small-file
 fallback. Browser-side magic-byte sniff routes `CYFV`→render-direct, BGZF→server.
 
+A second, **standalone** browser tool lives in `docs/` and is served statically via
+**GitHub Pages** (no server, no Docker): `docs/cyf_cohort.html` is the cohort phenotyper —
+it loads a `cohort.json` (from `cyftools cohort`), groups/compares samples, and exports
+publication-ready R/ggplot2 figures standardized by an optional plot config
+(`docs/cohort.config.example.json`, authored in-page via "⚙ Build config…"). It is pure
+client-side (drag a file in, or `?file=`/`?config=` URL params) and only consumes
+`cohort.json` — it never re-derives metrics, honoring the same "never reimplement" spirit.
+`docs/.nojekyll` + `docs/index.html` make Pages serve it byte-for-byte. Enable it under
+repo Settings → Pages → *Deploy from branch* `main` `/docs`.
+
 Deploy: `Dockerfile` is a two-stage build (minimal-core `cyftools`, i.e. TIFF/Cairo/LDA/
 OpenMP off → runtime needs only `python3`+`zlib`+`google-cloud-storage`). **After any code
 change you must rebuild the image** (container has a baked-in copy); viewer-only edits

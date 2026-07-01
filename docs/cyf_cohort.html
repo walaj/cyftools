@@ -63,6 +63,19 @@
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     .hint { color: var(--muted); font-size: 11px; }
 
+    /* Plotting-config controls, visually sectioned off from the data controls so
+       it's clear these only affect figure styling, not the data/metrics. */
+    .config-group {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin-left: 10px; padding: 3px 9px;
+      border: 1px solid #cfe1ff; border-radius: 5px; background: #f5f9ff;
+    }
+    .config-group .cfg-tag {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+      text-transform: uppercase; color: var(--accent);
+    }
+    .config-group .cfg-note { font-size: 10px; color: var(--muted); }
+
     /* Calculation description bar */
     .calc-desc {
       background: #f5f9ff;
@@ -158,10 +171,6 @@
     }
     table.files input.name-input { font-family: monospace; }
     #files-panel { overflow-x: auto; }   /* scroll if resized columns overflow */
-    table.files a.open-gater {
-      color: #234; text-decoration: none; border-bottom: 1px dashed #aaa;
-    }
-    table.files a.open-gater:hover { color: var(--accent); border-color: var(--accent); }
     table.files tr.row-done .file-name { color: #444; }
     /* Subtle right border between the region columns and the match columns */
     table.files th.col-divider, table.files td.col-divider {
@@ -201,7 +210,6 @@
   <h1>cyftools phenotyper · cohort</h1>
   <span class="meta">load a cohort.json from <code>cyftools cohort</code>, then group + compare</span>
   <span style="flex:1"></span>
-  <a href="cyf_gater.html">single-sample view →</a>
 </header>
 
 <main>
@@ -211,6 +219,17 @@
     <div class="controls">
       <button id="btn-pick-folder" type="button">Load cohort.json…</button>
       <input type="file" id="folder-input" accept=".json,application/json" style="display:none" />
+
+      <span class="config-group"
+        title="Plotting only: fonts, colors, PDF size, tick density, significance bars — for the R/ggplot2 figure export and the plot preview. Does NOT change the data or metrics.">
+        <span class="cfg-tag">Plot config</span>
+        <button id="btn-load-config" type="button" class="secondary"
+          title="Load a plotting-config JSON (fonts, PDF dimensions, colors, …)">Load…</button>
+        <input type="file" id="config-input" accept=".json,application/json" style="display:none" />
+        <button id="btn-build-config" type="button" class="secondary"
+          title="Build/edit the plotting config and download it as JSON">⚙ Build…</button>
+        <span class="cfg-note">figure styling → R / PDF</span>
+      </span>
 
       <span class="group-label" style="margin-left: 6px;">Region (cflag, AND)</span>
       <span id="cflag-display" class="hint" style="font-family: monospace;">all cells</span>
@@ -301,6 +320,104 @@
       </div>
       <textarea id="r-modal-text" style="flex:1; min-height:60vh; font-family:Menlo,Consolas,monospace; font-size:11.5px; padding:8px; border:1px solid var(--border); border-radius:4px;" readonly></textarea>
       <div class="hint">Clipboard API was unavailable (often the case for file:// origins). Select all + copy from the box above.</div>
+    </div>
+  </div>
+
+  <!-- Config builder: a form for the optional plot-config JSON. Fields map 1:1
+       to the config keys; "Apply" previews live, "Download" writes the file. -->
+  <div id="config-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:6px; padding:16px; max-width:660px; width:94%; max-height:90vh; overflow:auto; display:flex; flex-direction:column; gap:14px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <h2 style="margin:0; font-size:14px;">Build plot config</h2>
+        <span class="hint">standardize the R / ggplot2 export for papers — every field is optional</span>
+        <span style="flex:1"></span>
+        <button id="btn-config-close" class="secondary" type="button">Close</button>
+      </div>
+
+      <div>
+        <h2 style="font-size:11px; margin:0 0 6px; color:#555; text-transform:uppercase; letter-spacing:.5px;">Fonts &amp; points</h2>
+        <div class="controls">
+          <label>Font family <input type="text" id="cfg-font-family" style="width:130px" placeholder="Arial" /></label>
+          <label>Font size (pt) <input type="number" id="cfg-font-size" min="1" step="0.5" /></label>
+          <label>X tick font (pt) <input type="number" id="cfg-xtick-font-size" min="1" step="0.5" title="x-axis tick label size; blank = base font size" /></label>
+          <label>Y tick font (pt) <input type="number" id="cfg-ytick-font-size" min="1" step="0.5" title="y-axis tick label size; blank = base font size" /></label>
+          <label>Point size <input type="number" id="cfg-point-size" min="0" step="0.25" /></label>
+          <label>Tick/axis color <input type="color" id="cfg-tick-color" /></label>
+          <label>Y-axis ticks <input type="number" id="cfg-y-ticks" min="2" step="1" title="approximate number of ticks on the value axis" /></label>
+        </div>
+        <div class="hint" style="margin-top:4px;">Applied as ggplot2 <code>base_size</code>/<code>base_family</code> and every <code>element_text(size=…)</code>; the significance stars auto-convert pt→mm.</div>
+      </div>
+
+      <div>
+        <h2 style="font-size:11px; margin:0 0 6px; color:#555; text-transform:uppercase; letter-spacing:.5px;">PDF dimensions (inches, per plot)</h2>
+        <div class="controls">
+          <span class="group-label">Box plot</span>
+          <label>W <input type="number" id="cfg-box-w" min="0.1" step="0.1" /></label>
+          <label>H <input type="number" id="cfg-box-h" min="0.1" step="0.1" /></label>
+          <span class="group-label" style="margin-left:14px;">Waterfall</span>
+          <label>W <input type="number" id="cfg-wf-w" min="0.1" step="0.1" /></label>
+          <label>H <input type="number" id="cfg-wf-h" min="0.1" step="0.1" /></label>
+        </div>
+        <div class="hint" style="margin-top:4px;">Written into each plot's <code>ggsave(width=, height=, device=cairo_pdf)</code> — vector, editable, embedded font.</div>
+      </div>
+
+      <div>
+        <h2 style="font-size:11px; margin:0 0 6px; color:#555; text-transform:uppercase; letter-spacing:.5px;">Defaults</h2>
+        <div class="controls">
+          <label>Metric
+            <select id="cfg-metric">
+              <option value="density">density (cells/mm²)</option>
+              <option value="percent">percent in region</option>
+            </select>
+          </label>
+          <label>Compartment <select id="cfg-compartment"><option value="all">all cells</option></select></label>
+        </div>
+      </div>
+
+      <div>
+        <h2 style="font-size:11px; margin:0 0 6px; color:#555; text-transform:uppercase; letter-spacing:.5px;">Group colors (HTML viewer + R fill)</h2>
+        <div id="cfg-group-colors" style="display:flex; flex-direction:column; gap:6px;"></div>
+        <button id="btn-cfg-add-group" type="button" class="secondary" style="margin-top:6px; font-size:11px; padding:2px 8px;">+ Add group</button>
+        <div class="hint" style="margin-top:4px;">Add any number of groups. Names that match the Group column of loaded samples get that color; use ↑/↓ to set the plot order (left→right), which becomes <code>group_order</code>.</div>
+      </div>
+
+      <div>
+        <h2 style="font-size:11px; margin:0 0 6px; color:#555; text-transform:uppercase; letter-spacing:.5px;">Significance test (box plot)</h2>
+        <div class="controls">
+          <label>Test
+            <select id="cfg-stat-test">
+              <option value="wilcox.test">Wilcoxon / Mann–Whitney</option>
+              <option value="t.test">t-test</option>
+            </select>
+          </label>
+          <label>Show
+            <select id="cfg-stat-label">
+              <option value="stars">asterisks (*, **, ***)</option>
+              <option value="pvalue">p-value (p = / p &lt;)</option>
+            </select>
+          </label>
+          <label>P-value font (pt) <input type="number" id="cfg-pval-font-size" min="1" step="0.5" title="size of the p-value / asterisk text; blank = base font size" /></label>
+          <label>Tip length <input type="number" id="cfg-stat-tip" min="0" step="0.01" /></label>
+          <label>Bracket width <input type="number" id="cfg-stat-lw" min="0" step="0.05" /></label>
+          <label>Bracket color <input type="color" id="cfg-stat-color" /></label>
+          <label>P-value text <input type="color" id="cfg-stat-text-color" title="color of the p-value / asterisk text (independent of the bracket color)" /></label>
+          <label>Significant color <input type="color" id="cfg-stat-sig-color" title="p-value text color when a comparison is significant" /></label>
+          <label>Highlight p&lt; <input type="number" id="cfg-stat-thresh" min="0.0001" max="0.9999" step="0.01" style="width:64px" title="significance threshold for the highlight color" /></label>
+        </div>
+        <div class="hint" style="margin-top:4px;">Between-group bars in the R box plot. <b>Tip length 0 = flat bars (no end caps)</b>. Bracket line and p-value text are colored separately; comparisons with <b>p &lt; threshold</b> use the “significant” color.</div>
+      </div>
+
+      <div>
+        <h2 style="font-size:11px; margin:0 0 6px; color:#555; text-transform:uppercase; letter-spacing:.5px;">Palette (auto-assign for unnamed groups)</h2>
+        <input type="text" id="cfg-palette" style="width:100%; font-family:monospace; font-size:12px; padding:3px 5px;"
+          placeholder="#66c2a5, #fc8d62, #8da0cb, …  (comma-separated hex; blank = default SET2)" />
+      </div>
+
+      <div style="display:flex; gap:8px; align-items:center; border-top:1px solid var(--border); padding-top:12px;">
+        <button id="btn-config-apply" type="button">Apply to viewer</button>
+        <button id="btn-config-download" type="button" class="secondary">⤓ Download config.json</button>
+        <span id="config-flash" style="font-size:11px; color:var(--ok); display:none;">✓ applied</span>
+      </div>
     </div>
   </div>
 
@@ -618,11 +735,22 @@ async function loadCohortFile(file){
 }
 
 // ----- optional preferences file (small, all keys optional) ----------------
+// Standardizes the paper figures: colors drive the HTML viewer AND the R
+// export; the `plot` section is baked into the generated R/ggplot2 script.
 // { "group_colors": { "Responder": "#2a73d8", ... },
 //   "group_order": ["Responder", "Non-responder", ...],
+//   "palette": ["#66c2a5", "#fc8d62", ...],   // auto-assign colors for unnamed groups
 //   "default_metric": "density"|"percent",
 //   "default_compartment": "Tumor"|"all"|<bit>,
-//   "export": { "format":"png", "width":1100, "height":700, "scale":2 } }
+//   "export": { "format":"png", "width":1100, "height":700, "scale":2 },  // HTML PNG buttons
+//   "plot": {                                  // → R/ggplot2 export (papers)
+//     "font_family": "Arial", "font_size": 7, "point_size": 2, "tick_color": "#000000", "y_ticks": 10,
+//     "x_tick_font_size": 7, "y_tick_font_size": 7, "pvalue_font_size": 7,   // pt; default = font_size
+//     "box":       { "pdf_width": 1.7, "pdf_height": 1.6 },
+//     "waterfall": { "pdf_width": 6,   "pdf_height": 5   },
+//     "stats": { "test": "wilcox.test", "label": "stars",     // asterisks | "pvalue" (p = / p <)
+//                "tip_length": 0, "bracket_linewidth": 0.25, "bracket_color": "#000000",
+//                "text_color": "#000000", "sig_color": "#c0392b", "sig_threshold": 0.05 } } }
 let CONFIG = null;
 function applyConfig(cfg){
   if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg.samples)) return;
@@ -648,6 +776,51 @@ function cohortExportSize(){
   const e = (CONFIG && CONFIG.export) || {};
   return { format: e.format || 'png', width: +e.width || 1000,
            height: +e.height || 650, scale: +e.scale || 2 };
+}
+
+/** Normalized plotting options for the R/ggplot2 export (font, point size,
+ *  per-plot PDF dimensions), with publication-ready defaults. Sourced from the
+ *  optional config's `plot` section — this is where papers get standardized. */
+function plotOpts(){
+  const p   = (CONFIG && CONFIG.plot) || {};
+  const box = p.box || {}, wf = p.waterfall || {}, st = p.stats || {};
+  const pos = (v, d) => (typeof v === 'number' && isFinite(v) && v >  0) ? v : d;  // strictly positive
+  const nn  = (v, d) => (typeof v === 'number' && isFinite(v) && v >= 0) ? v : d;  // non-negative (allows 0)
+  const str = (v, d) => (typeof v === 'string' && v.trim()) ? v.trim() : d;
+  // Label style: normalize to 'stars' | 'pvalue' (accept the legacy ggpubr names too).
+  const labRaw = str(st.label, 'stars');
+  const labelMode = (labRaw === 'p.signif' || labRaw === 'stars') ? 'stars' : 'pvalue';
+  // Colors: bracket line; p-value text (defaults to the bracket color); and the
+  // highlight color for a significant comparison (defaults to the text color).
+  const barColor  = str(st.bracket_color, '#000000');
+  const textColor = str(st.text_color, barColor);
+  const sigColor  = str(st.sig_color, textColor);
+  const sigThresh = (typeof st.sig_threshold === 'number' && st.sig_threshold > 0 && st.sig_threshold < 1)
+    ? st.sig_threshold : 0.05;
+  const fontSize = pos(p.font_size, 7);   // base; also the default for the specific sizes below
+  return {
+    fontFamily: str(p.font_family, 'Arial'),
+    fontSize,
+    pointSize:  pos(p.point_size, 2),
+    tickColor:  str(p.tick_color, '#000000'),   // axis ticks/lines — true black by default
+    yTicks:     Math.max(2, Math.round(pos(p.y_ticks, 10))),   // approx # of y-axis ticks
+    // Per-element font sizes (pt); each defaults to the base font size.
+    xTickFontSize: pos(p.x_tick_font_size, fontSize),
+    yTickFontSize: pos(p.y_tick_font_size, fontSize),
+    pvalFontSize:  pos(p.pvalue_font_size, fontSize),
+    box: { w: pos(box.pdf_width, 1.7), h: pos(box.pdf_height, 1.6) },
+    wf:  { w: pos(wf.pdf_width,  6),   h: pos(wf.pdf_height,  5)   },
+    // Between-group significance brackets on the box plot (manual geom_segment +
+    // geom_text, so bracket and p-value text can be colored independently).
+    stats: {
+      test:      str(st.test, 'wilcox.test'),    // 'wilcox.test' | 't.test'
+      label:     labelMode,                      // 'stars' (*, **, ***) | 'pvalue' (p = / p <)
+      tipLength: nn(st.tip_length,        0),    // 0 = flat bars, no end caps
+      bracketLw: pos(st.bracket_linewidth, 0.25),
+      color:     barColor,                       // bracket line color
+      textColor, sigColor, sigThresh,            // p-value text; highlight color; p< threshold
+    },
+  };
 }
 function downloadPlotPNG(divId, name){
   const el = document.getElementById(divId);
@@ -2224,12 +2397,6 @@ function renderRows() {
       renderBarPlot();
     });
   }
-  for (const a of fileRowsEl.querySelectorAll('a.open-gater')) {
-    a.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      openInGater(a.dataset.key);
-    });
-  }
 }
 
 function statusLabel(f) {
@@ -2250,32 +2417,6 @@ function fmtNum(n, digits) {
   return n.toLocaleString(undefined, { maximumFractionDigits: digits ?? 2 });
 }
 
-// ----- Pop out a single file in the gater --------------------------------
-//
-// We open cyf_gater.html in a new tab and stream the file's bytes over via
-// postMessage once the gater signals it's ready. File objects survive
-// structured cloning, so the gater can call its existing loadFile path
-// without re-prompting the OS file picker.
-
-function openInGater(key) {
-  const entry = state.files.find(f => f.key === key);
-  if (!entry) return;
-  const win = window.open('cyf_gater.html?from=cohort', '_blank');
-  if (!win) {
-    alert('Could not open new tab — pop-up blocked?');
-    return;
-  }
-  // Wait for "ready" from the new tab, then send the file.
-  function onMsg(ev) {
-    if (ev.source !== win) return;
-    if (ev.data && ev.data.type === 'cohort-gater-ready') {
-      win.postMessage({ type: 'load-cyf', file: entry.file, name: entry.name }, '*');
-      window.removeEventListener('message', onMsg);
-    }
-  }
-  window.addEventListener('message', onMsg);
-}
-
 // ----- Group comparison: box + jittered dots, ColorBrewer Set2 -----------
 //
 // Single trace per group rendered as `type:'box'` with `boxpoints:'all'` so
@@ -2286,7 +2427,13 @@ function openInGater(key) {
 const SET2 = [
   '#66c2a5','#fc8d62','#8da0cb','#e78ac3','#a6d854','#ffd92f','#e5c494','#b3b3b3',
 ];
-function softColor(idx) { return SET2[idx % SET2.length]; }
+// The palette used to auto-assign colors to groups that aren't named in the
+// config's group_colors. Defaults to SET2; overridable via config.palette.
+const NO_GROUP_COLOR = '#b3b3b3';
+function palette() {
+  return (CONFIG && Array.isArray(CONFIG.palette) && CONFIG.palette.length) ? CONFIG.palette : SET2;
+}
+function softColor(idx) { const p = palette(); return p[idx % p.length]; }
 function hexToRgba(hex, alpha) {
   if (typeof hex !== 'string' || hex[0] !== '#' || hex.length !== 7) {
     return `rgba(180,180,180,${alpha})`;
@@ -2296,16 +2443,16 @@ function hexToRgba(hex, alpha) {
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
 }
-function softFill(idx)  { return hexToRgba(SET2[idx % SET2.length], 0.25); }
+function softFill(idx)  { const p = palette(); return hexToRgba(p[idx % p.length], 0.25); }
 
 /** Resolve the color for a group: user-set hex if present, otherwise the
- *  default SET2 swatch picked by alphabetical position. */
+ *  palette swatch picked by alphabetical position (palette = config.palette or SET2). */
 function getGroupColor(g) {
-  if (!g) return SET2[7];
+  if (!g) return NO_GROUP_COLOR;
   if (state.groupColors[g]) return state.groupColors[g];
   const sortedGroups = Array.from(new Set(state.files.map(f => f.group).filter(x => x))).sort();
   const i = sortedGroups.indexOf(g);
-  return i >= 0 ? softColor(i) : SET2[7];
+  return i >= 0 ? softColor(i) : NO_GROUP_COLOR;
 }
 function getGroupFill(g) { return hexToRgba(getGroupColor(g), 0.18); }
 
@@ -2375,6 +2522,7 @@ function renderBarPlot() {
   const ylabel = metricLabel();
 
   const useLog = !!document.getElementById('plot-log')?.checked;
+  const yTicks = plotOpts().yTicks;
   Plotly.newPlot('plot-area', traces, {
     margin: { t: 14, l: 70, r: 10, b: 56 },
     yaxis: {
@@ -2382,6 +2530,7 @@ function renderBarPlot() {
       type: useLog ? 'log' : 'linear',
       rangemode: useLog ? 'normal' : 'tozero',
       gridcolor: '#eee', zerolinecolor: '#ddd',
+      nticks: yTicks,
     },
     xaxis: {
       title: '',
@@ -2425,6 +2574,7 @@ function renderWaterfall(completed) {
   const wf = document.getElementById('waterfall-area');
   if (!wf) return;
   const useLog = !!document.getElementById('plot-log')?.checked;
+  const yTicks = plotOpts().yTicks;
   const ylabel = metricLabel();
   const isPct = state.plotMetric === 'percent';
 
@@ -2458,6 +2608,7 @@ function renderWaterfall(completed) {
       type: useLog ? 'log' : 'linear',
       rangemode: useLog ? 'normal' : 'tozero',
       gridcolor: '#eee', zerolinecolor: '#ddd',
+      nticks: yTicks,
     },
     xaxis: {
       tickangle: -45,
@@ -2746,6 +2897,7 @@ function rColumnLines(rows, key, fn, indent) {
 }
 
 function rExportHeader(extra) {
+  const po = plotOpts();
   const ml = selectedMarkerLabel() || '(no marker filter)';
   const region = selectedCflagLabel();
   const metric = state.plotMetric === 'percent' ? '% in region' : 'cells / mm²';
@@ -2756,8 +2908,8 @@ function rExportHeader(extra) {
 # Method   : ${state.method === 'hull' ? 'convex hull (DBSCAN-style)' : `painted ${state.radiusPx}px discs`}, ${state.scaling} µm/px
 # Markers  : ${ml}
 # Y metric : ${metric}
-# Font     : Arial, 7pt absolute (theme base_size/base_family). Saved via
-#            cairo_pdf so text is editable, Arial-embedded, and does not scale
+# Font     : ${po.fontFamily}, ${po.fontSize}pt absolute (theme base_size/base_family). Saved via
+#            cairo_pdf so text is editable, font-embedded, and does not scale
 #            with the plot area (see footer).
 # ---------------------------------------------------------------`;
 }
@@ -2785,17 +2937,44 @@ if ("showtext" %in% loadedNamespaces()) showtext::showtext_auto(FALSE)
  * area). print(g) is guarded to interactive sessions so a headless Rscript
  * (default pdf device) doesn't hit the Arial error on the preview.
  */
-function rSavePlot(file, w, h) {
-  return `# --- Save an editable, embedded-Arial vector PDF -----------------------------
+function rSavePlot(file, w, h, fam) {
+  fam = fam || 'Arial';
+  return `# --- Save an editable, embedded-font vector PDF ------------------------------
 # Just RUN this script as-is; it writes the PDF itself. Do NOT wrap it in
-# pdf()/dev.off(): the base pdf() device can't embed Arial (it errors on it).
-# cairo_pdf keeps text editable and renders 7pt as ABSOLUTE 7pt — changing the
-# width/height rescales the panel, NOT the font.
+# pdf()/dev.off(): the base pdf() device can't embed ${fam} (it errors on it).
+# cairo_pdf keeps text editable and renders the base size as ABSOLUTE points —
+# changing the width/height rescales the panel, NOT the font.
 if (!isTRUE(capabilities("cairo")))
-  stop("This R build lacks cairo; cannot embed Arial. Rebuild R with cairo support.")
+  stop("This R build lacks cairo; cannot embed ${fam}. Rebuild R with cairo support.")
 ggsave(${rString(file)}, g, width = ${w}, height = ${h}, device = cairo_pdf)
 if (interactive()) print(g)   # on-screen preview; skipped under headless Rscript
 `;
+}
+
+/**
+ * Assign a vertical "level" (0 = lowest) to each significance bracket so that
+ * comparisons which don't overlap along x share a height, and wider spans stack
+ * above narrower ones. For 3 groups this puts A-B and B-C even (level 0) with
+ * A-C above (level 1). `pairIdx` is [[iIndex,jIndex], …] of group positions in
+ * plot order; returns a level per pair in the SAME order.
+ */
+function bracketLevels(pairIdx) {
+  const items = pairIdx.map((p, idx) => ({ idx, a: Math.min(p[0], p[1]), b: Math.max(p[0], p[1]) }));
+  // Shortest span first (so adjacent pairs settle low), then left-to-right.
+  items.sort((x, y) => (x.b - x.a) - (y.b - y.a) || x.a - y.a);
+  const levels = new Array(pairIdx.length).fill(0);
+  const occupied = [];   // occupied[level] = list of [a,b] intervals already placed
+  for (const it of items) {
+    let lvl = 0;
+    for (;;) {
+      const rowsAt = occupied[lvl] || (occupied[lvl] = []);
+      // Touching only at an endpoint (shared group) is allowed on the same level.
+      const clash = rowsAt.some(([a, b]) => Math.max(a, it.a) < Math.min(b, it.b));
+      if (!clash) { rowsAt.push([it.a, it.b]); levels[it.idx] = lvl; break; }
+      lvl++;
+    }
+  }
+  return levels;
 }
 
 /**
@@ -2810,15 +2989,71 @@ function buildBoxPlotR() {
 
   const groups = orderedGroups(rows.map(r => r.group));
   const colorLines = groups.map(g => `  ${rString(g)} = ${rString(getGroupColor(g))}`).join(',\n');
-  const pairs = [];
-  for (let i = 0; i < groups.length; i++) {
-    for (let j = i + 1; j < groups.length; j++) {
-      pairs.push(`  c(${rString(groups[i])}, ${rString(groups[j])})`);
-    }
-  }
+  const pairIdx = [];
+  for (let i = 0; i < groups.length; i++)
+    for (let j = i + 1; j < groups.length; j++)
+      pairIdx.push([i, j]);   // group x-positions for each pairwise comparison
   const ylab = (state.plotMetric === 'percent')
     ? `% ${selectedMarkerLabel() || ''}`
     : `${selectedMarkerLabel() || selectedCflagLabel()} cells / mm²`;
+
+  // Paper-standardization knobs from the optional config (font/point/PDF size).
+  const po = plotOpts();
+  const fs = po.fontSize, fam = po.fontFamily, ps = po.pointSize;
+  const xTickFs = po.xTickFontSize, yTickFs = po.yTickFontSize;
+  const pvalMm = (po.pvalFontSize / 2.845).toFixed(2);   // p-value text size, pt → mm (ggplot's .pt)
+  const tick = po.tickColor, yTicks = po.yTicks;
+  const stt = po.stats;
+  const stTest = stt.test, stTip = stt.tipLength, stLw = stt.bracketLw;
+  const barColor = stt.color, textColor = stt.textColor, sigColor = stt.sigColor, sigThresh = stt.sigThresh;
+
+  // Explicit bracket heights: non-overlapping comparisons sit even; wider spans
+  // stack above (A-B & B-C even, A-C above). y in data units, off the data max.
+  const vals = rows.map(r => r.value).filter(v => isFinite(v));
+  const ymax = vals.length ? Math.max(...vals) : NaN;
+  const levels = bracketLevels(pairIdx);
+  const maxLevel = levels.length ? Math.max(...levels) : 0;
+  const useSig = pairIdx.length > 0 && isFinite(ymax) && ymax > 0;
+  const topExpand = useSig ? (0.05 + 0.10 * maxLevel + 0.08).toFixed(2) : '0.12';
+
+  // Manual significance layer: bracket (geom_segment) and p-value text (geom_text)
+  // are colored independently, and significant comparisons get their own color.
+  const rvec = a => `c(${a.join(', ')})`;
+  const tipDrop = (stTip > 0 && isFinite(ymax)) ? stTip * ymax : 0;   // end-cap drop (data units)
+  const labelExpr = (stt.label === 'stars')
+    ? `ifelse(is.na(sig$p), "", as.character(symnum(sig$p, corr = FALSE, na = FALSE,
+                     cutpoints = c(0, 0.001, 0.01, 0.05, 1), symbols = c("***", "**", "*", "ns"))))`
+    : `ifelse(is.na(sig$p), "", ifelse(sig$p < 0.001, "p < 0.001", sprintf("p = %.3f", sig$p)))`;
+  const tipsLayer = (tipDrop > 0) ? ` +
+  geom_segment(data = sig, aes(x = x1, xend = x1, y = y, yend = y - ${tipDrop.toFixed(4)}),
+               inherit.aes = FALSE, linewidth = ${stLw}, colour = ${rString(barColor)}) +
+  geom_segment(data = sig, aes(x = x2, xend = x2, y = y, yend = y - ${tipDrop.toFixed(4)}),
+               inherit.aes = FALSE, linewidth = ${stLw}, colour = ${rString(barColor)})` : '';
+  const sigBlock = !useSig ? '' :
+`
+# --- Significance annotations (manual: bracket & p-value text colored separately) ---
+sig <- data.frame(
+  ga = ${rvec(pairIdx.map(p => rString(groups[p[0]])))},
+  gb = ${rvec(pairIdx.map(p => rString(groups[p[1]])))},
+  x1 = ${rvec(pairIdx.map(p => p[0] + 1))},
+  x2 = ${rvec(pairIdx.map(p => p[1] + 1))},
+  y  = ${rvec(levels.map(l => (ymax * (1.05 + 0.10 * l)).toFixed(4)))},
+  stringsAsFactors = FALSE
+)
+# Recompute each comparison's p-value in R with the chosen test.
+sig$p <- mapply(function(a, b) tryCatch(suppressWarnings(
+  ${stTest}(cohort$value[cohort$group == a], cohort$value[cohort$group == b])$p.value),
+  error = function(e) NA_real_), sig$ga, sig$gb)
+sig$label <- ${labelExpr}
+# p-value text color: significant (p < ${sigThresh}) gets its own color.
+sig$tcol  <- ifelse(!is.na(sig$p) & sig$p < ${sigThresh}, ${rString(sigColor)}, ${rString(textColor)})
+g <- g +
+  geom_segment(data = sig, aes(x = x1, xend = x2, y = y, yend = y),
+               inherit.aes = FALSE, linewidth = ${stLw}, colour = ${rString(barColor)})${tipsLayer} +
+  geom_text(data = sig, aes(x = (x1 + x2) / 2, y = y, label = label),
+            inherit.aes = FALSE, colour = sig$tcol, vjust = -0.35,
+            size = ${pvalMm}, family = ${rString(fam)})
+`;
 
   const cohortBlock = [
     `  file     = c(\n${rColumnLines(rows, 'file',     v => rString(v), '    ')}\n  )`,
@@ -2836,7 +3071,6 @@ function buildBoxPlotR() {
 
 library(ggplot2)
 library(ggbeeswarm)
-library(ggpubr)
 
 ${rEditableText()}
 cohort <- data.frame(
@@ -2850,34 +3084,26 @@ group_colors <- c(
 ${colorLines}
 )
 
-group_pairs <- list(
-${pairs.join(',\n')}
-)
-
 # --- Beeswarm helper (from user's snippet, lightly reformatted) ---
-create_beeswarm_plot <- function(data, x_var, y_var, withbox = FALSE, dx_combos = NA, fill_var = NA) {
+create_beeswarm_plot <- function(data, x_var, y_var, withbox = FALSE, fill_var = NA) {
   if (is.na(fill_var)) fill_var <- x_var
   g <- ggplot(data, aes_string(x = x_var, y = y_var)) +
     ggbeeswarm::geom_quasirandom(
-      shape = 21, color = "black", alpha = 1, size = 2,
+      shape = 21, color = "black", alpha = 1, size = ${ps},
       aes(fill = .data[[fill_var]])
     ) +
-    theme_bw(base_size = 7, base_family = "Arial") +
+    theme_bw(base_size = ${fs}, base_family = ${rString(fam)}) +
     theme(
       legend.position = "none",
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
-      # every text element pinned to an absolute 7pt, full black (no gray / rel() scaling)
-      text       = element_text(size = 7, colour = "black"),
-      axis.title = element_text(size = 7, face = "bold", colour = "black"),
-      axis.text  = element_text(size = 7, colour = "black")
+      # base text ${fs}pt; tick labels sized independently (x_tick/y_tick_font_size)
+      text       = element_text(size = ${fs}, colour = "black"),
+      axis.title = element_text(size = ${fs}, face = "bold", colour = "black"),
+      axis.text.x = element_text(size = ${xTickFs}, colour = "black"),
+      axis.text.y = element_text(size = ${yTickFs}, colour = "black"),
+      axis.ticks = element_line(colour = ${rString(tick)})   # true black by default, configurable
     )
-  if (length(dx_combos) || !is.na(dx_combos)) {
-    g <- g + ggpubr::stat_compare_means(
-      comparisons = dx_combos, label = "p.signif",
-      method = "wilcox.test", size = 2.46, family = "Arial"   # ~7pt Arial (in mm)
-    )
-  }
   if (withbox) {
     g <- g + geom_boxplot(width = 0.2, outlier.shape = NA, linewidth = 0.25,
                           alpha = 0.5, fill = NA, color = "black")
@@ -2890,14 +3116,14 @@ g <- create_beeswarm_plot(
   x_var     = "group",
   y_var     = "value",
   withbox   = TRUE,
-  dx_combos = group_pairs,
   fill_var  = "group"
 ) +
   scale_fill_manual(values = group_colors) +
   labs(y = ${rString(ylab)}, x = NULL) +
-  scale_y_continuous(breaks = scales::pretty_breaks(n = 10))   # ~2x the default tick density
-
-${rSavePlot('cohort_boxplot.pdf', 1.7, 1.6)}
+  scale_y_continuous(breaks = scales::pretty_breaks(n = ${yTicks}),   # y-tick density (config y_ticks)
+                     expand = expansion(mult = c(0.05, ${topExpand})))  # headroom for the stacked brackets
+${sigBlock}
+${rSavePlot('cohort_boxplot.pdf', po.box.w, po.box.h, fam)}
 ` };
 }
 
@@ -2915,6 +3141,11 @@ function buildWaterfallR() {
   const groups = orderedGroups(rows.map(r => r.group));
   const colorLines = groups.map(g => `  ${rString(g)} = ${rString(getGroupColor(g))}`).join(',\n');
   const ylab = (state.plotMetric === 'percent') ? '% in region' : 'Cells / mm²';
+
+  // Paper-standardization knobs from the optional config (font/PDF size).
+  const po = plotOpts();
+  const fs = po.fontSize, fam = po.fontFamily, tick = po.tickColor, yTicks = po.yTicks;
+  const xTickFs = po.xTickFontSize, yTickFs = po.yTickFontSize;
 
   const cohortBlock = [
     `  file     = c(\n${rColumnLines(rows, 'file',     v => rString(v), '    ')}\n  )`,
@@ -2948,31 +3179,31 @@ g <- ggplot(cohort, aes(x = name, y = value, fill = group)) +
   ylab(${rString(ylab)}) + xlab("Sample ID") +
   coord_flip() +
   scale_fill_manual(values = group_colors) +
-  theme_classic(base_size = 7, base_family = "Arial") +
+  theme_classic(base_size = ${fs}, base_family = ${rString(fam)}) +
   theme(
     # axis.line + axis.ticks together (single entry — ggplot2 rejects duplicates)
-    axis.line   = element_line(colour = "black"),
-    axis.ticks  = element_line(colour = "black"),
+    axis.line   = element_line(colour = ${rString(tick)}),
+    axis.ticks  = element_line(colour = ${rString(tick)}),
     legend.position = c(0.65, 0.3),
     legend.justification = c(-0.2, -0.3),
     legend.box.margin = margin(6, 6, 6, 6),
     legend.margin = margin(-10, -10, -10, -10),
-    # every text element pinned to an absolute 7pt (no rel() scaling)
-    text        = element_text(family = "Arial", size = 7),
-    axis.text.x = element_text(color = "black", size = 7),
-    axis.text.y = element_text(color = "black", size = 7),
-    axis.title.y = element_text(size = 7, margin = margin(r = 5)),
-    axis.title.x = element_text(size = 7, margin = margin(t = 2)),
-    legend.text  = element_text(size = 7),
+    # every text element pinned to an absolute ${fs}pt (no rel() scaling)
+    text        = element_text(family = ${rString(fam)}, size = ${fs}),
+    axis.text.x = element_text(color = "black", size = ${xTickFs}),
+    axis.text.y = element_text(color = "black", size = ${yTickFs}),
+    axis.title.y = element_text(size = ${fs}, margin = margin(r = 5)),
+    axis.title.x = element_text(size = ${fs}, margin = margin(t = 2)),
+    legend.text  = element_text(size = ${fs}),
     legend.title = element_blank(),
     legend.background = element_blank(),
     legend.key   = element_blank(),
     panel.background = element_rect(fill = "transparent", colour = NA),
     plot.background  = element_rect(fill = "transparent", colour = NA)
   ) +
-  scale_y_continuous(expand = c(0, 0))
+  scale_y_continuous(expand = c(0, 0), breaks = scales::pretty_breaks(n = ${yTicks}))  # value-axis tick density (config y_ticks)
 
-${rSavePlot('cohort_waterfall.pdf', 6, 5)}
+${rSavePlot('cohort_waterfall.pdf', po.wf.w, po.wf.h, fam)}
 ` };
 }
 
@@ -3311,6 +3542,195 @@ document.getElementById('btn-r-modal-copy').addEventListener('click', async () =
     document.getElementById('r-export-modal').style.display = 'none';
   }
 });
+
+// ----- Config: load button + builder modal -------------------------------
+//
+// The config is the same optional preferences file applyConfig() consumes
+// (colors, defaults, and the `plot` section that standardizes the R export).
+// "Load config…" picks one; "Build config…" opens a form to author/edit one.
+
+document.getElementById('btn-load-config').addEventListener('click',
+  () => document.getElementById('config-input').click());
+document.getElementById('config-input').addEventListener('change', async (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) await loadDroppedFile(f);   // config.json (or a cohort.json — auto-detected)
+  e.target.value = '';               // allow re-picking the same file
+});
+document.getElementById('btn-build-config').addEventListener('click', openConfigBuilder);
+
+/** Trigger a browser download of `obj` as pretty-printed JSON. */
+function downloadJson(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+}
+
+/** Groups currently in play (labeled samples), in the display order. */
+function currentGroupsForConfig() {
+  return orderedGroups(Array.from(new Set(state.files.map(f => f.group).filter(Boolean))));
+}
+
+/** Ordered {name → color} to prefill the group editor: config groups first (in
+ *  their configured order), then any loaded-cohort groups not already listed. */
+function seedGroupColors() {
+  const seed = new Map();
+  const cc = (CONFIG && CONFIG.group_colors) || {};
+  const order = (CONFIG && Array.isArray(CONFIG.group_order) && CONFIG.group_order.length)
+    ? CONFIG.group_order : Object.keys(cc);
+  for (const g of order) if (g && !seed.has(g)) seed.set(g, cc[g] || getGroupColor(g));
+  for (const g of Object.keys(cc)) if (!seed.has(g)) seed.set(g, cc[g]);
+  for (const g of currentGroupsForConfig()) if (!seed.has(g)) seed.set(g, getGroupColor(g));
+  return seed;
+}
+
+/** Append one editable [↑][↓][color][name][✕] row to the group editor. Row
+ *  order = group_order (left→right plot order), so ↑/↓ reorder the groups. */
+function addGroupRow(name, color) {
+  const hex = /^#[0-9a-fA-F]{6}$/.test(color || '') ? color : '#66c2a5';
+  const row = document.createElement('div');
+  row.className = 'cfg-group-row';
+  row.style.cssText = 'display:flex; gap:6px; align-items:center;';
+  const btn = 'class="secondary" style="font-size:11px; padding:2px 7px;"';
+  row.innerHTML =
+    `<button type="button" ${btn} data-move="up" title="move earlier (left)">↑</button>` +
+    `<button type="button" ${btn} data-move="down" title="move later (right)">↓</button>` +
+    `<input type="color" value="${hex}" />` +
+    `<input type="text" class="cfg-group-name" value="${escapeHtml(name || '')}" placeholder="group name" style="width:170px" />` +
+    `<button type="button" ${btn} data-move="del" title="remove">✕</button>`;
+  row.querySelector('[data-move="up"]').addEventListener('click', () => {
+    const prev = row.previousElementSibling;
+    if (prev) row.parentNode.insertBefore(row, prev);
+  });
+  row.querySelector('[data-move="down"]').addEventListener('click', () => {
+    const next = row.nextElementSibling;
+    if (next) row.parentNode.insertBefore(next, row);
+  });
+  row.querySelector('[data-move="del"]').addEventListener('click', () => row.remove());
+  document.getElementById('cfg-group-colors').appendChild(row);
+}
+
+/** Fill the builder form from the live CONFIG + state, then show it. */
+function openConfigBuilder() {
+  const po = plotOpts(), cfg = CONFIG || {};
+  document.getElementById('cfg-font-family').value = po.fontFamily;
+  document.getElementById('cfg-font-size').value   = po.fontSize;
+  document.getElementById('cfg-xtick-font-size').value = po.xTickFontSize;
+  document.getElementById('cfg-ytick-font-size').value = po.yTickFontSize;
+  document.getElementById('cfg-point-size').value  = po.pointSize;
+  document.getElementById('cfg-tick-color').value  = /^#[0-9a-fA-F]{6}$/.test(po.tickColor) ? po.tickColor : '#000000';
+  document.getElementById('cfg-y-ticks').value     = po.yTicks;
+  document.getElementById('cfg-box-w').value = po.box.w;
+  document.getElementById('cfg-box-h').value = po.box.h;
+  document.getElementById('cfg-wf-w').value  = po.wf.w;
+  document.getElementById('cfg-wf-h').value  = po.wf.h;
+  document.getElementById('cfg-metric').value = state.plotMetric || 'density';
+
+  // Compartment select from the loaded cohort's cflag legend.
+  const legend = cohortCflagBits() || [];
+  const compSel = document.getElementById('cfg-compartment');
+  compSel.innerHTML = '<option value="all">all cells</option>' +
+    legend.map(e => `<option value="${escapeHtml(e.name)}">${escapeHtml(e.name)} · bit ${e.bit}</option>`).join('');
+  let compVal = 'all';
+  if (state.cflagBits && state.cflagBits.length === 1) {
+    const e = legend.find(x => x.bit === state.cflagBits[0]);
+    if (e) compVal = e.name;
+  }
+  compSel.value = compVal;
+
+  // Significance-test controls.
+  const st = po.stats;
+  document.getElementById('cfg-stat-test').value  = st.test;
+  document.getElementById('cfg-stat-label').value = st.label;
+  document.getElementById('cfg-pval-font-size').value = po.pvalFontSize;
+  document.getElementById('cfg-stat-tip').value   = st.tipLength;
+  document.getElementById('cfg-stat-lw').value    = st.bracketLw;
+  const hexOr = (v, d) => /^#[0-9a-fA-F]{6}$/.test(v) ? v : d;
+  document.getElementById('cfg-stat-color').value      = hexOr(st.color, '#000000');
+  document.getElementById('cfg-stat-text-color').value = hexOr(st.textColor, '#000000');
+  document.getElementById('cfg-stat-sig-color').value  = hexOr(st.sigColor, '#000000');
+  document.getElementById('cfg-stat-thresh').value     = st.sigThresh;
+
+  document.getElementById('cfg-palette').value =
+    (Array.isArray(cfg.palette) && cfg.palette.length ? cfg.palette : []).join(', ');
+
+  // Group editor: one editable row per seeded group (config ∪ loaded cohort).
+  const gcWrap = document.getElementById('cfg-group-colors');
+  gcWrap.innerHTML = '';
+  const seed = seedGroupColors();
+  if (seed.size) for (const [g, c] of seed) addGroupRow(g, c);
+  else addGroupRow('', '#66c2a5');
+
+  document.getElementById('config-modal').style.display = 'flex';
+}
+
+/** Read the builder form into a config object (omitting empty sections). */
+function collectConfigFromForm() {
+  const num  = (id, d) => { const v = parseFloat(document.getElementById(id).value); return (isFinite(v) && v >  0) ? v : d; };
+  const numz = (id, d) => { const v = parseFloat(document.getElementById(id).value); return (isFinite(v) && v >= 0) ? v : d; };
+  // Start from the loaded config so keys the builder doesn't manage (e.g. the
+  // PNG `export` block) survive a Load → edit → Download round-trip.
+  const cfg = Object.assign({}, CONFIG || {});
+  delete cfg.samples;
+
+  // Group editor is the source of truth (rows can be added/removed), so replace
+  // rather than merge. Row order sets group_order.
+  const gc = {}, gorder = [];
+  for (const row of document.querySelectorAll('#cfg-group-colors .cfg-group-row')) {
+    const nm = row.querySelector('.cfg-group-name').value.trim();
+    if (!nm || (nm in gc)) continue;
+    gc[nm] = row.querySelector('input[type="color"]').value;
+    gorder.push(nm);
+  }
+  if (gorder.length) { cfg.group_colors = gc; cfg.group_order = gorder; }
+  else { delete cfg.group_colors; delete cfg.group_order; }
+
+  const pal = document.getElementById('cfg-palette').value
+    .split(',').map(s => s.trim()).filter(s => /^#[0-9a-fA-F]{6}$/.test(s));
+  if (pal.length) cfg.palette = pal; else delete cfg.palette;
+
+  cfg.default_metric = document.getElementById('cfg-metric').value;
+  cfg.default_compartment = document.getElementById('cfg-compartment').value || 'all';
+
+  const baseFs = num('cfg-font-size', 7);
+  cfg.plot = {
+    font_family: document.getElementById('cfg-font-family').value.trim() || 'Arial',
+    font_size:   baseFs,
+    x_tick_font_size: num('cfg-xtick-font-size', baseFs),
+    y_tick_font_size: num('cfg-ytick-font-size', baseFs),
+    pvalue_font_size: num('cfg-pval-font-size', baseFs),
+    point_size:  num('cfg-point-size', 2),
+    tick_color:  document.getElementById('cfg-tick-color').value,
+    y_ticks:     Math.max(2, Math.round(num('cfg-y-ticks', 10))),
+    box:       { pdf_width: num('cfg-box-w', 1.7), pdf_height: num('cfg-box-h', 1.6) },
+    waterfall: { pdf_width: num('cfg-wf-w', 6),    pdf_height: num('cfg-wf-h', 5)    },
+    stats: {
+      test:              document.getElementById('cfg-stat-test').value,
+      label:             document.getElementById('cfg-stat-label').value,
+      tip_length:        numz('cfg-stat-tip', 0),
+      bracket_linewidth: num('cfg-stat-lw', 0.25),
+      bracket_color:     document.getElementById('cfg-stat-color').value,
+      text_color:        document.getElementById('cfg-stat-text-color').value,
+      sig_color:         document.getElementById('cfg-stat-sig-color').value,
+      sig_threshold:     (() => { const v = parseFloat(document.getElementById('cfg-stat-thresh').value); return (isFinite(v) && v > 0 && v < 1) ? v : 0.05; })(),
+    },
+  };
+  return cfg;
+}
+
+document.getElementById('btn-cfg-add-group').addEventListener('click',
+  () => addGroupRow('', '#66c2a5'));
+document.getElementById('btn-config-close').addEventListener('click',
+  () => { document.getElementById('config-modal').style.display = 'none'; });
+document.getElementById('btn-config-apply').addEventListener('click', () => {
+  applyConfig(collectConfigFromForm());
+  const fl = document.getElementById('config-flash');
+  fl.style.display = ''; setTimeout(() => { fl.style.display = 'none'; }, 1500);
+});
+document.getElementById('btn-config-download').addEventListener('click',
+  () => downloadJson(collectConfigFromForm(), 'cohort.config.json'));
 
 // ----- Utilities ---------------------------------------------------------
 function escapeHtml(s) {

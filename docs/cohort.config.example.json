@@ -1,0 +1,49 @@
+{
+  "_comment": "Optional preferences for the cohort viewer (cyf_cohort.html). Every key is optional. Load it with the 'Load config…' button, drag it onto the page, or pass ?config=... in the URL. Build/edit one interactively with 'Build config…'. Colors drive the HTML viewer AND the R export; the 'plot' section standardizes the R/ggplot2 figures for papers.",
+
+  "group_colors": {
+    "Responder": "#2a73d8",
+    "NonResponder": "#c0392b"
+  },
+
+  "group_order": ["Responder", "NonResponder"],
+
+  "palette": ["#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854"],
+
+  "default_metric": "density",
+
+  "default_compartment": "Tumor",
+
+  "export": {
+    "_comment": "HTML PNG download buttons (Plotly). Not the R/PDF export.",
+    "format": "png",
+    "width": 1100,
+    "height": 700,
+    "scale": 2
+  },
+
+  "plot": {
+    "_comment": "Baked into the generated R/ggplot2 script (→ editable, embedded-font vector PDF via cairo_pdf). Per-plot PDF dimensions in inches.",
+    "font_family": "Arial",
+    "font_size": 7,
+    "x_tick_font_size": 7,
+    "y_tick_font_size": 7,
+    "pvalue_font_size": 7,
+    "point_size": 2,
+    "tick_color": "#000000",
+    "y_ticks": 10,
+    "box":       { "pdf_width": 1.7, "pdf_height": 1.6 },
+    "waterfall": { "pdf_width": 6,   "pdf_height": 5   },
+    "stats": {
+      "_comment": "Between-group significance brackets on the box plot. test: wilcox.test|t.test. label: stars (*, **, ***)|pvalue (p = / p <). tip_length 0 = flat bars (no end caps). Bracket line and p-value text are colored separately; comparisons with p < sig_threshold use sig_color.",
+      "test": "wilcox.test",
+      "label": "stars",
+      "tip_length": 0,
+      "bracket_linewidth": 0.25,
+      "bracket_color": "#000000",
+      "text_color": "#000000",
+      "sig_color": "#c0392b",
+      "sig_threshold": 0.05
+    }
+  }
+}
