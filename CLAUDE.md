@@ -130,6 +130,41 @@ object store is pluggable: `LocalStore` (cache dir; PUT to `/blob/...`) or `GcsS
 (signed URLs to a GCS bucket). A raw `POST /convert` (whole body) is the small-file
 fallback. Browser-side magic-byte sniff routes `CYFV`→render-direct, BGZF→server.
 
+A second, **standalone** browser tool lives in `docs/` and is served statically via
+**GitHub Pages** (no server, no Docker): `docs/cyf_cohort.html` is the cohort phenotyper —
+it loads a `cohort.json` (from `cyftools cohort`), groups/compares samples, and exports
+publication-ready R/ggplot2 figures standardized by an optional plot config
+(`docs/cohort.config.example.json`, authored in-page via "⚙ Build config…"). It is pure
+client-side (drag a file in, or `?file=`/`?config=` URL params) and only consumes
+`cohort.json` — it never re-derives metrics, honoring the same "never reimplement" spirit.
+`docs/.nojekyll` + `docs/index.html` make Pages serve it byte-for-byte. Enable it under
+repo Settings → Pages → *Deploy from branch* `main` `/docs`.
+
+It renders **three plot types** (each with a Plotly preview + a "→ R" ggplot2 export and
+"⤓ PNG"): a by-group **box/beeswarm** plot, a per-sample **waterfall**, and a stratified
+**marker-ratio** plot (`#ratio-panel`) — a waterfall turned 90°, one diverging bar per
+sample of the enrichment index `div = (nZ−nY)/(nY+nZ)` ∈ [−1,1] between two comparator
+arms, colored by group. Marker selection everywhere is **CNF**: a "Markers (AND)" set plus
+any number of OR-groups (`CD45 AND (CD68 OR CD11c)`); each ratio arm is its own CNF editor
+(`state.ratioNum`/`ratioDen` = `{and:[bits], or:[[bits],…]}`). Group comparison uses
+**rank-based** tests (Wilcoxon rank-sum / Kruskal–Wallis, with Welch t for reference) since
+the index is bounded. The compute layer is **64-bit**: flag masks are carried as `{lo,hi}`
+uint32 pairs (helpers `u64`/`bits64`/`or64`/`mask64Empty`; `histMatchCountGated` walks
+`pfLo/pfHi/cfLo/cfHi`) so panels with >31 markers work — the old code truncated to the low
+32 bits. On load, `pruneSelectionsToCohort()` drops any persisted (localStorage) bit the
+loaded cohort's legend doesn't declare, so switching between cohorts with different panels
+never leaks "phantom" `bitNN+` selections. The legacy per-`.cyf` `processOne`/`configKey`
+path (number masks, `bitsToMask`/`maskToBits`) is dead in cohort mode and left untouched.
+
+**Session state (uncommitted, on branch `main`):** all of the above (ratio plot + AND/OR
+CNF arms + rank stats + 64-bit refactor + phantom-bit prune fix) is edited into
+`docs/cyf_cohort.html` and `docs/cohort.config.example.json` on disk but **not committed**.
+Each change was validated by full-parsing the inline JS (`osascript -l JavaScript` +
+`new Function`, since there's no node in-env) and unit-testing the extracted pure functions
+against hand-computed values (incl. bit 31/32/63 boundaries). Next step when resuming: have
+the user reload the page to confirm the phantom bits are gone for
+`orion_1_74/.../orion_260630.json`, then commit (they hadn't decided how to split it).
+
 Deploy: `Dockerfile` is a two-stage build (minimal-core `cyftools`, i.e. TIFF/Cairo/LDA/
 OpenMP off → runtime needs only `python3`+`zlib`+`google-cloud-storage`). **After any code
 change you must rebuild the image** (container has a baked-in copy); viewer-only edits
