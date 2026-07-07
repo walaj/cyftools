@@ -130,6 +130,13 @@
     .marker-chip.checked.gate-red    { background: #fbeae8; }
     .marker-chip.checked.gate-yellow { background: #fbf3da; }
     .marker-chip.checked.gate-green  { background: #e6f4ea; }
+    /* Ratio-plot comparator arms: a CNF editor per arm (label · AND row · OR
+       boxes · expr). Mirrors the main "Markers (AND) + OR groups" UI. */
+    .ratio-arm { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+    .ratio-editor { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 280px; }
+    .ratio-and-row, .ratio-or-box { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .ratio-or-box { border: 1px solid var(--border); border-radius: 5px; padding: 3px 6px; background: #f7fbff; }
+    .ratio-chips { display: flex; flex-wrap: wrap; gap: 3px; }
     .marker-legend { font-size: 10px; color: var(--muted); display: inline-flex; gap: 10px; align-items: center; margin-left: 8px; }
     .marker-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 3px; vertical-align: middle; }
 
@@ -264,6 +271,14 @@
       <button id="btn-clear-markers" class="secondary" type="button" style="font-size:11px; padding:2px 8px;">Clear</button>
     </div>
 
+    <!-- OR-groups: each box ORs its markers; groups are AND-combined with the
+         Markers (AND) row above → CNF, e.g. CD3 AND (PD1 OR LAG3). -->
+    <div id="marker-or-row" class="controls" style="margin-top: 6px; display: none; align-items: flex-start;">
+      <span class="group-label" style="padding-top: 3px;" title="Each group ORs its markers; groups are AND-combined with the Markers (AND) above and with each other.">OR groups (AND)</span>
+      <div id="marker-or-groups" style="display: flex; flex-direction: column; gap: 5px;"></div>
+      <button id="btn-add-or-group" class="secondary" type="button" style="font-size:11px; padding:2px 8px;">+ OR group</button>
+    </div>
+
     <div id="calc-desc" class="calc-desc" style="margin-top: 10px;"></div>
 
     <div id="overall-status" class="hint" style="margin-top: 6px;">no cohort.json loaded — click “Load cohort.json…” (or drag one in). Group labels &amp; colors persist in this browser.</div>
@@ -307,6 +322,35 @@
     </div>
     <div id="plot-summary" class="summary-line"></div>
     <div id="stats-table-wrap" style="margin-top: 12px;"></div>
+  </div>
+
+  <!-- Stratified marker-ratio plot: a waterfall flipped 90°, one diverging bar
+       per sample, split by two pflag bits within the current selection. -->
+  <div class="panel" id="ratio-panel" style="display:none">
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap: wrap;">
+      <h2 style="margin: 0;">Marker ratio</h2>
+      <span class="group-label" title="Within the current cflag region + marker selection, split each sample's cells by two pflag bits and plot the enrichment index (nZ − nY) / (nY + nZ). Left = Y-enriched, right = Z-enriched. Bars keep the group colors.">stratified · left ⇐  ⇒ right</span>
+    </div>
+    <div style="margin-top: 8px; display:flex; flex-direction:column; gap:8px;">
+      <!-- Each arm is a CNF editor (an "all of" AND row + any number of "any of"
+           OR-group boxes), built by renderRatioArm(). -->
+      <div class="ratio-arm" id="ratio-num-row">
+        <span class="group-label" style="min-width:64px; padding-top:3px;">Left (Y)</span>
+        <div id="ratio-num-editor" class="ratio-editor"></div>
+      </div>
+      <div class="ratio-arm" id="ratio-den-row">
+        <span class="group-label" style="min-width:64px; padding-top:3px;">Right (Z)</span>
+        <div id="ratio-den-editor" class="ratio-editor"></div>
+      </div>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <span style="flex:1"></span>
+        <button id="btn-png-ratio" class="secondary" type="button" title="Download this plot as PNG at the configured export size">⤓ PNG</button>
+        <button id="btn-export-r-ratio" class="secondary" type="button" title="Copy R/ggplot2 diverging-bar script to your clipboard">→ R (ratio)</button>
+      </div>
+    </div>
+    <div id="ratio-area" style="margin-top: 8px;"></div>
+    <div id="ratio-summary" class="summary-line"></div>
+    <div id="ratio-stats-wrap" style="margin-top: 12px;"></div>
   </div>
 
   <!-- Fallback dialog shown when clipboard write is blocked -->
@@ -547,6 +591,16 @@ const state = {
   // List of pflag bit positions to AND-combine for the marker filter.
   // Empty = no marker filter (Match cells == Region cells).
   markerBits: [],
+  // OR-groups AND-combined with markerBits: each inner array is a set of pflag
+  // bits OR'd together. e.g. markerBits=[CD3], markerOrGroups=[[PD1,LAG3]] means
+  // CD3 AND (PD1 OR LAG3). Empty groups are ignored.
+  markerOrGroups: [],
+  // Stratified ratio plot: within the base population (region ∩ AND-markers ∩
+  // OR-groups), compare arm Y (left) vs arm Z (right) per sample. Each arm is a
+  // CNF selection {and:[bits], or:[[bits],…]} — ALL of `and`, plus ≥1 bit from
+  // each OR-group, e.g. CD45 AND (CD68 OR CD11c). Empty arm = unset.
+  ratioNum: { and: [], or: [] },   // Y — enrichment faces LEFT
+  ratioDen: { and: [], or: [] },   // Z — enrichment faces RIGHT
   // Markers actually present in the loaded files (with a known bit assignment).
   // Populated after folder pick by peeking at the first file's header.
   availableMarkers: [], // [{ name, bit }]
@@ -600,44 +654,172 @@ const state = {
 // box plot, waterfall, stats, R export, ROI, grouping) is unchanged.
 let COHORT = null;   // { params, samples:[raw] }
 
-/** Decimal string (possibly > 2^53) -> low 32 bits (enough for <32-bit flags). */
-function u64lo(str){
-  if (str.length <= 9) return (Number(str) >>> 0);
-  return Number(BigInt(str) & 0xffffffffn) >>> 0;
+// The flag registers are 64-bit, so masks are carried as {lo,hi} pairs of
+// unsigned 32-bit words (bits 0–31 in lo, 32–63 in hi). This keeps the fast
+// integer path (vs BigInt) while covering panels with >31 markers.
+/** Decimal flag string (possibly > 2^53) -> {lo,hi} unsigned 32-bit words. */
+function u64(str){
+  const v = BigInt(str);
+  return { lo: Number(v & 0xffffffffn) >>> 0, hi: Number((v >> 32n) & 0xffffffffn) >>> 0 };
 }
+/** AND-mask {lo,hi} from an array of bit positions (0–63). */
+function bits64(bits){
+  let lo = 0, hi = 0;
+  for (const b of (bits || [])){
+    if (b >= 0 && b < 32) lo |= (1 << b);            // 1<<31 is negative int32 → fixed by >>>0 below
+    else if (b < 64)      hi |= (1 << (b - 32));
+  }
+  return { lo: lo >>> 0, hi: hi >>> 0 };
+}
+/** Bitwise OR of two {lo,hi} masks. */
+function or64(a, b){ return { lo: (a.lo | b.lo) >>> 0, hi: (a.hi | b.hi) >>> 0 }; }
+/** A {lo,hi} mask is empty (no bits set). */
+function mask64Empty(m){ return (m.lo >>> 0) === 0 && (m.hi >>> 0) === 0; }
 
 /** Build a sample's typed-array histogram + areas + intrinsic flag stats. */
 function buildSampleHist(s){
   const H = s.flag_histogram || [], R = H.length;
-  const cfLo = new Uint32Array(R), pfLo = new Uint32Array(R), cnt = new Float64Array(R);
-  let pflagOr = 0, cflagOr = 0, n = 0;
-  const pflagBitCounts = new Array(32).fill(0), cflagBitCounts = new Array(32).fill(0);
+  const cfLo = new Uint32Array(R), cfHi = new Uint32Array(R);
+  const pfLo = new Uint32Array(R), pfHi = new Uint32Array(R);
+  const cnt = new Float64Array(R);
+  let pfOrLo = 0, pfOrHi = 0, cfOrLo = 0, cfOrHi = 0, n = 0;
+  const pflagBitCounts = new Array(64).fill(0), cflagBitCounts = new Array(64).fill(0);
   for (let i = 0; i < R; i++){
     const row = H[i];
-    const c = u64lo(row[0]), p = u64lo(row[1]), k = row[2];
-    cfLo[i] = c; pfLo[i] = p; cnt[i] = k; n += k;
-    pflagOr |= p; cflagOr |= c;
-    let x = p; while (x){ const b = 31 - Math.clz32(x); pflagBitCounts[b] += k; x &= ~(1 << b); }
-    let y = c; while (y){ const b = 31 - Math.clz32(y); cflagBitCounts[b] += k; y &= ~(1 << b); }
+    const c = u64(row[0]), p = u64(row[1]), k = row[2];
+    cfLo[i] = c.lo; cfHi[i] = c.hi; pfLo[i] = p.lo; pfHi[i] = p.hi; cnt[i] = k; n += k;
+    pfOrLo |= p.lo; pfOrHi |= p.hi; cfOrLo |= c.lo; cfOrHi |= c.hi;
+    let x  = p.lo; while (x)  { const b = 31 - Math.clz32(x);  pflagBitCounts[b]      += k; x  &= ~(1 << b); }
+    let xh = p.hi; while (xh) { const b = 31 - Math.clz32(xh); pflagBitCounts[b + 32] += k; xh &= ~(1 << b); }
+    let y  = c.lo; while (y)  { const b = 31 - Math.clz32(y);  cflagBitCounts[b]      += k; y  &= ~(1 << b); }
+    let yh = c.hi; while (yh) { const b = 31 - Math.clz32(yh); cflagBitCounts[b + 32] += k; yh &= ~(1 << b); }
   }
   const areas = {}, compN = {};
   for (const comp of (s.compartments || [])){ areas[comp.bit] = comp.area_mm2; compN[comp.bit] = comp.n_cells; }
-  return { R, cfLo, pfLo, cnt, n, areas, compN,
-           pflagOr: pflagOr >>> 0, cflagOr: cflagOr >>> 0, pflagBitCounts, cflagBitCounts };
+  return { R, cfLo, cfHi, pfLo, pfHi, cnt, n, areas, compN,
+           pflagOr: { lo: pfOrLo >>> 0, hi: pfOrHi >>> 0 },
+           cflagOr: { lo: cfOrLo >>> 0, hi: cfOrHi >>> 0 },
+           pflagBitCounts, cflagBitCounts };
 }
 
-/** Cells whose cflag matches the AND-mask (any pflag). */
+/** Cells whose cflag matches the {lo,hi} AND-mask (any pflag). */
 function histRegionCount(S, cmask){
-  let t = 0; const { R, cfLo, cnt } = S; cmask >>>= 0;
-  for (let i = 0; i < R; i++) if (((cfLo[i] & cmask) >>> 0) === cmask) t += cnt[i];
+  let t = 0; const { R, cfLo, cfHi, cnt } = S;
+  const cl = cmask.lo >>> 0, ch = cmask.hi >>> 0;
+  for (let i = 0; i < R; i++)
+    if (((cfLo[i] & cl) >>> 0) === cl && ((cfHi[i] & ch) >>> 0) === ch) t += cnt[i];
   return t;
 }
-/** Cells matching the cflag AND-mask AND the pflag (marker) AND-mask. */
+/** Cells matching the cflag AND-mask AND the pflag AND-mask (both {lo,hi}). */
 function histMatchCount(S, cmask, pmask){
-  let t = 0; const { R, cfLo, pfLo, cnt } = S; cmask >>>= 0; pmask >>>= 0;
+  let t = 0; const { R, cfLo, cfHi, pfLo, pfHi, cnt } = S;
+  const cl = cmask.lo >>> 0, ch = cmask.hi >>> 0, pl = pmask.lo >>> 0, ph = pmask.hi >>> 0;
   for (let i = 0; i < R; i++)
-    if (((cfLo[i] & cmask) >>> 0) === cmask && ((pfLo[i] & pmask) >>> 0) === pmask) t += cnt[i];
+    if (((cfLo[i] & cl) >>> 0) === cl && ((cfHi[i] & ch) >>> 0) === ch &&
+        ((pfLo[i] & pl) >>> 0) === pl && ((pfHi[i] & ph) >>> 0) === ph) t += cnt[i];
   return t;
+}
+/** Cells matching cflag AND-mask AND (pflag has ALL andMask bits) AND (for each
+ *  OR-group mask, pflag has AT LEAST ONE bit) — i.e. CNF like CD3 AND (PD1 OR
+ *  LAG3). All masks are {lo,hi}; orMasks is a list of {lo,hi}. */
+function histMatchCountGated(S, cmask, andMask, orMasks){
+  let t = 0; const { R, cfLo, cfHi, pfLo, pfHi, cnt } = S;
+  const cl = cmask.lo >>> 0, ch = cmask.hi >>> 0, al = andMask.lo >>> 0, ah = andMask.hi >>> 0;
+  const nOr = orMasks.length;
+  for (let i = 0; i < R; i++){
+    if (((cfLo[i] & cl) >>> 0) !== cl || ((cfHi[i] & ch) >>> 0) !== ch) continue;
+    const pl = pfLo[i], ph = pfHi[i];
+    if (((pl & al) >>> 0) !== al || ((ph & ah) >>> 0) !== ah) continue;
+    let ok = true;
+    for (let j = 0; j < nOr; j++){
+      const g = orMasks[j];
+      if (g.lo === 0 && g.hi === 0) continue;               // empty group = satisfied by default
+      if ((pl & g.lo) === 0 && (ph & g.hi) === 0) { ok = false; break; }
+    }
+    if (ok) t += cnt[i];
+  }
+  return t;
+}
+/** Non-empty {lo,hi} OR-group masks for the current selection (empty = no filter). */
+function markerOrMasks(){
+  return (state.markerOrGroups || []).map(g => bits64(g)).filter(m => !mask64Empty(m));
+}
+/** Marker display name for a pflag bit (falls back to "bit<n>"). */
+function markerName(bit){
+  for (const m of state.availableMarkers) if (m.bit === bit) return m.name;
+  return `bit${bit}`;
+}
+// A ratio arm is a CNF selection {and:[bits], or:[[bits],…]}: ALL of `and`, plus
+// AT LEAST ONE bit from each non-empty OR-group — e.g. CD45 AND (CD68 OR CD11c).
+/** Non-empty {lo,hi} OR-group masks of an arm. */
+function ratioArmOrMasks(arm){
+  return ((arm && arm.or) || []).map(g => bits64(g)).filter(m => !mask64Empty(m));
+}
+/** An arm has no usable selection (no AND bits and no non-empty OR-group). */
+function ratioArmEmpty(arm){
+  if (!arm) return true;
+  return mask64Empty(bits64(arm.and || [])) && ratioArmOrMasks(arm).length === 0;
+}
+/** Stable identity of an arm's constraint, so we can tell the two arms apart. */
+function ratioArmSig(arm){
+  const a = (((arm && arm.and) || []).slice().sort((x, y) => x - y)).join(',');
+  const o = (((arm && arm.or) || []).map(g => g.slice().sort((x, y) => x - y).join(','))
+              .filter(s => s).sort()).join('|');
+  return `and:${a};or:${o}`;
+}
+/**
+ * Turn a ratio arm into the (andExtra, orExtra) it contributes to
+ * histMatchCountGated, AND-composed with the base population's constraints:
+ * the arm's AND-bits join the AND-mask, and each of its OR-groups joins the
+ * OR-mask list. Empty arm → contributes nothing.
+ */
+function ratioArmMasks(arm){
+  return { andExtra: bits64((arm && arm.and) || []), orExtra: ratioArmOrMasks(arm) };
+}
+/** Human-readable label, e.g. "CD45+ AND (CD68+ OR CD11c+)". */
+function ratioArmLabel(arm){
+  if (ratioArmEmpty(arm)) return '(none)';
+  const nm = b => `${markerName(b)}+`;
+  const ands = ((arm.and || []).slice().sort((a, b) => a - b)).map(nm);
+  const ors  = (arm.or || []).map(g => g.slice().sort((a, b) => a - b)).filter(g => g.length)
+                 .map(g => `(${g.map(nm).join(' OR ')})`);
+  const parts = ands.concat(ors);
+  return parts.length === 1 ? parts[0] : parts.join(' AND ');
+}
+/**
+ * Per-sample stratified ratio rows for the ratio plot. Inside the current base
+ * population (cflag region ∩ AND-markers ∩ OR-groups), count cells that ALSO
+ * satisfy arm Y (numerator, faces LEFT) vs arm Z (denominator, faces RIGHT) —
+ * each arm an AND/OR combination of pflag bits — and form the enrichment index
+ * div = (nZ - nY)/(nY + nZ) ∈ [-1,1] (negative leans Y/left, positive leans
+ * Z/right). Samples with no cells in either arm are dropped. Sorted by div
+ * DESCENDING (most Z-enriched first). Returns [] when an arm is unset or the
+ * two arms are identical.
+ */
+function ratioRowsForPlot(){
+  const Yarm = state.ratioNum, Zarm = state.ratioDen;
+  if (ratioArmEmpty(Yarm) || ratioArmEmpty(Zarm)) return [];
+  if (ratioArmSig(Yarm) === ratioArmSig(Zarm)) return [];
+  const yM = ratioArmMasks(Yarm), zM = ratioArmMasks(Zarm);
+  const cmask = bits64(state.cflagBits), andMask = bits64(state.markerBits);
+  const baseOr = markerOrMasks();
+  const out = [];
+  for (const f of state.files){
+    const S = f.hist; if (!S) continue;
+    const nY = histMatchCountGated(S, cmask, or64(andMask, yM.andExtra), baseOr.concat(yM.orExtra));
+    const nZ = histMatchCountGated(S, cmask, or64(andMask, zM.andExtra), baseOr.concat(zM.orExtra));
+    const tot = nY + nZ;
+    if (tot <= 0) continue;
+    out.push({
+      file: f.name,
+      name: f.displayName || defaultDisplayName(f.name),
+      group: f.group || '',
+      nY, nZ, tot,
+      div: (nZ - nY) / tot,
+    });
+  }
+  out.sort((a, b) => b.div - a.div);   // most Z-enriched first
+  return out;
 }
 /** Painted region area (mm²), or null when not precomputed. cyftools cohort
  *  paints each single cflag bit + "All" (-1), NOT arbitrary AND-combos. */
@@ -659,12 +841,13 @@ function cohortCflagBits(){
  *  marker selection (cheap; called for every sample on any setting change). */
 function computeMetricsForEntry(entry){
   const S = entry.hist; if (!S){ entry.metrics = null; return; }
-  const cmask = cflagMaskFromBits(state.cflagBits), pmask = bitsToMask(state.markerBits);
+  const cmask = bits64(state.cflagBits), andMask = bits64(state.markerBits);
+  const orMasks = markerOrMasks();
   const areaMm2 = areaForRegion(S, state.cflagBits);
   entry.metrics = {
     count: S.n,
     regionCount: histRegionCount(S, cmask),
-    matchCount:  histMatchCount(S, cmask, pmask),
+    matchCount:  histMatchCountGated(S, cmask, andMask, orMasks),
     areaMm2: (areaMm2 == null ? null : areaMm2),
     scaling: state.scaling,   // = state.scaling so metricAreaMm2() rescales to identity
     bboxAreaMm2: null, meanByCol: {},
@@ -672,6 +855,32 @@ function computeMetricsForEntry(entry){
 }
 
 /** Ingest a parsed cohort.json: build state.files + markers, compute, render. */
+/**
+ * Drop any selected bit that the freshly-loaded cohort doesn't declare. Marker
+ * selections persist by raw bit index in localStorage and are restored globally,
+ * so switching to a cohort with a different/smaller panel would otherwise leak
+ * "phantom" bits from the previous panel (they'd render as bitNN+ and match no
+ * cells). Prunes markers, OR-groups, both ratio arms, and the cflag region to
+ * this cohort's legends. Arms are mutated IN PLACE (chip handlers close over them).
+ */
+function pruneSelectionsToCohort(){
+  // No legend yet (e.g. at boot before any cohort loads) → we can't know which
+  // bits are valid, so leave the persisted selection intact rather than wipe it.
+  if (!state.availableMarkers || state.availableMarkers.length === 0) return;
+  const pflagOk = new Set((state.availableMarkers || []).map(m => m.bit));
+  const cflagOk = new Set((cohortCflagBits() || []).map(c => c.bit));
+  const keepP = arr => (arr || []).filter(b => pflagOk.has(b));
+  state.markerBits     = keepP(state.markerBits);
+  state.markerOrGroups = (state.markerOrGroups || []).map(keepP).filter(g => g.length);
+  const pruneArm = arm => {
+    if (!arm) return;
+    arm.and = keepP(arm.and);
+    arm.or  = (arm.or || []).map(keepP).filter(g => g.length);
+  };
+  pruneArm(state.ratioNum); pruneArm(state.ratioDen);
+  state.cflagBits = (state.cflagBits || []).filter(b => cflagOk.has(b));
+}
+
 function ingestCohortJson(json){
   if (!json || !Array.isArray(json.samples)){ alert('Not a cyftools cohort JSON (missing samples[]).'); return; }
   COHORT = { params: json.params || {}, samples: json.samples };
@@ -682,6 +891,11 @@ function ingestCohortJson(json){
   for (const s of json.samples) for (const e of (s.pflag_bits || [])) if (!pf.has(e.bit)) pf.set(e.bit, e.name);
   state.availableMarkers = [...pf.entries()].map(([bit, name]) => ({ bit, name })).sort((a, b) => a.bit - b.bit);
   state.availableDensityCols = [];   // cohort.json carries no radial-density columns
+
+  // Drop stale selections carried over (via localStorage) from a different panel,
+  // then persist the cleaned state so the phantom bits don't linger.
+  pruneSelectionsToCohort();
+  saveSettings();
 
   state.files = json.samples.map(s => {
     const name = s.file || s.sample || 'sample';
@@ -1185,6 +1399,9 @@ function settingsSnapshot() {
     scaling:    state.scaling,
     radiusPx:   state.radiusPx,
     markerBits: state.markerBits.slice(),
+    markerOrGroups: (state.markerOrGroups || []).map(g => g.slice()),
+    ratioNum: { and: (state.ratioNum.and || []).slice(), or: (state.ratioNum.or || []).map(g => g.slice()) },
+    ratioDen: { and: (state.ratioDen.and || []).slice(), or: (state.ratioDen.or || []).map(g => g.slice()) },
     groupColors: Object.assign({}, state.groupColors),
     groupOrder: state.groupOrder.slice(),
     densityColScale: state.densityColScale,
@@ -1202,6 +1419,27 @@ function applySettings(s) {
   if (typeof s.scaling === 'number')    state.scaling    = s.scaling;
   if (typeof s.radiusPx === 'number')   state.radiusPx   = s.radiusPx;
   if (Array.isArray(s.markerBits))      state.markerBits = s.markerBits.slice();
+  if (Array.isArray(s.markerOrGroups))  state.markerOrGroups = s.markerOrGroups
+    .filter(Array.isArray).map(g => g.filter(b => typeof b === 'number')).filter(g => g.length);
+  // Ratio arms — CNF {and:[bits], or:[[bits],…]}. Accept the current shape and
+  // migrate the earlier {bits,mode} and legacy single-bit forms. Mutate the
+  // existing arm objects IN PLACE — the chip handlers close over these
+  // references, so replacing them would strand those listeners.
+  const numArr = a => Array.isArray(a) ? a.filter(b => typeof b === 'number') : [];
+  const restoreArm = (target, obj, legacyBit) => {
+    if (obj && typeof obj === 'object' && (Array.isArray(obj.and) || Array.isArray(obj.or))){
+      target.and = numArr(obj.and);
+      target.or  = Array.isArray(obj.or) ? obj.or.map(numArr).filter(g => g.length) : [];
+    } else if (obj && typeof obj === 'object' && Array.isArray(obj.bits)){   // prior {bits,mode}
+      const bits = numArr(obj.bits);
+      if (obj.mode === 'or'){ target.and = []; target.or = bits.length ? [bits] : []; }
+      else { target.and = bits; target.or = []; }
+    } else if (typeof legacyBit === 'number'){                                // oldest: single bit
+      target.and = [legacyBit]; target.or = [];
+    }
+  };
+  restoreArm(state.ratioNum, s.ratioNum, s.ratioNumBit);
+  restoreArm(state.ratioDen, s.ratioDen, s.ratioDenBit);
   if (s.groupColors && typeof s.groupColors === 'object') state.groupColors = Object.assign({}, s.groupColors);
   if (Array.isArray(s.groupOrder)) state.groupOrder = s.groupOrder.filter(g => typeof g === 'string');
   if (typeof s.densityColScale === 'number' && isFinite(s.densityColScale) && s.densityColScale > 0) state.densityColScale = s.densityColScale;
@@ -1227,6 +1465,7 @@ function syncSettingsUI() {
   }
   // Marker checkboxes (only present after folder is loaded)
   syncMarkerCheckboxes();
+  renderOrGroups();
 }
 
 function syncMarkerCheckboxes() {
@@ -1442,7 +1681,7 @@ function updateCalcDescription() {
     : `union of <code>${state.radiusPx} px</code> radius discs painted around every cell — overlaps don't double-count`;
   const lbl = selectedMarkerLabel();
   const markerTxt = lbl
-    ? ` AND has ALL of these pflag bits ON: <b>${escapeHtml(lbl)}</b>`
+    ? ` AND matches the phenotype <b>${escapeHtml(lbl)}</b> (AND across markers/groups, OR within a group)`
     : '';
   // cyftools cohort precomputes a painted area for each single compartment + "all
   // cells", but not for an AND of several compartments — density is blank there.
@@ -1467,8 +1706,16 @@ function onSettingChanged() {
 // removed — metrics now arrive precomputed in cohort.json.
 clearMarkersBtn.addEventListener('click', () => {
   state.markerBits = [];
+  state.markerOrGroups = [];
   syncMarkerCheckboxes();
+  renderOrGroups();
   onSettingChanged();
+});
+
+const addOrGroupBtn = document.getElementById('btn-add-or-group');
+if (addOrGroupBtn) addOrGroupBtn.addEventListener('click', () => {
+  state.markerOrGroups.push([]);   // empty group has no effect until markers are picked
+  renderOrGroups();
 });
 
 // ----- Folder selection --------------------------------------------------
@@ -1716,11 +1963,14 @@ async function checkPflagMappingConsistency() {
 /** Build the marker checkbox chip row. */
 function renderMarkerCheckboxes() {
   markerBox.innerHTML = '';
+  const orRow = document.getElementById('marker-or-row');
   if (state.availableMarkers.length === 0) {
     markerRow.style.display = 'none';
+    if (orRow) orRow.style.display = 'none';
     return;
   }
   markerRow.style.display = '';
+  if (orRow) orRow.style.display = '';
   for (const m of state.availableMarkers) {
     const chip = document.createElement('label');
     chip.className = 'marker-chip';
@@ -1742,6 +1992,74 @@ function renderMarkerCheckboxes() {
   }
   updateMarkerChipColors();
   syncMarkerCheckboxes();
+  renderOrGroups();
+  renderRatioArms();
+}
+
+/** Render marker chips into `container`, checked per `bitsArray`; onToggle(bit,on).
+ *  Optional `filterFn(marker)` restricts which markers show (default: all). */
+function renderMarkerChipsInto(container, bitsArray, onToggle, filterFn) {
+  container.innerHTML = '';
+  const sel = new Set(bitsArray);
+  for (const m of state.availableMarkers) {
+    if (filterFn && !filterFn(m)) continue;
+    const chip = document.createElement('label');
+    chip.className = 'marker-chip' + (sel.has(m.bit) ? ' checked' : '');
+    chip.dataset.bit = m.bit;
+    chip.innerHTML =
+      `<input type="checkbox" value="${m.bit}" ${sel.has(m.bit) ? 'checked' : ''} />` +
+      `<span>${escapeHtml(m.name)}</span>`;
+    chip.querySelector('input').addEventListener('change', (e) => onToggle(m.bit, e.target.checked));
+    container.appendChild(chip);
+  }
+}
+
+/** Build the OR-group editor boxes from state.markerOrGroups. */
+function renderOrGroups() {
+  const wrap = document.getElementById('marker-or-groups');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  state.markerOrGroups.forEach((grp, gi) => {
+    const box = document.createElement('div');
+    box.style.cssText = 'display:flex; align-items:center; gap:6px; flex-wrap:wrap; ' +
+      'border:1px solid var(--border); border-radius:5px; padding:3px 6px; background:#f7fbff;';
+    const tag = document.createElement('span');
+    tag.className = 'group-label'; tag.textContent = 'any of:';
+    const chips = document.createElement('div');
+    chips.style.cssText = 'display:flex; flex-wrap:wrap; gap:3px;';
+    renderMarkerChipsInto(chips, grp, (bit, on) => {
+      const set = new Set(state.markerOrGroups[gi]);
+      if (on) set.add(bit); else set.delete(bit);
+      state.markerOrGroups[gi] = Array.from(set).sort((a, b) => a - b);
+      updateOrGroupLabel(box, state.markerOrGroups[gi]);
+      onSettingChanged();
+    });
+    const lbl = document.createElement('span');
+    lbl.className = 'or-label hint';
+    const del = document.createElement('button');
+    del.type = 'button'; del.className = 'secondary';
+    del.style.cssText = 'font-size:11px; padding:1px 7px;';
+    del.textContent = '×'; del.title = 'remove this OR group';
+    del.addEventListener('click', () => {
+      state.markerOrGroups.splice(gi, 1);
+      renderOrGroups();
+      onSettingChanged();
+    });
+    box.append(tag, chips, lbl, del);
+    updateOrGroupLabel(box, grp);
+    wrap.appendChild(box);
+  });
+}
+
+/** Refresh one OR-group box's "= (A OR B)" hint. */
+function updateOrGroupLabel(box, grp) {
+  const lbl = box.querySelector('.or-label');
+  if (!lbl) return;
+  const nameByBit = {};
+  for (const m of state.availableMarkers) nameByBit[m.bit] = m.name;
+  lbl.textContent = grp.length
+    ? '= (' + grp.slice().sort((a, b) => a - b).map(b => nameByBit[b] || `bit${b}`).join(' OR ') + ')'
+    : '(pick ≥1 marker)';
 }
 
 /**
@@ -1754,9 +2072,14 @@ function markerGateStatus(bit) {
   const total = state.files.length;
   let withBit = 0, known = 0;
   for (const f of state.files) {
-    if (typeof f.pflagOr !== 'number') continue;
+    const o = f.pflagOr;
+    if (o == null) continue;
     known++;
-    if ((f.pflagOr >>> bit) & 1) withBit++;
+    // {lo,hi} in cohort mode; tolerate a legacy plain-number union (bits <32).
+    const lo = (typeof o === 'number') ? (o >>> 0) : (o.lo >>> 0);
+    const hi = (typeof o === 'number') ? 0        : (o.hi >>> 0);
+    const on = (bit < 32) ? ((lo >>> bit) & 1) : ((hi >>> (bit - 32)) & 1);
+    if (on) withBit++;
   }
   let status;
   if (known === 0)            status = 'unknown';
@@ -1808,14 +2131,16 @@ function markerBitsMask() {
  *  for the Match column header and the calc-desc line. Empty selection
  *  means no marker filter (Match == Region). */
 function selectedMarkerLabel() {
-  if (!state.markerBits.length) return '';
-  // Look up names via availableMarkers (which has dedup'd bit→name).
   const nameByBit = {};
   for (const m of state.availableMarkers) nameByBit[m.bit] = m.name;
-  return state.markerBits
-    .slice().sort((a, b) => a - b)
-    .map(b => `${nameByBit[b] || `bit${b}`}+`)
-    .join('');
+  const nm = b => nameByBit[b] || `bit${b}`;
+  const ands = state.markerBits.slice().sort((a, b) => a - b).map(b => `${nm(b)}+`);
+  const ors = (state.markerOrGroups || [])
+    .map(g => g.slice().sort((a, b) => a - b)).filter(g => g.length)
+    .map(g => `(${g.map(b => `${nm(b)}+`).join(' OR ')})`);
+  if (!ands.length && !ors.length) return '';
+  if (!ors.length) return ands.join('');                 // compact, unchanged: "CD3+CD8+"
+  return ands.concat(ors).join(' AND ');                 // explicit: "CD3+ AND (PD1+ OR LAG3+)"
 }
 
 // (Cache management buttons removed — this is a viewer over precomputed
@@ -1942,6 +2267,7 @@ async function importCacheFromBlob(blob) {
     override = r;
   }
   applySettings(chosenSettings);
+  pruneSelectionsToCohort();   // imported settings may reference a different panel
   saveSettings();
 
   const cfg = configKey();
@@ -2167,6 +2493,7 @@ function render() {
   renderHeader();
   renderRows();
   renderBarPlot();
+  renderRatioPlot();           // stratified marker-ratio diverging bars
   updateRoiMatchStatus();      // keep matched-count current as samples load
   updateMarkerChipColors();    // keep red/yellow/green current as files resolve
 }
@@ -2624,6 +2951,316 @@ function renderWaterfall(completed) {
 }
 
 /**
+ * (Re)build the Left/Right comparator arms for the ratio plot from the loaded
+ * cohort's pflag legend. Each arm is a CNF editor (AND row + OR-group boxes).
+ * Shows the panel once ≥2 markers exist. Called from renderMarkerCheckboxes
+ * when the marker set changes.
+ */
+function renderRatioArms(){
+  const panel = document.getElementById('ratio-panel');
+  if (!panel) return;
+  const markers = state.availableMarkers.filter(m => m.bit < 64);
+  if (markers.length < 2){ panel.style.display = 'none'; return; }
+  panel.style.display = '';
+  renderRatioArm('num', state.ratioNum);
+  renderRatioArm('den', state.ratioDen);
+}
+
+/**
+ * Build one arm's CNF editor into #ratio-<which>-editor: an "all of:" AND row
+ * (with a "+ OR group" button) followed by one "any of:" box per OR-group, then
+ * the "= expr" hint. Mirrors the main Markers-AND + OR-groups UI.
+ */
+function renderRatioArm(which, arm){
+  const host = document.getElementById(`ratio-${which}-editor`);
+  if (!host) return;
+  host.innerHTML = '';
+  const inRange = m => m.bit < 64;
+
+  // "all of:" — the AND-required markers, plus the "+ OR group" button.
+  const andRow = document.createElement('div');
+  andRow.className = 'ratio-and-row';
+  const andTag = document.createElement('span');
+  andTag.className = 'group-label'; andTag.textContent = 'all of:';
+  const andChips = document.createElement('div');
+  andChips.className = 'ratio-chips';
+  renderMarkerChipsInto(andChips, arm.and, (bit, on) => {
+    const s = new Set(arm.and);
+    if (on) s.add(bit); else s.delete(bit);
+    arm.and = Array.from(s).sort((a, b) => a - b);
+    updateRatioArmLabel(which, arm);
+    saveSettings(); renderRatioPlot();
+  }, inRange);
+  const addOr = document.createElement('button');
+  addOr.type = 'button'; addOr.className = 'secondary';
+  addOr.style.cssText = 'font-size:11px; padding:1px 7px;';
+  addOr.textContent = '+ OR group';
+  addOr.addEventListener('click', () => {
+    (arm.or = arm.or || []).push([]);
+    renderRatioArm(which, arm);   // show the new (empty) group; no plot change yet
+    saveSettings();
+  });
+  andRow.append(andTag, andChips, addOr);
+  host.appendChild(andRow);
+
+  // "any of:" — one box per OR-group (≥1 of its markers), with a × to remove it.
+  (arm.or || []).forEach((grp, gi) => {
+    const box = document.createElement('div');
+    box.className = 'ratio-or-box';
+    const tag = document.createElement('span');
+    tag.className = 'group-label'; tag.textContent = 'any of:';
+    const chips = document.createElement('div');
+    chips.className = 'ratio-chips';
+    renderMarkerChipsInto(chips, grp, (bit, on) => {
+      const s = new Set(arm.or[gi]);
+      if (on) s.add(bit); else s.delete(bit);
+      arm.or[gi] = Array.from(s).sort((a, b) => a - b);
+      updateRatioArmLabel(which, arm);
+      saveSettings(); renderRatioPlot();
+    }, inRange);
+    const del = document.createElement('button');
+    del.type = 'button'; del.className = 'secondary';
+    del.style.cssText = 'font-size:11px; padding:1px 7px;';
+    del.textContent = '×'; del.title = 'remove this OR group';
+    del.addEventListener('click', () => {
+      arm.or.splice(gi, 1);
+      renderRatioArm(which, arm);
+      saveSettings(); renderRatioPlot();
+    });
+    box.append(tag, chips, del);
+    host.appendChild(box);
+  });
+
+  // "= expr" hint line.
+  const lbl = document.createElement('div');
+  lbl.id = `ratio-${which}-label`;
+  lbl.className = 'or-label hint';
+  host.appendChild(lbl);
+  updateRatioArmLabel(which, arm);
+}
+
+/** Refresh one arm's "= expr" hint. */
+function updateRatioArmLabel(which, arm){
+  const lbl = document.getElementById(`ratio-${which}-label`);
+  if (lbl) lbl.textContent = ratioArmEmpty(arm) ? '(pick markers)' : '= ' + ratioArmLabel(arm);
+}
+
+/**
+ * Stratified marker-ratio plot: one horizontal diverging bar per sample. The
+ * enrichment index div = (nZ − nY)/(nY + nZ) points left when the Left (Y) arm
+ * dominates, right when the Right (Z) arm dominates. Each arm is an AND/OR combo
+ * of pflag markers. Bars keep the group colors, so it reads like the waterfall
+ * turned 90°. Redrawn from render().
+ */
+function renderRatioPlot(){
+  const area    = document.getElementById('ratio-area');
+  const summary = document.getElementById('ratio-summary');
+  if (!area || typeof Plotly === 'undefined') return;
+  const yN = ratioArmLabel(state.ratioNum), zN = ratioArmLabel(state.ratioDen);
+  const hint = (msg) => {
+    Plotly.purge(area);
+    if (summary) summary.innerHTML = msg;
+    renderRatioStats([]);          // clear the group-comparison table
+  };
+  if (ratioArmEmpty(state.ratioNum) || ratioArmEmpty(state.ratioDen))
+    return hint('Pick markers for both the <b>Left</b> and <b>Right</b> arms to plot each sample’s ratio.');
+  if (ratioArmSig(state.ratioNum) === ratioArmSig(state.ratioDen))
+    return hint('Left and Right arms must differ.');
+  const rows = ratioRowsForPlot();
+  if (!rows.length) return hint(`No cells match ${escapeHtml(yN)} or ${escapeHtml(zN)} in the current selection.`);
+
+  const yNames = rows.map(r => r.name);
+  const divs   = rows.map(r => r.div);
+  const colors = rows.map(r => getGroupColor(r.group));
+  const hover = rows.map(r =>
+    `<b>${escapeHtml(r.name)}</b><br>` +
+    (r.group ? `${escapeHtml(r.group)}<br>` : '') +
+    `${escapeHtml(yN)}: ${r.nY.toLocaleString()} (${(100 * r.nY / r.tot).toFixed(1)}%)<br>` +
+    `${escapeHtml(zN)}: ${r.nZ.toLocaleString()} (${(100 * r.nZ / r.tot).toFixed(1)}%)<br>` +
+    `index ${r.div >= 0 ? '+' : ''}${r.div.toFixed(3)}`
+  );
+
+  Plotly.newPlot(area, [{
+    x: divs, y: yNames,
+    type: 'bar', orientation: 'h',
+    marker: { color: colors, line: { color: 'rgba(0,0,0,0.25)', width: 0.6 } },
+    text: hover, textposition: 'none',       // text used only for hover, not drawn on bars
+    hovertemplate: '%{text}<extra></extra>',
+  }], {
+    margin: { t: 14, l: 96, r: 30, b: 46 },
+    height: Math.max(220, 24 * rows.length + 80),
+    xaxis: {
+      title: `←  ${yN}      enrichment      ${zN}  →`,
+      range: [-1.05, 1.05],
+      tickvals: [-1, -0.5, 0, 0.5, 1],
+      zeroline: true, zerolinecolor: '#888', zerolinewidth: 1,
+      gridcolor: '#eee',
+    },
+    yaxis: {
+      automargin: true,
+      tickfont: { size: 9, family: 'monospace' },
+      autorange: 'reversed',                 // rows[0] (most Z-enriched) on top
+    },
+    showlegend: false,
+    bargap: 0.25,
+    plot_bgcolor: '#fff',
+    paper_bgcolor: '#fff',
+  }, { displayModeBar: false, responsive: true });
+
+  if (summary){
+    const nL = rows.filter(r => r.div < 0).length;
+    const nR = rows.filter(r => r.div > 0).length;
+    summary.innerHTML =
+      `${rows.length} sample${rows.length === 1 ? '' : 's'} · ` +
+      `${nL} lean <b>${escapeHtml(yN)}</b> (left), ${nR} lean <b>${escapeHtml(zN)}</b> (right)` +
+      ` · index = (n<sub>${escapeHtml(zN)}</sub> − n<sub>${escapeHtml(yN)}</sub>) / (n<sub>${escapeHtml(yN)}</sub> + n<sub>${escapeHtml(zN)}</sub>), ` +
+      `within ${escapeHtml(selectedMarkerLabel() || selectedCflagLabel())}.`;
+  }
+  renderRatioStats(rows);
+}
+
+/**
+ * Group-comparison stats for the ratio plot. The enrichment index is a bounded
+ * ratio in [−1, 1], so the appropriate primary test is RANK-BASED — Wilcoxon
+ * rank-sum (= Mann–Whitney U) for two groups, Kruskal–Wallis as the omnibus for
+ * more. Welch's t-test is shown alongside for reference. Pairwise, to match the
+ * box plot's table. `rows` are ratioRowsForPlot() rows (each carries div + group).
+ */
+function renderRatioStats(rows){
+  const wrap = document.getElementById('ratio-stats-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const byGroup = {};
+  for (const r of (rows || [])){ if (!r.group) continue; (byGroup[r.group] = byGroup[r.group] || []).push(r.div); }
+  const groups = orderedGroups(Object.keys(byGroup));
+  if (groups.length < 2) return;   // nothing to compare
+
+  const median = (a) => {
+    if (!a.length) return NaN;
+    const s = a.slice().sort((x, y) => x - y), n = s.length;
+    return (n % 2) ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+  };
+  const fmtP = (p) => !isFinite(p) ? '—' : (p < 0.001 ? '< 0.001' : p.toFixed(p < 0.01 ? 4 : (p < 0.1 ? 3 : 2)));
+  const pClass = (p) => !isFinite(p) ? '' : (p < 0.01 ? 'p-sig' : (p < 0.05 ? 'p-marg' : 'p-ns'));
+
+  const pairs = [];
+  for (let i = 0; i < groups.length; i++)
+    for (let j = i + 1; j < groups.length; j++){
+      const gi = groups[i], gj = groups[j];
+      pairs.push({ gi, gj, u: mannWhitneyU(byGroup[gi], byGroup[gj]), t: welchT(byGroup[gi], byGroup[gj]) });
+    }
+  // Kruskal-Wallis omnibus (rank-based) when >2 groups.
+  const kw = (groups.length > 2) ? kruskalWallis(groups.map(g => byGroup[g])) : null;
+
+  let html = `<h2 style="font-size:12px; margin: 0 0 6px 0; color: #555; text-transform: uppercase; letter-spacing: 0.5px;">Group comparison · enrichment index (rank-based)</h2>`;
+  html += `<div style="font-size:11px; color:#666; margin-bottom:6px;">Per-group median index: ` +
+    groups.map(g => `<b style="color:${getGroupColor(g)}">${escapeHtml(g)}</b> ${fmtNum(median(byGroup[g]), 3)} (n=${byGroup[g].length})`).join(' · ') +
+    (kw ? ` · Kruskal–Wallis <span class="${pClass(kw.p)}">p ${fmtP(kw.p)}</span> (H=${isFinite(kw.H) ? kw.H.toFixed(2) : '—'}, df=${kw.df})` : '') +
+    `</div>`;
+  html += `<table class="stats">
+    <thead><tr>
+      <th>Comparison</th><th>n₁ / n₂</th>
+      <th>Mann–Whitney U</th><th>z</th><th title="Wilcoxon rank-sum — the primary test for this bounded index">rank-sum p</th>
+      <th>Welch t</th><th title="parametric, for reference only">t-test p</th>
+    </tr></thead><tbody>`;
+  for (const r of pairs){
+    html += `<tr>` +
+      `<td>${escapeHtml(r.gi)} <span style="color:#999">vs</span> ${escapeHtml(r.gj)}</td>` +
+      `<td>${r.u.n1} / ${r.u.n2}</td>` +
+      `<td>${isFinite(r.u.U) ? r.u.U.toFixed(0) : '—'}</td>` +
+      `<td>${isFinite(r.u.z) ? r.u.z.toFixed(2) : '—'}</td>` +
+      `<td class="${pClass(r.u.p)}"><b>${fmtP(r.u.p)}</b></td>` +
+      `<td>${isFinite(r.t.t) ? r.t.t.toFixed(2) : '—'}</td>` +
+      `<td class="${pClass(r.t.p)}">${fmtP(r.t.p)}</td>` +
+      `</tr>`;
+  }
+  html += `</tbody></table>`;
+  html += `<div style="font-size: 10.5px; color: #888; margin-top: 4px;">
+    The enrichment index is a bounded ratio, so the <b>Wilcoxon rank-sum (Mann–Whitney U)</b> test is the primary comparison;
+    Welch's t-test is shown for reference. <span class="p-sig">p &lt; 0.01</span>, <span class="p-marg">p &lt; 0.05</span>, otherwise <span class="p-ns">ns</span>.
+  </div>`;
+  wrap.innerHTML = html;
+}
+
+/**
+ * Kruskal–Wallis H test (rank-based one-way ANOVA on ranks) with tie
+ * correction; p from the chi-square survival function (df = k − 1). `arrs` is an
+ * array of numeric arrays, one per group.
+ */
+function kruskalWallis(arrs){
+  const groups = arrs.filter(a => a && a.length);
+  const k = groups.length;
+  if (k < 2) return { H: NaN, df: k - 1, p: NaN };
+  const all = [];
+  groups.forEach((a, gi) => a.forEach(v => all.push({ v, gi })));
+  const N = all.length;
+  all.sort((x, y) => x.v - y.v);
+  // Average ranks across ties; accumulate tie correction.
+  const tie = [];
+  let i = 0;
+  while (i < N){
+    let j = i;
+    while (j < N - 1 && all[j + 1].v === all[i].v) j++;
+    const avg = (i + j + 2) / 2;
+    for (let m = i; m <= j; m++) all[m].rank = avg;
+    if (j > i) tie.push(j - i + 1);
+    i = j + 1;
+  }
+  const R = new Array(k).fill(0), n = new Array(k).fill(0);
+  for (const it of all){ R[it.gi] += it.rank; n[it.gi]++; }
+  let H = 0;
+  for (let g = 0; g < k; g++) H += (R[g] * R[g]) / n[g];
+  H = (12 / (N * (N + 1))) * H - 3 * (N + 1);
+  let C = 0; for (const t of tie) C += (t * t * t - t);
+  const corr = 1 - C / (N * N * N - N);
+  if (corr > 0) H /= corr;
+  const df = k - 1;
+  return { H, df, p: 1 - chiSqCdf(H, df) };
+}
+
+/** Chi-square CDF via the regularized lower incomplete gamma P(df/2, x/2). */
+function chiSqCdf(x, df){
+  if (!(x > 0) || !(df > 0)) return 0;
+  return lowerGammaP(df / 2, x / 2);
+}
+/** Regularized lower incomplete gamma P(a,x) (Numerical Recipes series/CF). */
+function lowerGammaP(a, x){
+  if (x < 0 || a <= 0) return 0;
+  if (x === 0) return 0;
+  const gln = lnGamma(a);
+  if (x < a + 1){                     // series expansion
+    let ap = a, sum = 1 / a, del = sum;
+    for (let n = 0; n < 200; n++){
+      ap++; del *= x / ap; sum += del;
+      if (Math.abs(del) < Math.abs(sum) * 1e-12) break;
+    }
+    return sum * Math.exp(-x + a * Math.log(x) - gln);
+  } else {                            // continued fraction for Q, return 1−Q
+    const FPMIN = 1e-300;
+    let b = x + 1 - a, c = 1 / FPMIN, d = 1 / b, h = d;
+    for (let n = 1; n < 200; n++){
+      const an = -n * (n - a);
+      b += 2;
+      d = an * d + b; if (Math.abs(d) < FPMIN) d = FPMIN;
+      c = b + an / c; if (Math.abs(c) < FPMIN) c = FPMIN;
+      d = 1 / d; const del = d * c; h *= del;
+      if (Math.abs(del - 1) < 1e-12) break;
+    }
+    return 1 - Math.exp(-x + a * Math.log(x) - gln) * h;
+  }
+}
+/** ln Γ(x) — Lanczos approximation. */
+function lnGamma(x){
+  const c = [76.18009172947146, -86.50532032941677, 24.01409824083091,
+             -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+  let y = x, tmp = x + 5.5;
+  tmp -= (x + 0.5) * Math.log(tmp);
+  let ser = 1.000000000190015;
+  for (let j = 0; j < 6; j++){ y++; ser += c[j] / y; }
+  return -tmp + Math.log(2.5066282746310005 * ser / x);
+}
+
+/**
  * Build the pairwise stats table beneath the box plot. For every pair of
  * groups, run Welch's two-sided t-test and Mann-Whitney U. Highlight rows
  * by significance: p < 0.01 strong, p < 0.05 marginal, else "ns".
@@ -3014,12 +3651,19 @@ function buildBoxPlotR() {
   const levels = bracketLevels(pairIdx);
   const maxLevel = levels.length ? Math.max(...levels) : 0;
   const useSig = pairIdx.length > 0 && isFinite(ymax) && ymax > 0;
-  const topExpand = useSig ? (0.05 + 0.10 * maxLevel + 0.08).toFixed(2) : '0.12';
+  // Vertical gap between stacked brackets (fraction of the data max). "p = …" text
+  // is taller than an asterisk, so give p-value labels more room so the lower
+  // bracket's text doesn't run into the bar above it.
+  const levelStep = (stt.label === 'stars') ? 0.10 : 0.17;
+  const topExpand = useSig ? (0.05 + levelStep * maxLevel + 0.08).toFixed(2) : '0.12';
 
   // Manual significance layer: bracket (geom_segment) and p-value text (geom_text)
   // are colored independently, and significant comparisons get their own color.
   const rvec = a => `c(${a.join(', ')})`;
   const tipDrop = (stTip > 0 && isFinite(ymax)) ? stTip * ymax : 0;   // end-cap drop (data units)
+  // Pull each bracket end inward (group spacing = 1) so adjacent brackets (A-B, B-C)
+  // leave a gap instead of touching at the shared group. ~0.08 ⇒ ~16% shorter, 0.16 gap.
+  const bracketInset = 0.08;
   const labelExpr = (stt.label === 'stars')
     ? `ifelse(is.na(sig$p), "", as.character(symnum(sig$p, corr = FALSE, na = FALSE,
                      cutpoints = c(0, 0.001, 0.01, 0.05, 1), symbols = c("***", "**", "*", "ns"))))`
@@ -3035,9 +3679,9 @@ function buildBoxPlotR() {
 sig <- data.frame(
   ga = ${rvec(pairIdx.map(p => rString(groups[p[0]])))},
   gb = ${rvec(pairIdx.map(p => rString(groups[p[1]])))},
-  x1 = ${rvec(pairIdx.map(p => p[0] + 1))},
-  x2 = ${rvec(pairIdx.map(p => p[1] + 1))},
-  y  = ${rvec(levels.map(l => (ymax * (1.05 + 0.10 * l)).toFixed(4)))},
+  x1 = ${rvec(pairIdx.map(p => (p[0] + 1 + bracketInset).toFixed(4)))},
+  x2 = ${rvec(pairIdx.map(p => (p[1] + 1 - bracketInset).toFixed(4)))},
+  y  = ${rvec(levels.map(l => (ymax * (1.05 + levelStep * l)).toFixed(4)))},
   stringsAsFactors = FALSE
 )
 # Recompute each comparison's p-value in R with the chosen test.
@@ -3102,7 +3746,10 @@ create_beeswarm_plot <- function(data, x_var, y_var, withbox = FALSE, fill_var =
       axis.title = element_text(size = ${fs}, face = "bold", colour = "black"),
       axis.text.x = element_text(size = ${xTickFs}, colour = "black"),
       axis.text.y = element_text(size = ${yTickFs}, colour = "black"),
-      axis.ticks = element_line(colour = ${rString(tick)})   # true black by default, configurable
+      axis.ticks = element_line(colour = ${rString(tick)}),   # true black by default, configurable
+      # Illustrator-friendly: no white background rects (nothing to delete in AI)
+      panel.background = element_blank(),
+      plot.background  = element_blank()
     )
   if (withbox) {
     g <- g + geom_boxplot(width = 0.2, outlier.shape = NA, linewidth = 0.25,
@@ -3121,7 +3768,8 @@ g <- create_beeswarm_plot(
   scale_fill_manual(values = group_colors) +
   labs(y = ${rString(ylab)}, x = NULL) +
   scale_y_continuous(breaks = scales::pretty_breaks(n = ${yTicks}),   # y-tick density (config y_ticks)
-                     expand = expansion(mult = c(0.05, ${topExpand})))  # headroom for the stacked brackets
+                     expand = expansion(mult = c(0.05, ${topExpand}))) +  # headroom for the stacked brackets
+  coord_cartesian(clip = "off")   # no panel clip mask in the PDF (nothing to "release" in AI)
 ${sigBlock}
 ${rSavePlot('cohort_boxplot.pdf', po.box.w, po.box.h, fam)}
 ` };
@@ -3177,7 +3825,7 @@ ${colorLines}
 g <- ggplot(cohort, aes(x = name, y = value, fill = group)) +
   geom_bar(stat = "identity", color = "black") +
   ylab(${rString(ylab)}) + xlab("Sample ID") +
-  coord_flip() +
+  coord_flip(clip = "off") +   # no panel clip mask in the PDF
   scale_fill_manual(values = group_colors) +
   theme_classic(base_size = ${fs}, base_family = ${rString(fam)}) +
   theme(
@@ -3198,12 +3846,128 @@ g <- ggplot(cohort, aes(x = name, y = value, fill = group)) +
     legend.title = element_blank(),
     legend.background = element_blank(),
     legend.key   = element_blank(),
-    panel.background = element_rect(fill = "transparent", colour = NA),
-    plot.background  = element_rect(fill = "transparent", colour = NA)
+    # Illustrator-friendly: element_blank draws no rect at all (vs a transparent
+    # rect, which still lands as an empty object you'd delete)
+    panel.background = element_blank(),
+    plot.background  = element_blank()
   ) +
   scale_y_continuous(expand = c(0, 0), breaks = scales::pretty_breaks(n = ${yTicks}))  # value-axis tick density (config y_ticks)
 
 ${rSavePlot('cohort_waterfall.pdf', po.wf.w, po.wf.h, fam)}
+` };
+}
+
+/**
+ * R script: stratified marker-ratio plot — a horizontal diverging bar per
+ * sample of the enrichment index div = (nZ − nY)/(nY + nZ) ∈ [−1,1], colored by
+ * group. Same Illustrator-friendly styling as the waterfall (element_blank
+ * backgrounds, clip = "off"), PDF sized by the waterfall dimensions.
+ */
+function buildRatioR() {
+  if (ratioArmEmpty(state.ratioNum) || ratioArmEmpty(state.ratioDen))
+    return { ok: false, msg: 'Pick markers for both the Left and Right arms first.' };
+  if (ratioArmSig(state.ratioNum) === ratioArmSig(state.ratioDen))
+    return { ok: false, msg: 'The Left and Right arms must differ.' };
+  const rows = ratioRowsForPlot();
+  if (!rows.length) return { ok: false, msg: 'No cells in either arm for the current selection.' };
+  // Sort ascending in R-space so that after coord_flip the most Z-enriched sits on top.
+  rows.sort((a, b) => a.div - b.div);
+
+  const groups = orderedGroups(rows.map(r => r.group));
+  const colorLines = groups.map(g => `  ${rString(g)} = ${rString(getGroupColor(g))}`).join(',\n');
+  const yN = ratioArmLabel(state.ratioNum), zN = ratioArmLabel(state.ratioDen);
+
+  // Paper-standardization knobs from the optional config (font/PDF size).
+  const po = plotOpts();
+  const fs = po.fontSize, fam = po.fontFamily, tick = po.tickColor, yTicks = po.yTicks;
+  const xTickFs = po.xTickFontSize, yTickFs = po.yTickFontSize;
+
+  const cohortBlock = [
+    `  name  = c(\n${rColumnLines(rows, 'name',  v => rString(v), '    ')}\n  )`,
+    `  group = c(\n${rColumnLines(rows, 'group', v => rString(v), '    ')}\n  )`,
+    `  nY    = c(\n${rColumnLines(rows, 'nY',    v => rNum(v),    '    ')}\n  )`,
+    `  nZ    = c(\n${rColumnLines(rows, 'nZ',    v => rNum(v),    '    ')}\n  )`,
+    `  div   = c(\n${rColumnLines(rows, 'div',   v => rNum(v),    '    ')}\n  )`,
+  ].join(',\n');
+  const xlab = `enrichment index   (${yN}  <-  0  ->  ${zN})`;
+
+  return { ok: true, script:
+`${rExportHeader('marker ratio export')}
+#
+# Stratified marker ratio: within the current region + marker selection, each
+# sample's cells are split by pflag ${rString(yN)} (nY, LEFT) vs ${rString(zN)}
+# (nZ, RIGHT). div = (nZ - nY) / (nY + nZ) in [-1, 1]; negative leans ${yN}.
+
+library(ggplot2)
+
+${rEditableText()}
+cohort <- data.frame(
+${cohortBlock},
+  stringsAsFactors = FALSE
+)
+cohort <- subset(cohort, !is.na(group) & group != "")
+
+# Sort by div ascending so coord_flip puts the most ${zN}-enriched bar on top.
+cohort <- cohort[order(cohort$div), ]
+cohort$name <- factor(cohort$name, levels = cohort$name)
+
+group_colors <- c(
+${colorLines}
+)
+
+g <- ggplot(cohort, aes(x = name, y = div, fill = group)) +
+  geom_col(color = "black", width = 0.8) +
+  geom_hline(yintercept = 0, linewidth = 0.3, colour = ${rString(tick)}) +   # center divider
+  ylab(${rString(xlab)}) + xlab(NULL) +
+  coord_flip(clip = "off") +   # no panel clip mask in the PDF
+  scale_fill_manual(values = group_colors) +
+  scale_y_continuous(limits = c(-1, 1), expand = c(0, 0),
+                     breaks = scales::pretty_breaks(n = ${yTicks})) +   # index-axis tick density
+  theme_classic(base_size = ${fs}, base_family = ${rString(fam)}) +
+  theme(
+    # axis.line + axis.ticks together (single entry — ggplot2 rejects duplicates)
+    axis.line   = element_line(colour = ${rString(tick)}),
+    axis.ticks  = element_line(colour = ${rString(tick)}),
+    legend.position = "right",
+    legend.title = element_blank(),
+    # every text element pinned to an absolute ${fs}pt (no rel() scaling)
+    text        = element_text(family = ${rString(fam)}, size = ${fs}),
+    axis.text.x = element_text(color = "black", size = ${xTickFs}),
+    axis.text.y = element_text(color = "black", size = ${yTickFs}),
+    axis.title.x = element_text(size = ${fs}, margin = margin(t = 2)),
+    legend.text  = element_text(size = ${fs}),
+    legend.background = element_blank(),
+    legend.key   = element_blank(),
+    # Illustrator-friendly: element_blank draws no rect at all
+    panel.background = element_blank(),
+    plot.background  = element_blank()
+  )
+
+# --- Group comparison of the enrichment index -------------------------------
+# The index is a bounded ratio in [-1, 1], so a RANK-BASED test is the
+# appropriate primary comparison: Wilcoxon rank-sum (= Mann-Whitney) for two
+# groups, Kruskal-Wallis as the omnibus for more. Welch's t-test is printed
+# alongside for reference only.
+if (length(unique(cohort$group)) >= 2) {
+  cat("\\n== Enrichment index by group ==\\n")
+  print(aggregate(div ~ group, cohort,
+                  function(v) c(n = length(v), median = median(v), mean = mean(v))))
+  grps <- sort(unique(cohort$group))
+  cat("\\nPairwise (Wilcoxon rank-sum = primary; Welch t = reference):\\n")
+  for (i in seq_len(length(grps) - 1)) for (j in (i + 1):length(grps)) {
+    a <- cohort$div[cohort$group == grps[i]]
+    b <- cohort$div[cohort$group == grps[j]]
+    wp <- tryCatch(suppressWarnings(wilcox.test(a, b)$p.value), error = function(e) NA_real_)
+    tp <- tryCatch(suppressWarnings(t.test(a, b)$p.value),      error = function(e) NA_real_)
+    cat(sprintf("  %s vs %s:  rank-sum p = %.4g  |  Welch t p = %.4g\\n",
+                grps[i], grps[j], wp, tp))
+  }
+  if (length(grps) > 2)
+    cat(sprintf("  Kruskal-Wallis omnibus p = %.4g\\n",
+                suppressWarnings(kruskal.test(div ~ factor(group), cohort)$p.value)))
+}
+
+${rSavePlot('cohort_ratio.pdf', po.wf.w, po.wf.h, fam)}
 ` };
 }
 
@@ -3527,6 +4291,10 @@ document.getElementById('btn-export-r-box').addEventListener('click', () => runR
 document.getElementById('btn-export-r-wf') .addEventListener('click', () => runRExport(buildWaterfallR, 'waterfall R script'));
 document.getElementById('btn-png-box').addEventListener('click', () => downloadPlotPNG('plot-area', 'cohort_box'));
 document.getElementById('btn-png-wf') .addEventListener('click', () => downloadPlotPNG('waterfall-area', 'cohort_waterfall'));
+document.getElementById('btn-export-r-ratio').addEventListener('click', () => runRExport(buildRatioR, 'ratio R script'));
+document.getElementById('btn-png-ratio')     .addEventListener('click', () => downloadPlotPNG('ratio-area', 'cohort_ratio'));
+// The arm CNF editors (chips + "+ OR group" / × buttons) are wired inside
+// renderRatioArm on each (re)render, so no static wiring is needed here.
 document.getElementById('btn-r-modal-close').addEventListener('click', () => {
   document.getElementById('r-export-modal').style.display = 'none';
 });

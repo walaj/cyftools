@@ -23,7 +23,7 @@
   },
 
   "plot": {
-    "_comment": "Baked into the generated R/ggplot2 script (→ editable, embedded-font vector PDF via cairo_pdf). Per-plot PDF dimensions in inches.",
+    "_comment": "Baked into the generated R/ggplot2 script (→ editable, embedded-font vector PDF via cairo_pdf). Per-plot PDF dimensions in inches. The stratified marker-ratio plot reuses the 'waterfall' dimensions.",
     "font_family": "Arial",
     "font_size": 7,
     "x_tick_font_size": 7,
