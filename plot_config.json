@@ -1,0 +1,42 @@
+{
+  "group_colors": {
+    "tdpMMR": "#5ab4ac",
+    "tipMMR": "#beaed4",
+    "dMMR": "#fdc086"
+  },
+  "group_order": [
+    "tdpMMR",
+    "tipMMR",
+    "dMMR"
+  ],
+  "default_metric": "density",
+  "default_compartment": "all",
+  "plot": {
+    "font_family": "Arial",
+    "font_size": 7,
+    "x_tick_font_size": 7,
+    "y_tick_font_size": 7,
+    "pvalue_font_size": 6,
+    "point_size": 1.5,
+    "tick_color": "#000000",
+    "y_ticks": 7,
+    "box": {
+      "pdf_width": 1.7,
+      "pdf_height": 1.6
+    },
+    "waterfall": {
+      "pdf_width": 6,
+      "pdf_height": 5
+    },
+    "stats": {
+      "test": "wilcox.test",
+      "label": "pvalue",
+      "tip_length": 0,
+      "bracket_linewidth": 0.25,
+      "bracket_color": "#2b00ff",
+      "text_color": "#000000",
+      "sig_color": "#ff0000",
+      "sig_threshold": 0.05
+    }
+  }
+}

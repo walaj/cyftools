@@ -1202,6 +1202,109 @@ int ClearRoiProcessor::ProcessLine(Cell& cell) {
   return WRITE_CELL;   // pass every cell through unchanged
 }
 
+int SettypeScanProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+  const std::vector<Tag> dt = header.GetDataTags();   // MA+CA in cols order
+  for (const auto& name : m_names) {
+    bool found = false;
+    for (size_t k = 0; k < dt.size(); ++k)
+      if (dt[k].id == name) { m_idx.emplace_back(name, k); m_seen[name]; found = true; break; }
+    if (!found) m_missing.push_back(name);
+  }
+  return HEADER_NO_ACTION;   // read-only pre-pass: no output stream
+}
+
+int SettypeScanProcessor::ProcessLine(Cell& cell) {
+  for (const auto& ni : m_idx)
+    if (ni.second < cell.cols.size())
+      m_seen[ni.first].insert((int64_t)std::llround((double)cell.cols[ni.second]));
+  return NO_WRITE_CELL;
+}
+
+int SettypeProcessor::ProcessHeader(CellHeader& header) {
+  m_header = header;
+
+  // The all-float write path cannot re-encode a String('Z')/Array('B') column
+  // (those need the fully-typed writeRow); refuse rather than throw mid-stream.
+  for (const auto& t : m_header.GetDataTags()) {
+    const CyfValueType vt = t.ValueType();
+    if (vt == CyfValueType::String || vt == CyfValueType::Array) {
+      std::cerr << "cyftools settype: column '" << t.id << "' has type '"
+                << cyfTypeCode(vt) << "', which settype cannot re-encode - aborting"
+                << std::endl;
+      m_aborted = true;
+      return ONLY_WRITE_HEADER;   // stop before opening the output file
+    }
+  }
+
+  // 1) give every untyped @MA/@CA column an explicit TY:f
+  for (const auto& t : m_header.GetDataTags())
+    if (t.GetField("TY").empty())
+      m_header.UpsertTag(Tag(t.type, t.id, "TY:f"));
+
+  // 2) apply the user's per-column type overrides (TY:, plus LV: for 'A')
+  for (const auto& kv : m_changes) {
+    const std::string& name = kv.first;
+    const char code = kv.second;
+    uint8_t ttype = 0; bool found = false;
+    for (const auto& t : m_header.GetDataTags())
+      if (t.id == name) { ttype = t.type; found = true; break; }
+    if (!found) {
+      std::cerr << "cyftools settype: column '" << name << "' not found" << std::endl;
+      m_aborted = true;
+      return ONLY_WRITE_HEADER;
+    }
+    std::string data = std::string("TY:") + code;
+    if (code == 'A') {
+      std::string lv;
+      auto it = m_levels.find(name);
+      if (it != m_levels.end())
+        for (size_t i = 0; i < it->second.size(); ++i) {
+          if (i) lv += ",";
+          lv += std::to_string(it->second[i]);
+        }
+      data += "\tLV:" + lv;
+    }
+    m_header.UpsertTag(Tag(ttype, name, data));
+  }
+
+  // 3) provenance + sort (finalizes the data-column order the cols[] bind to)
+  m_header.addTag(Tag(Tag::PG_TAG, "", m_cmd));
+  m_header.SortTags();
+
+  // 4) build the label->index remap for each 'A' column (order is now final)
+  const std::vector<Tag> dt = m_header.GetDataTags();
+  for (const auto& kv : m_changes) {
+    if (kv.second != 'A') continue;
+    for (size_t k = 0; k < dt.size(); ++k) {
+      if (dt[k].id != kv.first) continue;
+      std::map<int64_t,uint32_t> m;
+      auto it = m_levels.find(kv.first);
+      if (it != m_levels.end())
+        for (uint32_t i = 0; i < it->second.size(); ++i) m[it->second[i]] = i;
+      m_remap.emplace_back(k, std::move(m));
+      break;
+    }
+  }
+
+  this->SetupOutputStream();
+  (*m_archive)(m_header);
+  return HEADER_NO_ACTION;
+}
+
+int SettypeProcessor::ProcessLine(Cell& cell) {
+  // remap each 'A' column's label value to its LV: level index; the all-float
+  // writer then encodes that index as the categorical value.
+  for (const auto& ri : m_remap) {
+    const size_t idx = ri.first;
+    if (idx >= cell.cols.size()) continue;
+    const int64_t label = (int64_t)std::llround((double)cell.cols[idx]);
+    auto it = ri.second.find(label);
+    cell.cols[idx] = (it != ri.second.end()) ? (float)it->second : 0.0f;
+  }
+  return WRITE_CELL;
+}
+
 int ValidateProcessor::ProcessHeader(CellHeader& header) {
   version    = header.GetHeaderField("VN");
   sort_order = header.GetHeaderField("SO");
@@ -1537,6 +1640,20 @@ int CohortProcessor::ProcessHeader(CellHeader& header) {
   for (const auto& t : header.GetDataTags())
     if (t.type == Tag::MA_TAG) m_pflag_auto[midx++] = t.id;
 
+  // Categorical CA columns (TY:A) become cohort stratifiers. Record each one's
+  // index into cell.cols (= its position among the data columns) and its LV:
+  // level labels, so ProcessLine can collect the per-cell level index.
+  {
+    const std::vector<Tag> dt = header.GetDataTags();   // MA+CA in cols order
+    for (size_t k = 0; k < dt.size(); ++k) {
+      if (dt[k].type == Tag::CA_TAG && dt[k].ValueType() == CyfValueType::Category) {
+        CatCol c; c.name = dt[k].id; c.col = k; c.levels = dt[k].CategoryLevels();
+        m_catcols.push_back(std::move(c));
+      }
+    }
+    m_catvals.assign(m_catcols.size(), {});
+  }
+
   // sample label from @SA, if any (else derived from the filename at emit time);
   // the GP field carries an optional group/category (set via `addtag --group`).
   const auto sa = header.GetSampleTags();
@@ -1553,6 +1670,15 @@ int CohortProcessor::ProcessLine(Cell& cell) {
   m_y.push_back(static_cast<float>(cell.y * m_scale));
   m_cflag.push_back(static_cast<uint64_t>(cell.cflag));
   m_pflag.push_back(static_cast<uint64_t>(cell.pflag));
+
+  // per-cell level index for each categorical stratifier (the A column's float
+  // carries its level index; the all-float reader decodes it as that index)
+  for (size_t c = 0; c < m_catcols.size(); ++c) {
+    const size_t col = m_catcols[c].col;
+    const uint32_t lvl = (col < cell.cols.size())
+                       ? (uint32_t)std::llround((double)cell.cols[col]) : 0u;
+    m_catvals[c].push_back(lvl);
+  }
   return NO_WRITE_CELL;       // cohort never re-emits cells
 }
 
@@ -1588,6 +1714,44 @@ void CohortProcessor::WriteSampleJSON(std::ostream& os, const std::string& file,
     const size_t dot = base.find_last_of('.');
     if (dot != std::string::npos && dot != 0) base = base.substr(0, dot);
     sample = base;
+  }
+
+  // --- categorical membership compartments ---------------------------------
+  // Make "IC != 0" / "IC == 0" gateable exactly like a cflag compartment: for
+  // each @CA TY:A column that carries a "0" baseline level (the "not-an-IC"
+  // convention), claim two otherwise-unused cflag bits and set them per cell
+  // (label != "0" -> the "!=0" bit, label == "0" -> the "=0" bit). Because we
+  // mutate m_cflag *before* painting and histogramming, these bits then flow
+  // through the ordinary compartment path — painted area, flag_histogram, and
+  // the cflag_bits legend — so the viewer treats them as normal compartments
+  // with no special-casing. Bits are chosen per sample and aligned by name.
+  {
+    uint64_t used = 0;
+    for (size_t i = 0; i < N; ++i) used |= m_cflag[i];
+    for (const auto& kv : m_cflag_names)                    // reserve @FL-declared bits too
+      if (kv.first >= 0 && kv.first < 64) used |= (1ull << kv.first);
+    auto claimBit = [&used]() -> int {
+      for (int b = 0; b < 64; ++b) if (!(used & (1ull << b))) { used |= (1ull << b); return b; }
+      return -1;
+    };
+    for (size_t c = 0; c < m_catcols.size(); ++c) {
+      const CatCol& cc = m_catcols[c];
+      int zeroIdx = -1;
+      for (size_t l = 0; l < cc.levels.size(); ++l)
+        if (cc.levels[l] == "0") { zeroIdx = static_cast<int>(l); break; }
+      if (zeroIdx < 0) continue;                            // no "0" baseline -> nothing to split
+      size_t nNon = 0, nZero = 0;
+      for (size_t i = 0; i < N; ++i)
+        (static_cast<int>(m_catvals[c][i]) == zeroIdx ? nZero : nNon)++;
+      if (!nNon || !nZero) continue;                        // one partition empty -> no split
+      const int memberBit = claimBit();                     // label != "0"
+      const int zeroBit   = claimBit();                     // label == "0"
+      if (memberBit < 0 || zeroBit < 0) break;              // ran out of bits (never, in practice)
+      for (size_t i = 0; i < N; ++i)
+        m_cflag[i] |= (1ull << (static_cast<int>(m_catvals[c][i]) == zeroIdx ? zeroBit : memberBit));
+      m_cflag_names[memberBit] = cc.name + "!=0";
+      m_cflag_names[zeroBit]   = cc.name + "=0";
+    }
   }
 
   // which cflag / pflag bits ever appear (OR over all cells), for the legends
@@ -1726,8 +1890,42 @@ void CohortProcessor::WriteSampleJSON(std::ostream& os, const std::string& file,
       os << ind << "    [\"" << cf.first << "\", \"" << pf.first << "\", " << pf.second << "]";
     }
   }
-  os << (first ? "" : "\n") << ind << "  ]\n";
-  os << ind << "}";
+  os << (first ? "" : "\n") << ind << "  ]";   // close flag_histogram (no trailing NL)
+
+  // categorical stratifiers (@CA TY:A columns, e.g. IC immune clusters). For each,
+  // its ordered level labels plus a 3-way histogram [cflag, pflag, level_index,
+  // count]. Summing a column's histogram over level_index reproduces
+  // flag_histogram, so a consumer can count any phenotype in any compartment split
+  // by category. Flag values are decimal STRINGS (parse with BigInt); level_index
+  // indexes the "levels" array.
+  if (!m_catcols.empty()) {
+    os << ",\n" << ind << "  \"catcols\": [\n";
+    for (size_t c = 0; c < m_catcols.size(); ++c) {
+      const CatCol& cc = m_catcols[c];
+      std::map<uint64_t, std::map<uint64_t, std::map<uint32_t, uint64_t>>> ch;  // (cflag,pflag,level)->count
+      for (size_t i = 0; i < N; ++i)
+        ch[m_cflag[i]][m_pflag[i]][m_catvals[c][i]]++;
+
+      os << ind << "    {\"name\": \"" << esc(cc.name) << "\", \"type\": \"A\", \"levels\": [";
+      for (size_t l = 0; l < cc.levels.size(); ++l)
+        os << (l ? ", " : " ") << "\"" << esc(cc.levels[l]) << "\"";
+      os << " ], \"histogram\": [";
+      bool cfirst = true;
+      for (const auto& cf : ch)
+        for (const auto& pf : cf.second)
+          for (const auto& lv : pf.second) {
+            os << (cfirst ? "\n" : ",\n");
+            cfirst = false;
+            os << ind << "      [\"" << cf.first << "\", \"" << pf.first << "\", "
+               << lv.first << ", " << lv.second << "]";
+          }
+      os << (cfirst ? "" : "\n") << ind << "    ]}"
+         << (c + 1 < m_catcols.size() ? "," : "") << "\n";
+    }
+    os << ind << "  ]";
+  }
+
+  os << "\n" << ind << "}";
 }
 
 

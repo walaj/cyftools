@@ -147,8 +147,9 @@ public:
   void writeHeader(const CellHeader& h);
   void writeCell(const Cell& c);
 private:
-  std::ostream& m_os;
-  std::size_t   m_ndcol = 0;
+  std::ostream&             m_os;
+  std::size_t               m_ndcol = 0;
+  std::vector<CyfValueType> m_types;   // column schema, for typed text rendering
 };
 
 class CyfTextReader {

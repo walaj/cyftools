@@ -111,6 +111,25 @@
     }
     .marker-chip input { margin: 0; cursor: pointer; }
     .marker-chip.checked { background: #e7eef9; border-color: var(--accent); }
+    /* Region chip, excluded (NOT) state: red tint, strike-through label. */
+    .marker-chip.excluded { background: #fbeae8; border-color: #d9534f; }
+    .marker-chip.excluded > span { text-decoration: line-through; color: #a23b36; }
+    .marker-chip .not-tag { color: #c0392b; font-weight: 700; margin-right: 2px; }
+    label.toggle.disabled { opacity: 0.4; cursor: not-allowed; }
+    /* Plot tab bar: pick which plot panel is shown (box / waterfall / ratio / IC). */
+    .tabbar { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+    .tab-btn {
+      appearance: none; border: 1px solid var(--border); border-bottom: none;
+      background: #f0f2f5; color: var(--muted);
+      padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+      border-radius: 6px 6px 0 0; margin-bottom: -1px;
+    }
+    .tab-btn:hover:not(.active):not(:disabled) { background: #e7eaef; color: var(--fg); }
+    .tab-btn.active { background: var(--panel); color: var(--accent); border-color: var(--border); }
+    .tab-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    /* "Recent files" dropdowns next to the Load buttons. */
+    .recent-select { font-size: 11px; padding: 2px 4px; border: 1px solid var(--border);
+      border-radius: 5px; background: #fff; color: var(--muted); max-width: 220px; }
     .marker-chip .bit-tag { color: var(--muted); font-size: 10px; }
     /* Gate status across the cohort: a small left dot + tinted border.
        red = bit never ON in any file, yellow = ON in some, green = ON in all,
@@ -209,6 +228,11 @@
       font-size: 11px; color: var(--ok); margin-left: 8px;
     }
     #save-flash.show { display: inline; }
+
+    /* "Loaded cohort" banner in the header: cohort --name + source file name. */
+    .loaded-info { text-align: right; line-height: 1.25; }
+    .loaded-info .li-name { font-size: 14px; font-weight: 700; color: var(--accent); }
+    .loaded-info .li-file { display: block; font-size: 11px; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -217,6 +241,7 @@
   <h1>cyftools phenotyper · cohort</h1>
   <span class="meta">load a cohort.json from <code>cyftools cohort</code>, then group + compare</span>
   <span style="flex:1"></span>
+  <span id="loaded-info" class="loaded-info"></span>
 </header>
 
 <main>
@@ -226,6 +251,8 @@
     <div class="controls">
       <button id="btn-pick-folder" type="button">Load cohort.json…</button>
       <input type="file" id="folder-input" accept=".json,application/json" style="display:none" />
+      <select id="recent-cohort" class="recent-select" title="Re-open a recently loaded cohort.json"
+        style="display:none"><option value="">recent ▾</option></select>
 
       <span class="config-group"
         title="Plotting only: fonts, colors, PDF size, tick density, significance bars — for the R/ggplot2 figure export and the plot preview. Does NOT change the data or metrics.">
@@ -233,6 +260,8 @@
         <button id="btn-load-config" type="button" class="secondary"
           title="Load a plotting-config JSON (fonts, PDF dimensions, colors, …)">Load…</button>
         <input type="file" id="config-input" accept=".json,application/json" style="display:none" />
+        <select id="recent-config" class="recent-select" title="Re-apply a recently loaded plot config"
+          style="display:none"><option value="">recent ▾</option></select>
         <button id="btn-build-config" type="button" class="secondary"
           title="Build/edit the plotting config and download it as JSON">⚙ Build…</button>
         <span class="cfg-note">figure styling → R / PDF</span>
@@ -295,6 +324,14 @@
     </table>
   </div>
 
+  <!-- Plot tab bar: one plot panel visible at a time (box / waterfall / ratio / IC). -->
+  <div id="plot-tabs" class="tabbar" style="display:none; margin-bottom:12px;">
+    <button class="tab-btn" data-tab="box" type="button">Box plot</button>
+    <button class="tab-btn" data-tab="waterfall" type="button">Waterfall</button>
+    <button class="tab-btn" data-tab="ratio" type="button">Marker ratio</button>
+    <button class="tab-btn" data-tab="ic" type="button">IC clusters</button>
+  </div>
+
   <div class="panel" id="plot-panel" style="display:none">
     <div style="display:flex; align-items:center; gap:10px; flex-wrap: wrap;">
       <h2 id="plot-panel-title" style="margin: 0;">By group</h2>
@@ -351,6 +388,38 @@
     <div id="ratio-area" style="margin-top: 8px;"></div>
     <div id="ratio-summary" class="summary-line"></div>
     <div id="ratio-stats-wrap" style="margin-top: 12px;"></div>
+  </div>
+
+  <!-- IC (categorical @CA TY:A) cluster plots: a box/beeswarm by group where each
+       point is either a sample (per-sample metric) or a single (sample, IC) cluster
+       instance (per-IC metric). Hidden unless the cohort has a categorical column. -->
+  <div class="panel" id="ic-panel" style="display:none">
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap: wrap;">
+      <h2 style="margin: 0;">IC clusters</h2>
+      <span class="group-label" id="ic-colname-label"
+        title="A categorical @CA column (TY:A) carried in the cohort JSON, e.g. IC immune-cluster labels. Each level's cell count comes from the (cflag,pflag,level) histogram.">categorical column</span>
+    </div>
+    <div style="margin-top: 8px; display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap;">
+      <label style="font-size:12px;">Points
+        <select id="ic-level" style="display:block; margin-top:2px;">
+          <option value="sample">per sample (point = sample)</option>
+          <option value="ic">per IC (point = sample × IC)</option>
+        </select>
+      </label>
+      <label style="font-size:12px;">Metric
+        <select id="ic-metric" style="display:block; margin-top:2px;"></select>
+      </label>
+      <label style="font-size:12px;" title="Comma-separated IC labels to drop before computing any metric (e.g. 0 = 'not an IC'). Matched against the real cluster-id labels.">Exclude IC
+        <input id="ic-exclude" type="text" value="0" placeholder="e.g. 0,5"
+          style="display:block; margin-top:2px; width:90px;" />
+      </label>
+      <span style="flex:1"></span>
+      <button id="btn-png-ic" class="secondary" type="button" title="Download this plot as PNG at the configured export size">⤓ PNG</button>
+      <button id="btn-export-r-ic" class="secondary" type="button" title="Copy R/ggplot2 beeswarm + box plot script to your clipboard">→ R (IC)</button>
+    </div>
+    <div id="ic-area" style="margin-top: 8px;"></div>
+    <div id="ic-summary" class="summary-line"></div>
+    <div id="ic-stats-wrap" style="margin-top: 12px;"></div>
   </div>
 
   <!-- Fallback dialog shown when clipboard write is blocked -->
@@ -580,6 +649,11 @@ const state = {
   // cell is "in region" iff (cflag & mask) === mask where mask = OR of
   // (1<<bit) for each bit. Empty list = "all cells" (no cflag filter).
   cflagBits: [],
+  // cflag bits that must be CLEAR (negated / "NOT" compartments). A cell is in
+  // region iff it has ALL cflagBits set AND NONE of cflagNotBits set. A bit is
+  // in at most one of the two lists. Any NOT bit makes density blank (no painted
+  // area), but counts & % still apply.
+  cflagNotBits: [],
   scaling: 1,
   radiusPx: 20,
   method: 'paint',          // 'paint' | 'hull'
@@ -591,6 +665,10 @@ const state = {
   // List of pflag bit positions to AND-combine for the marker filter.
   // Empty = no marker filter (Match cells == Region cells).
   markerBits: [],
+  // pflag bits that must be OFF (excluded): a cell is dropped from Match if it has
+  // ANY of these set. AND-composed with markerBits/OR-groups. Disjoint from
+  // markerBits. Applies to the base population, so it flows into every plot.
+  markerNotBits: [],
   // OR-groups AND-combined with markerBits: each inner array is a set of pflag
   // bits OR'd together. e.g. markerBits=[CD3], markerOrGroups=[[PD1,LAG3]] means
   // CD3 AND (PD1 OR LAG3). Empty groups are ignored.
@@ -612,6 +690,9 @@ const state = {
   // the source .cyf was computed with the wrong μm/pixel. Cached values
   // are NOT modified — this is purely a render-time correction.
   densityColScale: 1,
+  // Which plot panel is shown: 'box' | 'waterfall' | 'ratio' | 'ic'. The plots are
+  // tabbed (one visible at a time) rather than stacked. Persisted.
+  activeTab: 'box',
   // File System Access handle for the linked cache JSON (Chrome/Edge only).
   // In-memory only — browser security; the user re-clicks "Save to file"
   // once per session to re-link.
@@ -642,6 +723,15 @@ const state = {
   //   { file, regions:[{label, areaPx2, isTumor}], tumorPx2, allPx2, nTumor }
   // In-memory only (re-picked each session, like the .cyf File objects).
   roisByLsp: {},
+  // ----- IC (categorical @CA TY:A) cluster plots -----
+  // icLevel: 'sample' → one point per sample (points = #files); 'ic' → one point
+  // per (sample, IC) instance (points = # unique ICs across the cohort).
+  icLevel: 'sample',
+  icMetricSample: 'count',   // 'count' | 'pctCells' | 'meanSize'
+  icMetricIC: 'size',        // 'size' | 'pctSample'
+  // Comma-separated IC labels to drop from every metric (0 = "not an IC" by the
+  // user's labeling convention). Matched against the categorical level strings.
+  icExclude: '0',
 };
 
 // ===== cohort.json data layer ============================================
@@ -696,18 +786,37 @@ function buildSampleHist(s){
   }
   const areas = {}, compN = {};
   for (const comp of (s.compartments || [])){ areas[comp.bit] = comp.area_mm2; compN[comp.bit] = comp.n_cells; }
-  return { R, cfLo, cfHi, pfLo, pfHi, cnt, n, areas, compN,
+
+  // Categorical (@CA TY:A) columns, e.g. IC immune clusters. For each column,
+  // collapse its (cflag,pflag,level,count) histogram to a total cell count per
+  // level label. `sizes` is keyed by the real LV: label string. Used by the IC
+  // cluster plots (renderICPlot); absent when the cohort has no A columns.
+  const cats = {};
+  for (const cc of (s.catcols || [])){
+    const levels = cc.levels || [];
+    const sizes = {};
+    for (const lab of levels) sizes[lab] = 0;
+    for (const row of (cc.histogram || [])){
+      const lab = levels[row[2]];
+      if (lab !== undefined) sizes[lab] = (sizes[lab] || 0) + row[3];
+    }
+    cats[cc.name] = { name: cc.name, levels, sizes };
+  }
+
+  return { R, cfLo, cfHi, pfLo, pfHi, cnt, n, areas, compN, cats,
            pflagOr: { lo: pfOrLo >>> 0, hi: pfOrHi >>> 0 },
            cflagOr: { lo: cfOrLo >>> 0, hi: cfOrHi >>> 0 },
            pflagBitCounts, cflagBitCounts };
 }
 
 /** Cells whose cflag matches the {lo,hi} AND-mask (any pflag). */
-function histRegionCount(S, cmask){
+function histRegionCount(S, cmask, notMask){
   let t = 0; const { R, cfLo, cfHi, cnt } = S;
   const cl = cmask.lo >>> 0, ch = cmask.hi >>> 0;
+  const nl = notMask ? (notMask.lo >>> 0) : 0, nh = notMask ? (notMask.hi >>> 0) : 0;
   for (let i = 0; i < R; i++)
-    if (((cfLo[i] & cl) >>> 0) === cl && ((cfHi[i] & ch) >>> 0) === ch) t += cnt[i];
+    if (((cfLo[i] & cl) >>> 0) === cl && ((cfHi[i] & ch) >>> 0) === ch &&
+        ((cfLo[i] & nl) >>> 0) === 0  && ((cfHi[i] & nh) >>> 0) === 0) t += cnt[i];
   return t;
 }
 /** Cells matching the cflag AND-mask AND the pflag AND-mask (both {lo,hi}). */
@@ -722,13 +831,17 @@ function histMatchCount(S, cmask, pmask){
 /** Cells matching cflag AND-mask AND (pflag has ALL andMask bits) AND (for each
  *  OR-group mask, pflag has AT LEAST ONE bit) — i.e. CNF like CD3 AND (PD1 OR
  *  LAG3). All masks are {lo,hi}; orMasks is a list of {lo,hi}. */
-function histMatchCountGated(S, cmask, andMask, orMasks){
+function histMatchCountGated(S, cmask, andMask, orMasks, notMask, pNotMask){
   let t = 0; const { R, cfLo, cfHi, pfLo, pfHi, cnt } = S;
   const cl = cmask.lo >>> 0, ch = cmask.hi >>> 0, al = andMask.lo >>> 0, ah = andMask.hi >>> 0;
+  const nl = notMask ? (notMask.lo >>> 0) : 0, nh = notMask ? (notMask.hi >>> 0) : 0;
+  const pnl = pNotMask ? (pNotMask.lo >>> 0) : 0, pnh = pNotMask ? (pNotMask.hi >>> 0) : 0;
   const nOr = orMasks.length;
   for (let i = 0; i < R; i++){
     if (((cfLo[i] & cl) >>> 0) !== cl || ((cfHi[i] & ch) >>> 0) !== ch) continue;
+    if (((cfLo[i] & nl) >>> 0) !== 0  || ((cfHi[i] & nh) >>> 0) !== 0) continue;   // cflag NOT bits must be clear
     const pl = pfLo[i], ph = pfHi[i];
+    if (((pl & pnl) >>> 0) !== 0 || ((ph & pnh) >>> 0) !== 0) continue;            // excluded (OFF) markers must be clear
     if (((pl & al) >>> 0) !== al || ((ph & ah) >>> 0) !== ah) continue;
     let ok = true;
     for (let j = 0; j < nOr; j++){
@@ -802,12 +915,14 @@ function ratioRowsForPlot(){
   if (ratioArmSig(Yarm) === ratioArmSig(Zarm)) return [];
   const yM = ratioArmMasks(Yarm), zM = ratioArmMasks(Zarm);
   const cmask = bits64(state.cflagBits), andMask = bits64(state.markerBits);
+  const notMask = bits64(state.cflagNotBits || []);
+  const pNotMask = bits64(state.markerNotBits || []);
   const baseOr = markerOrMasks();
   const out = [];
   for (const f of state.files){
     const S = f.hist; if (!S) continue;
-    const nY = histMatchCountGated(S, cmask, or64(andMask, yM.andExtra), baseOr.concat(yM.orExtra));
-    const nZ = histMatchCountGated(S, cmask, or64(andMask, zM.andExtra), baseOr.concat(zM.orExtra));
+    const nY = histMatchCountGated(S, cmask, or64(andMask, yM.andExtra), baseOr.concat(yM.orExtra), notMask, pNotMask);
+    const nZ = histMatchCountGated(S, cmask, or64(andMask, zM.andExtra), baseOr.concat(zM.orExtra), notMask, pNotMask);
     const tot = nY + nZ;
     if (tot <= 0) continue;
     out.push({
@@ -822,11 +937,21 @@ function ratioRowsForPlot(){
   return out;
 }
 /** Painted region area (mm²), or null when not precomputed. cyftools cohort
- *  paints each single cflag bit + "All" (-1), NOT arbitrary AND-combos. */
-function areaForRegion(S, cflagBits){
+ *  paints each single cflag bit + "All" (-1), NOT arbitrary AND/NOT-combos. So a
+ *  painted area exists only for "all cells" or exactly one required bit with no
+ *  excluded (NOT) bits; every other predicate reports null → density is blank
+ *  (counts & % still apply). */
+function areaForRegion(S, cflagBits, cflagNotBits){
+  const nNot = (cflagNotBits || []).length;
+  if (nNot > 0) return null;                       // any NOT bit → no painted area
   if (!cflagBits || cflagBits.length === 0) return (S.areas[-1] != null ? S.areas[-1] : null);
   if (cflagBits.length === 1){ const a = S.areas[cflagBits[0]]; return (a != null ? a : null); }
   return null;   // AND of >1 cflag bit → no painted area available
+}
+/** True when the current region selection has a precomputed painted area (so a
+ *  density denominator exists). Global property of the selection, not per-sample. */
+function regionHasPaintedArea(){
+  return (state.cflagNotBits || []).length === 0 && (state.cflagBits || []).length <= 1;
 }
 
 /** [{bit,name}] of the cohort's cflag compartments (union across samples). */
@@ -842,12 +967,14 @@ function cohortCflagBits(){
 function computeMetricsForEntry(entry){
   const S = entry.hist; if (!S){ entry.metrics = null; return; }
   const cmask = bits64(state.cflagBits), andMask = bits64(state.markerBits);
+  const notMask = bits64(state.cflagNotBits || []);
+  const pNotMask = bits64(state.markerNotBits || []);
   const orMasks = markerOrMasks();
-  const areaMm2 = areaForRegion(S, state.cflagBits);
+  const areaMm2 = areaForRegion(S, state.cflagBits, state.cflagNotBits);
   entry.metrics = {
     count: S.n,
-    regionCount: histRegionCount(S, cmask),
-    matchCount:  histMatchCountGated(S, cmask, andMask, orMasks),
+    regionCount: histRegionCount(S, cmask, notMask),
+    matchCount:  histMatchCountGated(S, cmask, andMask, orMasks, notMask, pNotMask),
     areaMm2: (areaMm2 == null ? null : areaMm2),
     scaling: state.scaling,   // = state.scaling so metricAreaMm2() rescales to identity
     bboxAreaMm2: null, meanByCol: {},
@@ -871,6 +998,7 @@ function pruneSelectionsToCohort(){
   const cflagOk = new Set((cohortCflagBits() || []).map(c => c.bit));
   const keepP = arr => (arr || []).filter(b => pflagOk.has(b));
   state.markerBits     = keepP(state.markerBits);
+  state.markerNotBits  = keepP(state.markerNotBits);
   state.markerOrGroups = (state.markerOrGroups || []).map(keepP).filter(g => g.length);
   const pruneArm = arm => {
     if (!arm) return;
@@ -878,12 +1006,27 @@ function pruneSelectionsToCohort(){
     arm.or  = (arm.or || []).map(keepP).filter(g => g.length);
   };
   pruneArm(state.ratioNum); pruneArm(state.ratioDen);
-  state.cflagBits = (state.cflagBits || []).filter(b => cflagOk.has(b));
+  state.cflagBits    = (state.cflagBits || []).filter(b => cflagOk.has(b));
+  state.cflagNotBits = (state.cflagNotBits || []).filter(b => cflagOk.has(b));
 }
 
-function ingestCohortJson(json){
+/** Header banner: cohort --name (if any) over the source file name. */
+function updateLoadedInfo(){
+  const el = document.getElementById('loaded-info');
+  if (!el) return;
+  const nm = (COHORT && COHORT.name) || '', fn = (COHORT && COHORT.sourceFile) || '';
+  if (!nm && !fn){ el.innerHTML = ''; return; }
+  el.innerHTML = nm
+    ? `<span class="li-name">${escapeHtml(nm)}</span>` + (fn ? `<span class="li-file">${escapeHtml(fn)}</span>` : '')
+    : `<span class="li-name" style="color:var(--fg);font-weight:600">${escapeHtml(fn)}</span>`;
+}
+
+function ingestCohortJson(json, sourceName){
   if (!json || !Array.isArray(json.samples)){ alert('Not a cyftools cohort JSON (missing samples[]).'); return; }
-  COHORT = { params: json.params || {}, samples: json.samples };
+  COHORT = { params: json.params || {}, samples: json.samples,
+             name: (typeof json.name === 'string' ? json.name.trim() : ''),   // cohort --name
+             sourceFile: sourceName || '' };
+  updateLoadedInfo();
   const cache = loadCache();
 
   // marker chips come from the pflag legend (union across samples)
@@ -944,7 +1087,7 @@ function ingestCohortJson(json){
 
 /** Parse a File (cohort.json) and ingest it. */
 async function loadCohortFile(file){
-  try { ingestCohortJson(JSON.parse(await file.text())); }
+  try { ingestCohortJson(JSON.parse(await file.text()), file.name); }
   catch (e){ console.error(e); alert('Could not load cohort.json:\n' + e.message); }
 }
 
@@ -1048,7 +1191,7 @@ async function loadDroppedFile(file){
   let json;
   try { json = JSON.parse(await file.text()); }
   catch (e){ console.error(e); alert('Not valid JSON:\n' + e.message); return; }
-  if (Array.isArray(json.samples)) ingestCohortJson(json);
+  if (Array.isArray(json.samples)) ingestCohortJson(json, file.name);
   else applyConfig(json);
 }
 
@@ -1395,10 +1538,12 @@ migrateCacheKeys();   // run at script load before anything reads the cache
 function settingsSnapshot() {
   return {
     cflagBits:  state.cflagBits.slice(),
+    cflagNotBits: (state.cflagNotBits || []).slice(),
     method:     state.method,
     scaling:    state.scaling,
     radiusPx:   state.radiusPx,
     markerBits: state.markerBits.slice(),
+    markerNotBits: (state.markerNotBits || []).slice(),
     markerOrGroups: (state.markerOrGroups || []).map(g => g.slice()),
     ratioNum: { and: (state.ratioNum.and || []).slice(), or: (state.ratioNum.or || []).map(g => g.slice()) },
     ratioDen: { and: (state.ratioDen.and || []).slice(), or: (state.ratioDen.or || []).map(g => g.slice()) },
@@ -1407,18 +1552,28 @@ function settingsSnapshot() {
     densityColScale: state.densityColScale,
     roiScale:   state.roiScale,
     plotMetric: state.plotMetric,
+    activeTab: state.activeTab,
     sortColumn: state.sortColumn,
     sortDir:    state.sortDir,
+    icLevel:    state.icLevel,
+    icMetricSample: state.icMetricSample,
+    icMetricIC: state.icMetricIC,
+    icExclude:  state.icExclude,
   };
 }
 function applySettings(s) {
   if (!s) return;
   if (Array.isArray(s.cflagBits))       state.cflagBits  = s.cflagBits.slice();
   else if (typeof s.bit === 'number')   state.cflagBits  = [s.bit]; // legacy
+  state.cflagNotBits = Array.isArray(s.cflagNotBits) ? s.cflagNotBits.slice() : [];
+  // keep the two sets disjoint (a bit can't be both required and excluded)
+  { const req = new Set(state.cflagBits); state.cflagNotBits = state.cflagNotBits.filter(b => !req.has(b)); }
   if (typeof s.method === 'string')     state.method     = s.method;
   if (typeof s.scaling === 'number')    state.scaling    = s.scaling;
   if (typeof s.radiusPx === 'number')   state.radiusPx   = s.radiusPx;
   if (Array.isArray(s.markerBits))      state.markerBits = s.markerBits.slice();
+  state.markerNotBits = Array.isArray(s.markerNotBits) ? s.markerNotBits.slice() : [];
+  { const onS = new Set(state.markerBits); state.markerNotBits = state.markerNotBits.filter(b => !onS.has(b)); }
   if (Array.isArray(s.markerOrGroups))  state.markerOrGroups = s.markerOrGroups
     .filter(Array.isArray).map(g => g.filter(b => typeof b === 'number')).filter(g => g.length);
   // Ratio arms — CNF {and:[bits], or:[[bits],…]}. Accept the current shape and
@@ -1445,8 +1600,13 @@ function applySettings(s) {
   if (typeof s.densityColScale === 'number' && isFinite(s.densityColScale) && s.densityColScale > 0) state.densityColScale = s.densityColScale;
   if (typeof s.roiScale === 'number' && isFinite(s.roiScale) && s.roiScale > 0) state.roiScale = s.roiScale;
   if (s.plotMetric === 'density' || s.plotMetric === 'percent' || s.plotMetric === 'roiDensity') state.plotMetric = s.plotMetric;
+  if (['box','waterfall','ratio','ic'].includes(s.activeTab)) state.activeTab = s.activeTab;
   if (typeof s.sortColumn === 'string') state.sortColumn = s.sortColumn;
   if (typeof s.sortDir === 'string')    state.sortDir    = s.sortDir;
+  if (s.icLevel === 'sample' || s.icLevel === 'ic') state.icLevel = s.icLevel;
+  if (typeof s.icMetricSample === 'string') state.icMetricSample = s.icMetricSample;
+  if (typeof s.icMetricIC === 'string')     state.icMetricIC     = s.icMetricIC;
+  if (typeof s.icExclude === 'string')      state.icExclude      = s.icExclude;
   syncSettingsUI();
 }
 function syncSettingsUI() {
@@ -1471,12 +1631,17 @@ function syncSettingsUI() {
 function syncMarkerCheckboxes() {
   const box = document.getElementById('marker-checkboxes');
   if (!box) return;
-  const sel = new Set(state.markerBits);
+  const on = new Set(state.markerBits);
+  const off = new Set(state.markerNotBits || []);
   for (const chip of box.children) {
     const bit = parseInt(chip.dataset.bit, 10);
     const cb = chip.querySelector('input');
-    if (cb) cb.checked = sel.has(bit);
-    chip.classList.toggle('checked', sel.has(bit));
+    const isOn = on.has(bit), isOff = off.has(bit);
+    if (cb) { cb.checked = isOn; cb.indeterminate = isOff; }
+    chip.classList.toggle('checked', isOn);
+    chip.classList.toggle('excluded', isOff);
+    const nt = chip.querySelector('.not-tag');
+    if (nt) nt.hidden = !isOff;
   }
 }
 function saveSettings() {
@@ -1508,11 +1673,14 @@ function maskToBitsList(m) {
   return out;
 }
 
-/** Pretty label for the current cflag region (mirrors selectedMarkerLabel). */
+/** Pretty label for the current cflag region (mirrors selectedMarkerLabel).
+ *  Required bits join with "+"; excluded (NOT) bits append as "NOT <name>". */
 function selectedCflagLabel() {
-  if (!state.cflagBits || state.cflagBits.length === 0) return 'all cells';
-  return state.cflagBits.slice().sort((a, b) => a - b)
-    .map(b => cflagBitName(b)).join('+');
+  const req = (state.cflagBits || []).slice().sort((a, b) => a - b).map(b => cflagBitName(b));
+  const not = (state.cflagNotBits || []).slice().sort((a, b) => a - b).map(b => 'NOT ' + cflagBitName(b));
+  if (!req.length && !not.length) return 'all cells';
+  if (!req.length) return not.join(' AND ');                 // e.g. "NOT TumorManual"
+  return req.join('+') + (not.length ? ' AND ' + not.join(' AND ') : '');
 }
 
 /**
@@ -1631,18 +1799,26 @@ function buildCflagChips() {
   const entries = fromCohort ||
     Object.keys(CFLAG_NAMES).map(Number).sort((a, b) => a - b).map(bit => ({ bit, name: CFLAG_NAMES[bit] }));
   for (const { bit, name } of entries) {
-    const chip = document.createElement('label');
+    // Tri-state region chip: click cycles OFF → require (SET) → exclude (NOT) →
+    // OFF. Not a <label> — we drive the checkbox manually so it can show three
+    // states (unchecked / checked / indeterminate = NOT).
+    const chip = document.createElement('span');
     chip.className = 'marker-chip';     // reuse marker chip styling
     chip.dataset.bit = bit;
+    chip.title = 'click to cycle: off → require → NOT';
     chip.innerHTML = `
-      <input type="checkbox" value="${bit}" />
-      <span>${escapeHtml(name)}<span class="bit-tag"> · bit ${bit}</span></span>
+      <input type="checkbox" value="${bit}" tabindex="-1" />
+      <span><span class="not-tag" hidden>¬</span>${escapeHtml(name)}<span class="bit-tag"> · bit ${bit}</span></span>
     `;
-    const cb = chip.querySelector('input');
-    cb.addEventListener('change', () => {
-      const sel = new Set(state.cflagBits);
-      if (cb.checked) sel.add(bit); else sel.delete(bit);
-      state.cflagBits = Array.from(sel).sort((a, b) => a - b);
+    chip.addEventListener('click', (e) => {
+      e.preventDefault();
+      const req = new Set(state.cflagBits || []);
+      const not = new Set(state.cflagNotBits || []);
+      if (req.has(bit))      { req.delete(bit); not.add(bit); }   // require → NOT
+      else if (not.has(bit)) { not.delete(bit); }                // NOT → off
+      else                   { req.add(bit); }                   // off → require
+      state.cflagBits    = Array.from(req).sort((a, b) => a - b);
+      state.cflagNotBits = Array.from(not).sort((a, b) => a - b);
       syncCflagChips();
       onSettingChanged();
     });
@@ -1653,12 +1829,17 @@ function buildCflagChips() {
 buildCflagChips();
 
 function syncCflagChips() {
-  const sel = new Set(state.cflagBits || []);
+  const req = new Set(state.cflagBits || []);
+  const not = new Set(state.cflagNotBits || []);
   for (const chip of cflagBox.children) {
     const bit = Number(chip.dataset.bit);
     const cb = chip.querySelector('input');
-    if (cb) cb.checked = sel.has(bit);
-    chip.classList.toggle('checked', sel.has(bit));
+    const isReq = req.has(bit), isNot = not.has(bit);
+    if (cb) { cb.checked = isReq; cb.indeterminate = isNot; }
+    chip.classList.toggle('checked', isReq);
+    chip.classList.toggle('excluded', isNot);
+    const nt = chip.querySelector('.not-tag');
+    if (nt) nt.hidden = !isNot;
   }
   if (cflagDisplay) cflagDisplay.textContent = selectedCflagLabel();
 }
@@ -1666,6 +1847,7 @@ function syncCflagChips() {
 if (clearCflagBtn) {
   clearCflagBtn.addEventListener('click', () => {
     state.cflagBits = [];
+    state.cflagNotBits = [];
     syncCflagChips();
     onSettingChanged();
   });
@@ -1673,9 +1855,10 @@ if (clearCflagBtn) {
 
 function updateCalcDescription() {
   const lblC = selectedCflagLabel();
-  const region = (!state.cflagBits || state.cflagBits.length === 0)
+  const nReq = (state.cflagBits || []).length, nNot = (state.cflagNotBits || []).length;
+  const region = (nReq === 0 && nNot === 0)
     ? '<b>all cells</b>'
-    : `cells with <b>${escapeHtml(lblC)}</b> ON in cflag`;
+    : `cells matching <b>${escapeHtml(lblC)}</b> in cflag`;
   const methodTxt = (state.method === 'hull')
     ? 'sum of the convex hulls of spatially-connected cell clusters (DBSCAN-style grid CC then hull each component)'
     : `union of <code>${state.radiusPx} px</code> radius discs painted around every cell — overlaps don't double-count`;
@@ -1684,9 +1867,11 @@ function updateCalcDescription() {
     ? ` AND matches the phenotype <b>${escapeHtml(lbl)}</b> (AND across markers/groups, OR within a group)`
     : '';
   // cyftools cohort precomputes a painted area for each single compartment + "all
-  // cells", but not for an AND of several compartments — density is blank there.
-  const note = (state.cflagBits && state.cflagBits.length > 1)
-    ? `<br><span style="color:var(--warn)">No painted area for an AND of multiple compartments — counts &amp; % still apply, but density is blank. Pick one compartment (or “all cells”) for density.</span>`
+  // cells", but not for an AND of several compartments nor for a NOT (excluded)
+  // compartment — density is unavailable there (counts & % still apply). The
+  // y-axis auto-switches to "%" in that case.
+  const note = !regionHasPaintedArea()
+    ? `<br><span style="color:var(--warn)">No painted area for ${nNot ? 'a NOT (excluded) compartment' : 'an AND of multiple compartments'} — so <b>cells/mm² is unavailable</b> (y-axis switches to “%”). Counts &amp; % still apply. Use one compartment, “all cells”, or IC=0 for density.</span>`
     : '';
   calcDescEl.innerHTML =
     `<b>Calculation:</b> region = ${region}.<br>` +
@@ -1706,6 +1891,7 @@ function onSettingChanged() {
 // removed — metrics now arrive precomputed in cohort.json.
 clearMarkersBtn.addEventListener('click', () => {
   state.markerBits = [];
+  state.markerNotBits = [];
   state.markerOrGroups = [];
   syncMarkerCheckboxes();
   renderOrGroups();
@@ -1726,7 +1912,24 @@ if (addOrGroupBtn) addOrGroupBtn.addEventListener('click', () => {
 //      write it on every change. No further clicks ever required.
 //   B. Other browsers → fall back to webkitdirectory. Read-only access;
 //      user has to click "Save to file" once per session for sync.
-pickBtn.addEventListener('click', () => folderInput.click());
+pickBtn.addEventListener('click', async () => {
+  // Prefer showOpenFilePicker (Chrome/Edge): its handle can be persisted so the
+  // file re-opens from the "recent" dropdown. Fall back to the plain file input.
+  if (window.showOpenFilePicker) {
+    let handle;
+    try {
+      [handle] = await window.showOpenFilePicker({
+        types: [{ description: 'cohort.json', accept: { 'application/json': ['.json'] } }],
+      });
+    } catch (e) { if (!e || e.name !== 'AbortError') { console.warn('picker failed', e); folderInput.click(); } return; }
+    try {
+      await loadDroppedFile(await handle.getFile());
+      rememberRecent('cohort', handle.name, { handle });
+    } catch (e) { console.error(e); alert('Could not load cohort.json:\n' + (e.message || e)); }
+  } else {
+    folderInput.click();
+  }
+});
 
 /** Process a directory handle from showDirectoryPicker. Auto-loads cache.json
  *  if present; gets a write handle so future cache writes happen silently. */
@@ -1972,19 +2175,25 @@ function renderMarkerCheckboxes() {
   markerRow.style.display = '';
   if (orRow) orRow.style.display = '';
   for (const m of state.availableMarkers) {
-    const chip = document.createElement('label');
+    // Tri-state marker chip: click cycles OFF → require ON → require OFF (exclude).
+    const chip = document.createElement('span');
     chip.className = 'marker-chip';
     chip.dataset.bit = m.bit;
+    chip.title = 'click to cycle: off → ON (require) → OFF (exclude)';
     chip.innerHTML = `
       <span class="gate-dot"></span>
-      <input type="checkbox" value="${m.bit}" />
-      <span>${escapeHtml(m.name)}<span class="bit-tag"> · bit ${m.bit}</span></span>
+      <input type="checkbox" value="${m.bit}" tabindex="-1" />
+      <span><span class="not-tag" hidden>¬</span>${escapeHtml(m.name)}<span class="bit-tag"> · bit ${m.bit}</span></span>
     `;
-    const cb = chip.querySelector('input');
-    cb.addEventListener('change', () => {
-      const sel = new Set(state.markerBits);
-      if (cb.checked) sel.add(m.bit); else sel.delete(m.bit);
-      state.markerBits = Array.from(sel).sort((a, b) => a - b);
+    chip.addEventListener('click', (e) => {
+      e.preventDefault();
+      const on = new Set(state.markerBits);
+      const off = new Set(state.markerNotBits || []);
+      if (on.has(m.bit))       { on.delete(m.bit); off.add(m.bit); }   // ON → OFF (exclude)
+      else if (off.has(m.bit)) { off.delete(m.bit); }                 // OFF → neutral
+      else                     { on.add(m.bit); }                     // neutral → ON
+      state.markerBits    = Array.from(on).sort((a, b) => a - b);
+      state.markerNotBits = Array.from(off).sort((a, b) => a - b);
       syncMarkerCheckboxes();
       onSettingChanged();
     });
@@ -2138,9 +2347,10 @@ function selectedMarkerLabel() {
   const ors = (state.markerOrGroups || [])
     .map(g => g.slice().sort((a, b) => a - b)).filter(g => g.length)
     .map(g => `(${g.map(b => `${nm(b)}+`).join(' OR ')})`);
-  if (!ands.length && !ors.length) return '';
-  if (!ors.length) return ands.join('');                 // compact, unchanged: "CD3+CD8+"
-  return ands.concat(ors).join(' AND ');                 // explicit: "CD3+ AND (PD1+ OR LAG3+)"
+  const nots = (state.markerNotBits || []).slice().sort((a, b) => a - b).map(b => `${nm(b)}-`);
+  if (!ands.length && !ors.length && !nots.length) return '';
+  if (!ors.length) return ands.concat(nots).join('');    // compact: "CD3+CD8+FOXP3-"
+  return ands.concat(ors, nots).join(' AND ');           // explicit: "CD3+ AND (PD1+ OR LAG3+) AND FOXP3-"
 }
 
 // (Cache management buttons removed — this is a viewer over precomputed
@@ -2494,9 +2704,62 @@ function render() {
   renderRows();
   renderBarPlot();
   renderRatioPlot();           // stratified marker-ratio diverging bars
+  renderICPlot();              // categorical (IC) cluster box/beeswarm by group
   updateRoiMatchStatus();      // keep matched-count current as samples load
   updateMarkerChipColors();    // keep red/yellow/green current as files resolve
+  applyTabs();                 // show only the active plot tab (after all rendered)
 }
+
+// ---- Plot tabs: one plot panel visible at a time (box / waterfall / ratio / IC) ----
+function tabBoxAvail()   { return state.files.some(f => f.metrics); }
+function tabRatioAvail() { return state.availableMarkers.filter(m => m.bit < 64).length >= 2; }
+function tabIcAvail()    { return !!(typeof icColName === 'function' && icColName()); }
+function tabAvailable(t) {
+  if (t === 'box' || t === 'waterfall') return tabBoxAvail();
+  if (t === 'ratio') return tabRatioAvail();
+  if (t === 'ic')    return tabIcAvail();
+  return false;
+}
+function applyTabs() {
+  const tabsBar = document.getElementById('plot-tabs');
+  const anyData = tabBoxAvail() || tabRatioAvail() || tabIcAvail();
+  if (tabsBar) tabsBar.style.display = anyData ? 'flex' : 'none';
+  // if the active tab isn't available, fall back to the first that is
+  if (!tabAvailable(state.activeTab)) {
+    const alt = ['box', 'waterfall', 'ratio', 'ic'].find(t => tabAvailable(t));
+    if (alt) state.activeTab = alt;
+  }
+  const active = state.activeTab;
+  const showBoxPanel = (active === 'box' || active === 'waterfall') && tabBoxAvail();
+  const setDisp = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+  setDisp('plot-panel',  showBoxPanel);
+  setDisp('ratio-panel', active === 'ratio' && tabRatioAvail());
+  setDisp('ic-panel',    active === 'ic' && tabIcAvail());
+  // box vs waterfall share plot-panel; toggle the inner wraps
+  setDisp('boxplot-wrap',   active === 'box');
+  setDisp('waterfall-wrap', active === 'waterfall');
+  const title = document.getElementById('plot-panel-title');
+  if (title) title.textContent = (active === 'waterfall') ? 'Per sample' : 'By group';
+  if (tabsBar) for (const btn of tabsBar.querySelectorAll('.tab-btn')) {
+    btn.classList.toggle('active', btn.dataset.tab === active);
+    btn.disabled = !tabAvailable(btn.dataset.tab);
+  }
+  // Plotly renders to 0px in a hidden container; resize the now-visible plot.
+  const resizeId = { box: 'plot-area', waterfall: 'waterfall-area', ratio: 'ratio-area', ic: 'ic-area' }[active];
+  const el = resizeId && document.getElementById(resizeId);
+  if (el && el.classList.contains('js-plotly-plot')) { try { Plotly.Plots.resize(el); } catch (e) {} }
+}
+function setActiveTab(t) {
+  state.activeTab = t;
+  saveSettings();
+  applyTabs();
+}
+(function wireTabs(){
+  const tabsBar = document.getElementById('plot-tabs');
+  if (!tabsBar) return;
+  for (const btn of tabsBar.querySelectorAll('.tab-btn'))
+    btn.addEventListener('click', () => { if (!btn.disabled) setActiveTab(btn.dataset.tab); });
+})();
 
 /** Every group label currently assigned to a file (deduped, unordered). */
 function currentGroupList() {
@@ -2788,8 +3051,7 @@ function renderBarPlot() {
   // additionally needs Group labels. Show the panel whenever anything is
   // computed, so missing/cleared group labels never hide the waterfall too.
   const computedAll = state.files.filter(f => f.metrics);
-  if (computedAll.length === 0) { plotPanel.style.display = 'none'; return; }
-  plotPanel.style.display = '';
+  if (computedAll.length === 0) { return; }  // applyTabs() controls panel visibility
 
   const completed = computedAll.filter(f => f.group);
   const byGroup = {};
@@ -2960,8 +3222,7 @@ function renderRatioArms(){
   const panel = document.getElementById('ratio-panel');
   if (!panel) return;
   const markers = state.availableMarkers.filter(m => m.bit < 64);
-  if (markers.length < 2){ panel.style.display = 'none'; return; }
-  panel.style.display = '';
+  if (markers.length < 2){ return; }   // applyTabs() controls panel visibility
   renderRatioArm('num', state.ratioNum);
   renderRatioArm('den', state.ratioDen);
 }
@@ -3265,6 +3526,185 @@ function lnGamma(x){
  * groups, run Welch's two-sided t-test and Mann-Whitney U. Highlight rows
  * by significance: p < 0.01 strong, p < 0.05 marginal, else "ns".
  */
+// ===== IC (categorical @CA TY:A) cluster plots ===========================
+// A cohort may carry categorical columns (buildSampleHist → hist.cats: label →
+// cell count). These plots box/beeswarm those by group — one point per sample
+// (per-sample metric) or one point per (sample, IC) instance (per-IC metric) —
+// with an exclusion list (e.g. drop label "0"). Reuse the box-plot grouping,
+// colors, and the generic welchT / mannWhitneyU / kruskalWallis stats.
+
+/** The categorical column the IC plots use: prefer one named "IC", else the first
+ *  categorical column present in the loaded cohort. Returns '' if none. */
+function icColName(){
+  for (const f of state.files){
+    const cats = f.hist && f.hist.cats;
+    if (cats){
+      const keys = Object.keys(cats);
+      if (keys.length) return cats['IC'] ? 'IC' : keys[0];
+    }
+  }
+  return '';
+}
+/** IC labels to exclude, from state.icExclude (comma/space list of label strings). */
+function icExcludeSet(){
+  return new Set((state.icExclude || '').split(/[,\s]+/).map(s => s.trim()).filter(s => s.length));
+}
+/** Per-sample IC sizes for file f: {label -> included cell count}, after exclusion.
+ *  null if the file has no data for the chosen categorical column. */
+function icSizesForFile(f, colName, excl){
+  const cat = f.hist && f.hist.cats && f.hist.cats[colName];
+  if (!cat) return null;
+  const out = {};
+  for (const lab of cat.levels) if (!excl.has(String(lab))) out[lab] = cat.sizes[lab] || 0;
+  return out;
+}
+/** Metric options for the current level (drives the Metric <select>). */
+function icMetricOptions(){
+  return state.icLevel === 'ic'
+    ? [ { v:'size',      t:'IC size (cells)' },
+        { v:'pctSample', t:'IC size (% of sample)' } ]
+    : [ { v:'count',     t:'# distinct ICs' },
+        { v:'pctCells',  t:'% cells in ICs' },
+        { v:'meanSize',  t:'mean IC size (cells)' } ];
+}
+function icCurrentMetric(){ return state.icLevel === 'ic' ? state.icMetricIC : state.icMetricSample; }
+/** y-axis label for the current level+metric. */
+function icYLabel(col){
+  const M = { count:`# ${col} clusters`, pctCells:`% cells in a ${col} cluster`,
+              meanSize:`mean ${col} cluster size (cells)`,
+              size:`${col} cluster size (cells)`, pctSample:`${col} cluster size (% of sample)` };
+  return M[icCurrentMetric()] || col;
+}
+/** Plot items [{group,value,label}] for the current level/metric. Per-sample: one
+ *  per grouped file. Per-IC: one per (grouped file, included IC label). */
+function icPlotItems(colName, excl){
+  const items = [];
+  const level = state.icLevel, metric = icCurrentMetric();
+  for (const f of state.files){
+    if (!f.group) continue;                         // box plot needs a group label
+    const sizes = icSizesForFile(f, colName, excl);
+    if (!sizes) continue;
+    const labs = Object.keys(sizes);
+    const nTotal = (f.hist && f.hist.n) || 0;       // all cells in the sample
+    if (level === 'ic'){
+      for (const lab of labs){
+        const sz = sizes[lab];
+        const value = metric === 'pctSample' ? (nTotal ? 100*sz/nTotal : 0) : sz;
+        items.push({ group:f.group, value, label:`${f.displayName || f.name} · IC ${lab}` });
+      }
+    } else {
+      const sum = labs.reduce((a,l)=>a+sizes[l], 0);
+      let value;
+      if (metric === 'count')         value = labs.length;
+      else if (metric === 'pctCells') value = nTotal ? 100*sum/nTotal : 0;
+      else /* meanSize */             value = labs.length ? sum/labs.length : 0;
+      items.push({ group:f.group, value, label:f.displayName || f.name });
+    }
+  }
+  return items;
+}
+/** Rebuild the Metric <select> for the current level, preserving the choice. */
+function syncICMetricSelect(){
+  const sel = document.getElementById('ic-metric');
+  if (!sel) return;
+  const opts = icMetricOptions(), cur = icCurrentMetric();
+  const want = opts.some(o=>o.v===cur) ? cur : opts[0].v;
+  if (state.icLevel==='ic') state.icMetricIC = want; else state.icMetricSample = want;
+  sel.innerHTML = opts.map(o=>`<option value="${o.v}"${o.v===want?' selected':''}>${escapeHtml(o.t)}</option>`).join('');
+}
+/** Draw the IC box/beeswarm-by-group plot + summary + stats. */
+function renderICPlot(){
+  const panel = document.getElementById('ic-panel');
+  if (!panel) return;
+  const col = icColName();
+  if (!col){ Plotly.purge('ic-area'); return; }   // applyTabs() controls panel visibility
+  syncICMetricSelect();
+  const lbl = document.getElementById('ic-colname-label');
+  if (lbl) lbl.textContent = `column: ${col}`;
+  const levelSel = document.getElementById('ic-level'); if (levelSel) levelSel.value = state.icLevel;
+  const exclInput = document.getElementById('ic-exclude'); if (exclInput && document.activeElement !== exclInput) exclInput.value = state.icExclude;
+
+  const excl = icExcludeSet();
+  const items = icPlotItems(col, excl);
+  const byGroup = {};
+  for (const it of items) (byGroup[it.group] = byGroup[it.group] || []).push(it);
+  const groups = orderedGroups(Object.keys(byGroup));
+
+  const summary = document.getElementById('ic-summary');
+  if (groups.length === 0){
+    Plotly.purge('ic-area');
+    document.getElementById('ic-stats-wrap').innerHTML = '';
+    summary.innerHTML = `assign <b>Group</b> labels (left column) to see the by-group ${escapeHtml(col)} plot.`;
+    return;
+  }
+
+  const yTicks = plotOpts().yTicks;
+  const useLog = !!document.getElementById('plot-log')?.checked;
+  const traces = groups.map(g => {
+    const c = getGroupColor(g);
+    return { type:'box', name:g,
+      y: byGroup[g].map(it=>it.value), text: byGroup[g].map(it=>it.label),
+      boxpoints:'all', jitter:0.55, pointpos:0,
+      marker:{ color:c, size:7, opacity:0.85, line:{ color:c, width:0 } },
+      line:{ color:c, width:1.5 }, fillcolor:hexToRgba(c, 0.25),
+      whiskerwidth:0.4, boxmean:false, hoveron:'points',
+      hovertemplate:'%{text}<br>%{y:.4g}<extra></extra>' };
+  });
+
+  const stats = groups.map(g => {
+    const vals = byGroup[g].map(it=>it.value).filter(v=>isFinite(v));
+    const n = vals.length, mean = n ? vals.reduce((a,b)=>a+b,0)/n : NaN;
+    const s = vals.slice().sort((a,b)=>a-b);
+    const median = n ? ((n%2)?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2) : NaN;
+    return { n, mean, median };
+  });
+
+  Plotly.newPlot('ic-area', traces, {
+    margin:{ t:14, l:70, r:10, b:40 },
+    yaxis:{ title: icYLabel(col), type: useLog?'log':'linear',
+            rangemode: useLog?'normal':'tozero', gridcolor:'#eee', zerolinecolor:'#ddd', nticks:yTicks },
+    xaxis:{ categoryorder:'array', categoryarray:groups, tickmode:'array', tickvals:groups,
+            ticktext: groups.map((g,i)=>`${g}<br><span style="color:#888;font-size:10px">n=${stats[i].n}</span>`),
+            tickfont:{ size:12 } },
+    showlegend:false, plot_bgcolor:'#fff', paper_bgcolor:'#fff',
+  }, { displayModeBar:false, responsive:true });
+
+  const m = icCurrentMetric();
+  const unit = (m==='pctCells'||m==='pctSample') ? '%' : '';
+  const pointWord = state.icLevel==='ic' ? `${col} clusters` : 'samples';
+  summary.innerHTML =
+    `${items.length} ${pointWord} across ${groups.length} group${groups.length===1?'':'s'} · ` +
+    groups.map((g,i)=>`<b style="color:${getGroupColor(g)}">${escapeHtml(g)}</b> `+
+      `(n=${stats[i].n}, median ${fmtNum(stats[i].median,2)}${unit}, mean ${fmtNum(stats[i].mean,2)}${unit})`).join(' · ') +
+    (excl.size ? ` · excluding IC ${[...excl].join(', ')}` : '');
+
+  renderICStats(groups, byGroup);
+}
+/** Pairwise Welch t + Mann–Whitney (+ Kruskal–Wallis for >2 groups) on IC values. */
+function renderICStats(groups, byGroup){
+  const wrap = document.getElementById('ic-stats-wrap');
+  wrap.innerHTML = '';
+  if (groups.length < 2) return;
+  const valsOf = g => byGroup[g].map(it=>it.value).filter(v=>isFinite(v));
+  const fmtP = p => !isFinite(p) ? '—' : (p<0.001 ? '< 0.001' : p.toFixed(p<0.01?4:(p<0.1?3:2)));
+  const pClass = p => !isFinite(p) ? '' : (p<0.01?'p-sig':(p<0.05?'p-marg':'p-ns'));
+  let html = `<h2 style="font-size:12px; margin:0 0 6px 0; color:#555; text-transform:uppercase; letter-spacing:0.5px;">Pairwise tests (two-sided)</h2>`;
+  if (groups.length > 2){
+    const kw = kruskalWallis(groups.map(valsOf));
+    html += `<div style="font-size:11px; color:#555; margin-bottom:6px;">Kruskal–Wallis across ${groups.length} groups: H=${isFinite(kw.H)?kw.H.toFixed(2):'—'}, df=${kw.df}, <span class="${pClass(kw.p)}">p ${fmtP(kw.p)}</span></div>`;
+  }
+  html += `<table class="stats"><thead><tr><th>Comparison</th><th>n₁ / n₂</th><th>Welch t</th><th>t-test p</th><th>Mann–Whitney U</th><th>MW p</th></tr></thead><tbody>`;
+  for (let i=0;i<groups.length;i++) for (let j=i+1;j<groups.length;j++){
+    const t=welchT(valsOf(groups[i]),valsOf(groups[j])), u=mannWhitneyU(valsOf(groups[i]),valsOf(groups[j]));
+    html += `<tr><td>${escapeHtml(groups[i])} <span style="color:#999">vs</span> ${escapeHtml(groups[j])}</td>`+
+      `<td>${t.n1} / ${t.n2}</td><td>${isFinite(t.t)?t.t.toFixed(2):'—'}</td>`+
+      `<td class="${pClass(t.p)}">${fmtP(t.p)}</td>`+
+      `<td>${isFinite(u.U)?u.U.toFixed(0):'—'}</td><td class="${pClass(u.p)}">${fmtP(u.p)}</td></tr>`;
+  }
+  html += `</tbody></table><div style="font-size:10.5px; color:#888; margin-top:4px;">Rank-based Mann–Whitney U (tie-corrected normal approx.) with Welch t for reference. <span class="p-sig">p &lt; 0.01</span>, <span class="p-marg">p &lt; 0.05</span>, else <span class="p-ns">n.s.</span></div>`;
+  wrap.innerHTML = html;
+}
+
 function renderPairwiseStats(groups, byGroup) {
   const wrap = document.getElementById('stats-table-wrap');
   wrap.innerHTML = '';
@@ -3776,6 +4216,150 @@ ${rSavePlot('cohort_boxplot.pdf', po.box.w, po.box.h, fam)}
 }
 
 /**
+ * R script: beeswarm + box plot of the CURRENT IC selection (level + metric +
+ * exclusions), one point per sample or per (sample, IC), grouped/colored by
+ * group, with pairwise Wilcoxon significance brackets. Mirrors buildBoxPlotR and
+ * reuses the same helpers + paper-config knobs (plotOpts).
+ */
+function buildICR() {
+  const col = icColName();
+  if (!col) return { ok: false, msg: 'No categorical (TY:A) column in this cohort.' };
+  const excl = icExcludeSet();
+  const items = icPlotItems(col, excl);
+  if (!items.length) return { ok: false, msg: 'Nothing to export — assign Group labels to some samples first.' };
+  const rows = items.map(it => ({ group: it.group, value: it.value, label: it.label }));
+  rows.sort((a, b) => a.group.localeCompare(b.group) || a.label.localeCompare(b.label));
+
+  const groups = orderedGroups(rows.map(r => r.group));
+  const colorLines = groups.map(g => `  ${rString(g)} = ${rString(getGroupColor(g))}`).join(',\n');
+  const pairIdx = [];
+  for (let i = 0; i < groups.length; i++)
+    for (let j = i + 1; j < groups.length; j++) pairIdx.push([i, j]);
+  const ylab = icYLabel(col);
+
+  const po = plotOpts();
+  const fs = po.fontSize, fam = po.fontFamily, ps = po.pointSize;
+  const xTickFs = po.xTickFontSize, yTickFs = po.yTickFontSize;
+  const pvalMm = (po.pvalFontSize / 2.845).toFixed(2);
+  const tick = po.tickColor, yTicks = po.yTicks;
+  const stt = po.stats;
+  const stTest = stt.test, stTip = stt.tipLength, stLw = stt.bracketLw;
+  const barColor = stt.color, textColor = stt.textColor, sigColor = stt.sigColor, sigThresh = stt.sigThresh;
+
+  const vals = rows.map(r => r.value).filter(v => isFinite(v));
+  const ymax = vals.length ? Math.max(...vals) : NaN;
+  const levels = bracketLevels(pairIdx);
+  const maxLevel = levels.length ? Math.max(...levels) : 0;
+  const useSig = pairIdx.length > 0 && isFinite(ymax) && ymax > 0;
+  const levelStep = (stt.label === 'stars') ? 0.10 : 0.17;
+  const topExpand = useSig ? (0.05 + levelStep * maxLevel + 0.08).toFixed(2) : '0.12';
+  const rvec = a => `c(${a.join(', ')})`;
+  const tipDrop = (stTip > 0 && isFinite(ymax)) ? stTip * ymax : 0;
+  const bracketInset = 0.08;
+  const labelExpr = (stt.label === 'stars')
+    ? `ifelse(is.na(sig$p), "", as.character(symnum(sig$p, corr = FALSE, na = FALSE,
+                     cutpoints = c(0, 0.001, 0.01, 0.05, 1), symbols = c("***", "**", "*", "ns"))))`
+    : `ifelse(is.na(sig$p), "", ifelse(sig$p < 0.001, "p < 0.001", sprintf("p = %.3f", sig$p)))`;
+  const tipsLayer = (tipDrop > 0) ? ` +
+  geom_segment(data = sig, aes(x = x1, xend = x1, y = y, yend = y - ${tipDrop.toFixed(4)}),
+               inherit.aes = FALSE, linewidth = ${stLw}, colour = ${rString(barColor)}) +
+  geom_segment(data = sig, aes(x = x2, xend = x2, y = y, yend = y - ${tipDrop.toFixed(4)}),
+               inherit.aes = FALSE, linewidth = ${stLw}, colour = ${rString(barColor)})` : '';
+  const sigBlock = !useSig ? '' :
+`
+# --- Significance annotations (manual: bracket & p-value text colored separately) ---
+sig <- data.frame(
+  ga = ${rvec(pairIdx.map(p => rString(groups[p[0]])))},
+  gb = ${rvec(pairIdx.map(p => rString(groups[p[1]])))},
+  x1 = ${rvec(pairIdx.map(p => (p[0] + 1 + bracketInset).toFixed(4)))},
+  x2 = ${rvec(pairIdx.map(p => (p[1] + 1 - bracketInset).toFixed(4)))},
+  y  = ${rvec(levels.map(l => (ymax * (1.05 + levelStep * l)).toFixed(4)))},
+  stringsAsFactors = FALSE
+)
+sig$p <- mapply(function(a, b) tryCatch(suppressWarnings(
+  ${stTest}(cohort$value[cohort$group == a], cohort$value[cohort$group == b])$p.value),
+  error = function(e) NA_real_), sig$ga, sig$gb)
+sig$label <- ${labelExpr}
+sig$tcol  <- ifelse(!is.na(sig$p) & sig$p < ${sigThresh}, ${rString(sigColor)}, ${rString(textColor)})
+g <- g +
+  geom_segment(data = sig, aes(x = x1, xend = x2, y = y, yend = y),
+               inherit.aes = FALSE, linewidth = ${stLw}, colour = ${rString(barColor)})${tipsLayer} +
+  geom_text(data = sig, aes(x = (x1 + x2) / 2, y = y, label = label),
+            inherit.aes = FALSE, colour = sig$tcol, vjust = -0.35,
+            size = ${pvalMm}, family = ${rString(fam)})
+`;
+
+  const cohortBlock = [
+    `  group = c(\n${rColumnLines(rows, 'group', v => rString(v), '    ')}\n  )`,
+    `  value = c(\n${rColumnLines(rows, 'value', v => rNum(v),    '    ')}\n  )`,
+    `  label = c(\n${rColumnLines(rows, 'label', v => rString(v), '    ')}\n  )`,
+  ].join(',\n');
+
+  const levelNote = state.icLevel === 'ic'
+    ? `# One row per (sample, ${col}) cluster; value = ${ylab}.`
+    : `# One row per sample; value = ${ylab}.`;
+  const exclNote = excl.size ? `\n# Excluded ${col} labels: ${[...excl].join(', ')}.` : '';
+
+  return { ok: true, script:
+`${rExportHeader(col + ' cluster export')}
+${levelNote}${exclNote}
+
+library(ggplot2)
+library(ggbeeswarm)
+
+${rEditableText()}
+cohort <- data.frame(
+${cohortBlock},
+  stringsAsFactors = FALSE
+)
+cohort <- subset(cohort, !is.na(group) & group != "")
+cohort$group <- factor(cohort$group, levels = c(${groups.map(g => rString(g)).join(', ')}))
+
+group_colors <- c(
+${colorLines}
+)
+
+# --- Beeswarm helper (shared with the box plot export) ---
+create_beeswarm_plot <- function(data, x_var, y_var, withbox = FALSE, fill_var = NA) {
+  if (is.na(fill_var)) fill_var <- x_var
+  g <- ggplot(data, aes_string(x = x_var, y = y_var)) +
+    ggbeeswarm::geom_quasirandom(
+      shape = 21, color = "black", alpha = 1, size = ${ps},
+      aes(fill = .data[[fill_var]])
+    ) +
+    theme_bw(base_size = ${fs}, base_family = ${rString(fam)}) +
+    theme(
+      legend.position = "none",
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      text       = element_text(size = ${fs}, colour = "black"),
+      axis.title = element_text(size = ${fs}, face = "bold", colour = "black"),
+      axis.text.x = element_text(size = ${xTickFs}, colour = "black"),
+      axis.text.y = element_text(size = ${yTickFs}, colour = "black"),
+      axis.ticks = element_line(colour = ${rString(tick)}),
+      panel.background = element_blank(),
+      plot.background  = element_blank()
+    )
+  if (withbox) {
+    g <- g + geom_boxplot(width = 0.2, outlier.shape = NA, linewidth = 0.25,
+                          alpha = 0.5, fill = NA, color = "black")
+  }
+  g
+}
+
+g <- create_beeswarm_plot(cohort, x_var = "group", y_var = "value",
+                          withbox = TRUE, fill_var = "group") +
+  scale_fill_manual(values = group_colors) +
+  labs(y = ${rString(ylab)}, x = NULL) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = ${yTicks}),
+                     expand = expansion(mult = c(0.05, ${topExpand}))) +
+  coord_cartesian(clip = "off")
+${sigBlock}
+${rSavePlot('cohort_ic.pdf', po.box.w, po.box.h, fam)}
+` };
+}
+
+/**
  * R script: horizontal "waterfall" bar plot, sorted by value ascending so
  * the top bars are the highest after coord_flip. Black bar outline,
  * Arial, transparent background — the style from the user's snippet.
@@ -4217,16 +4801,23 @@ function renderMetricRadios() {
   for (const rc of relevantDensityCols()) {
     options.push({ value: 'col:' + rc.name, label: rc.name });
   }
+  // Density (cells/mm²) needs a precomputed painted area, which exists only for a
+  // single compartment or "all cells" (not an AND-combo or a NOT). When absent,
+  // disable density and fall back to "%" so the plot still renders.
+  const densityAvail = regionHasPaintedArea();
+  if (!densityAvail && state.plotMetric === 'density') state.plotMetric = 'percent';
   // If the previously-selected metric is no longer available (marker changed),
-  // fall back to 'density' so the plot still has a valid y.
+  // fall back to a valid one so the plot still has a valid y.
   if (!options.find(o => o.value === state.plotMetric)) {
-    state.plotMetric = 'density';
+    state.plotMetric = densityAvail ? 'density' : 'percent';
   }
   wrap.innerHTML = '';
   for (const opt of options) {
+    const disabled = (opt.value === 'density' && !densityAvail);
     const lbl = document.createElement('label');
-    lbl.className = 'toggle';
-    lbl.innerHTML = `<input type="radio" name="plot-metric" value="${escapeHtml(opt.value)}" ${state.plotMetric === opt.value ? 'checked' : ''} /> ${escapeHtml(opt.label)}`;
+    lbl.className = 'toggle' + (disabled ? ' disabled' : '');
+    if (disabled) lbl.title = 'No painted area for a NOT / multi-compartment region — pick one compartment or “all cells” for density.';
+    lbl.innerHTML = `<input type="radio" name="plot-metric" value="${escapeHtml(opt.value)}" ${state.plotMetric === opt.value ? 'checked' : ''} ${disabled ? 'disabled' : ''} /> ${escapeHtml(opt.label)}`;
     lbl.querySelector('input').addEventListener('change', () => {
       state.plotMetric = opt.value;
       saveSettings();
@@ -4293,6 +4884,21 @@ document.getElementById('btn-png-box').addEventListener('click', () => downloadP
 document.getElementById('btn-png-wf') .addEventListener('click', () => downloadPlotPNG('waterfall-area', 'cohort_waterfall'));
 document.getElementById('btn-export-r-ratio').addEventListener('click', () => runRExport(buildRatioR, 'ratio R script'));
 document.getElementById('btn-png-ratio')     .addEventListener('click', () => downloadPlotPNG('ratio-area', 'cohort_ratio'));
+
+// IC cluster plot controls: level, metric, exclusion. Each change persists and re-renders.
+document.getElementById('ic-level').addEventListener('change', e => {
+  state.icLevel = e.target.value === 'ic' ? 'ic' : 'sample';
+  syncICMetricSelect(); saveSettings(); renderICPlot();
+});
+document.getElementById('ic-metric').addEventListener('change', e => {
+  if (state.icLevel === 'ic') state.icMetricIC = e.target.value; else state.icMetricSample = e.target.value;
+  saveSettings(); renderICPlot();
+});
+document.getElementById('ic-exclude').addEventListener('input', e => {
+  state.icExclude = e.target.value; saveSettings(); renderICPlot();
+});
+document.getElementById('btn-png-ic').addEventListener('click', () => downloadPlotPNG('ic-area', 'cohort_ic'));
+document.getElementById('btn-export-r-ic').addEventListener('click', () => runRExport(buildICR, 'IC R script'));
 // The arm CNF editors (chips + "+ OR group" / × buttons) are wired inside
 // renderRatioArm on each (re)render, so no static wiring is needed here.
 document.getElementById('btn-r-modal-close').addEventListener('click', () => {
@@ -4317,11 +4923,30 @@ document.getElementById('btn-r-modal-copy').addEventListener('click', async () =
 // (colors, defaults, and the `plot` section that standardizes the R export).
 // "Load config…" picks one; "Build config…" opens a form to author/edit one.
 
-document.getElementById('btn-load-config').addEventListener('click',
-  () => document.getElementById('config-input').click());
+document.getElementById('btn-load-config').addEventListener('click', async () => {
+  if (window.showOpenFilePicker) {
+    let handle;
+    try {
+      [handle] = await window.showOpenFilePicker({
+        types: [{ description: 'plot config JSON', accept: { 'application/json': ['.json'] } }],
+      });
+    } catch (e) { if (!e || e.name !== 'AbortError') document.getElementById('config-input').click(); return; }
+    try {
+      await loadDroppedFile(await handle.getFile());
+      rememberRecent('config', handle.name, { handle });
+    } catch (e) { console.error(e); alert('Could not load config:\n' + (e.message || e)); }
+  } else {
+    document.getElementById('config-input').click();
+  }
+});
 document.getElementById('config-input').addEventListener('change', async (e) => {
   const f = e.target.files && e.target.files[0];
-  if (f) await loadDroppedFile(f);   // config.json (or a cohort.json — auto-detected)
+  if (f) {
+    await loadDroppedFile(f);         // config.json (or a cohort.json — auto-detected)
+    try { const text = await f.text(); const j = JSON.parse(text);   // cache small config by content
+      if (!Array.isArray(j.samples)) rememberRecent('config', f.name, { content: text });
+    } catch (_) {}
+  }
   e.target.value = '';               // allow re-picking the same file
 });
 document.getElementById('btn-build-config').addEventListener('click', openConfigBuilder);
@@ -4519,25 +5144,126 @@ function escapeHtml(s) {
 updateCalcDescription();
 renderMetricRadios();
 
+// ===== Recent files memory (IndexedDB) =====================================
+// Remembers recently loaded cohort.json + plot-config files so they can be
+// re-opened from a dropdown instead of browsing for them again. Chrome/Edge: a
+// FileSystemFileHandle (from showOpenFilePicker) is persisted and re-read after
+// a one-click permission grant; ?file=/?config= URLs are re-fetched; small
+// config files are also cached by content as a universal fallback. Best-effort:
+// any IndexedDB failure (private mode, etc.) silently disables the feature.
+const RECENTS_DB = 'cyfcohort_recents', RECENTS_STORE = 'recents', RECENTS_MAX = 12;
+function recentsOpen(){
+  return new Promise((res, rej) => {
+    let rq; try { rq = indexedDB.open(RECENTS_DB, 1); } catch (e) { return rej(e); }
+    rq.onupgradeneeded = () => { const db = rq.result;
+      if (!db.objectStoreNames.contains(RECENTS_STORE)) db.createObjectStore(RECENTS_STORE, { keyPath: 'key' }); };
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+function recentsReq(mode, makeReq){
+  return recentsOpen().then(db => new Promise((res, rej) => {
+    const rq = makeReq(db.transaction(RECENTS_STORE, mode).objectStore(RECENTS_STORE));
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  }));
+}
+const recentsAll    = () => recentsReq('readonly',  st => st.getAll()).then(x => x || []).catch(() => []);
+const recentsDelete = key => recentsReq('readwrite', st => st.delete(key)).catch(() => {});
+async function rememberRecent(kind, name, extra){
+  if (!name) return;
+  try {
+    await recentsReq('readwrite', st => st.put({ key: kind + '|' + name, kind, name, ts: Date.now(), ...(extra || {}) }));
+    const old = (await recentsAll()).filter(r => r.kind === kind).sort((a, b) => b.ts - a.ts).slice(RECENTS_MAX);
+    for (const r of old) await recentsDelete(r.key);       // keep only the newest RECENTS_MAX per kind
+    await refreshRecentDropdowns();
+  } catch (e) { console.warn('recents: remember failed', e); }
+}
+async function fileFromHandle(handle){
+  const opt = { mode: 'read' };
+  if ((await handle.queryPermission(opt)) !== 'granted' &&
+      (await handle.requestPermission(opt)) !== 'granted')
+    throw new Error('permission to read the file was denied');
+  return await handle.getFile();
+}
+async function loadRecent(rec){
+  try {
+    if (rec.handle)            await loadDroppedFile(await fileFromHandle(rec.handle));
+    else if (rec.url){
+      const r = await fetch(rec.url); if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json(); Array.isArray(j.samples) ? ingestCohortJson(j, rec.name) : applyConfig(j);
+    } else if (rec.content != null){
+      const j = JSON.parse(rec.content); Array.isArray(j.samples) ? ingestCohortJson(j, rec.name) : applyConfig(j);
+    } else throw new Error('nothing to re-open');
+    await rememberRecent(rec.kind, rec.name, { handle: rec.handle, url: rec.url, content: rec.content });   // bump ts
+  } catch (e) {
+    console.error(e);
+    alert('Could not re-open "' + rec.name + '":\n' + (e.message || e) + '\n\nRemoving it from the recent list.');
+    await recentsDelete(rec.key); await refreshRecentDropdowns();
+  }
+}
+async function refreshRecentDropdowns(){
+  let all; try { all = await recentsAll(); } catch (e) { return; }
+  const fill = (sel, kind) => {
+    if (!sel) return;
+    const items = all.filter(r => r.kind === kind).sort((a, b) => b.ts - a.ts).slice(0, RECENTS_MAX);
+    sel.innerHTML = '';
+    const ph = document.createElement('option'); ph.value = ''; ph.textContent = 'recent ▾'; sel.appendChild(ph);
+    for (const r of items){
+      const o = document.createElement('option'); o.value = r.key; o.textContent = r.name;
+      o.title = new Date(r.ts).toLocaleString(); sel.appendChild(o);
+    }
+    if (items.length){ const o = document.createElement('option'); o.value = '__clear__'; o.textContent = '— clear list —'; sel.appendChild(o); }
+    sel.style.display = items.length ? '' : 'none';
+    sel.selectedIndex = 0;
+  };
+  fill(document.getElementById('recent-cohort'), 'cohort');
+  fill(document.getElementById('recent-config'), 'config');
+}
+function wireRecentSelect(id, kind){
+  const sel = document.getElementById(id); if (!sel) return;
+  sel.addEventListener('change', async () => {
+    const key = sel.value; sel.selectedIndex = 0;
+    if (!key) return;
+    if (key === '__clear__'){
+      for (const r of (await recentsAll())) if (r.kind === kind) await recentsDelete(r.key);
+      await refreshRecentDropdowns(); return;
+    }
+    const rec = (await recentsAll()).find(r => r.key === key);
+    if (rec) await loadRecent(rec);
+  });
+}
+wireRecentSelect('recent-cohort', 'cohort');
+wireRecentSelect('recent-config', 'config');
+refreshRecentDropdowns();
+
+/** Basename of a URL/path, for labeling a remembered ?file=/?config= entry. */
+function urlBasename(u){ try { return decodeURIComponent(String(u).split(/[?#]/)[0].split('/').pop()) || u; } catch (_) { return u; } }
+
 // ----- cohort.json load: drag-and-drop + ?file= auto-load (when served) ----
 document.addEventListener('dragover', e => e.preventDefault());
-document.addEventListener('drop', e => {
+document.addEventListener('drop', async e => {
   e.preventDefault();
   const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-  if (f) loadDroppedFile(f);   // cohort.json or config.json
+  if (!f) return;
+  await loadDroppedFile(f);                       // cohort.json or config.json
+  try { const text = await f.text(); const j = JSON.parse(text);   // small config → cache by content
+    if (!Array.isArray(j.samples)) rememberRecent('config', f.name, { content: text });
+  } catch (_) {}
 });
 (function autoLoadFromQuery(){
   const q = new URLSearchParams(location.search);
   // optional preferences file (?config=...). Loaded independently of the cohort.
   const cfgUrl = q.get('config');
   if (cfgUrl) fetch(cfgUrl).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(applyConfig).catch(err => console.warn('cohort: config load failed', err));
+    .then(j => { applyConfig(j); rememberRecent('config', urlBasename(cfgUrl), { url: cfgUrl }); })
+    .catch(err => console.warn('cohort: config load failed', err));
   // the cohort itself (?file=...)
   const pre = q.get('file');
   if (!pre) return;
   overallStatus.textContent = 'loading ' + pre + ' …';
   fetch(pre).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(ingestCohortJson)
+    .then(j => { ingestCohortJson(j, urlBasename(pre)); rememberRecent('cohort', urlBasename(pre), { url: pre }); })
     .catch(err => { console.error(err); overallStatus.textContent = 'auto-load failed — use the “Load cohort.json…” button (file:// blocks fetch)'; });
 })();
 })();

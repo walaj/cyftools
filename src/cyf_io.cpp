@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -119,6 +120,28 @@ static void encodeField(std::ostream& os, CyfValueType t, const CyfField& f) {
       break;
     case CyfValueType::Array:    encodeArray(os, f);                         break;
   }
+}
+
+// Build a typed CyfField from an in-memory float, per the destination column type.
+// This lets the all-float Cell path (writeCell / text writer) emit a typed record
+// without a full CyfRow: numeric and Category('A') columns are representable from a
+// bare float (an 'A' value carries its level index in the float). String('Z') and
+// Array('B') columns are not, and require the fully-typed writeRow path.
+static CyfField fieldFromFloat(CyfValueType t, float v) {
+  switch (t) {
+    case CyfValueType::Int32:  case CyfValueType::UInt32:
+    case CyfValueType::Int64:  case CyfValueType::UInt64:
+      return CyfField::Int((int64_t)std::llround((double)v), t);
+    case CyfValueType::Float:  return CyfField::Real(v, CyfValueType::Float);
+    case CyfValueType::Double: return CyfField::Real(v, CyfValueType::Double);
+    case CyfValueType::Category:
+      return CyfField::Cat((uint32_t)std::llround((double)v));
+    case CyfValueType::String:
+    case CyfValueType::Array:
+      throw std::runtime_error("CYF: cannot encode a String/Array column from an "
+                               "all-float record; use the typed writeRow path");
+  }
+  throw std::runtime_error("CYF: fieldFromFloat: unhandled column type");
 }
 
 static bool decodeArray(std::istream& is, CyfField& out) {
@@ -287,8 +310,6 @@ void CyfWriter::writeHeader(const CellHeader& h) {
 
 void CyfWriter::writeCell(const Cell& c) {
   if (!m_header_written) throw std::runtime_error("CYF: writeCell before writeHeader");
-  if (!m_all_float)
-    throw std::runtime_error("CYF: writeCell (all-float) used on a typed schema; use writeRow");
   if (c.cols.size() != m_types.size())
     throw std::runtime_error("CYF: cell has " + std::to_string(c.cols.size()) +
                              " data values but header declares " + std::to_string(m_types.size()));
@@ -300,7 +321,17 @@ void CyfWriter::writeCell(const Cell& c) {
   putf32(m_os, c.y);
   putu64(m_os, (uint64_t)c.cflag);                  // fixed 64-bit on disk
   putu64(m_os, (uint64_t)c.pflag);
-  for (float v : c.cols) putf32(m_os, v);
+
+  if (m_all_float) {                                // fast/legacy path: byte-identical
+    for (float v : c.cols) putf32(m_os, v);
+    return;
+  }
+
+  // Typed schema over the all-float in-memory Cell: encode each value per its
+  // declared column type. Numeric + Category('A') columns round-trip through a
+  // float; String('Z')/Array('B') columns throw (they need writeRow).
+  for (std::size_t k = 0; k < m_types.size(); ++k)
+    encodeField(m_os, m_types[k], fieldFromFloat(m_types[k], c.cols[k]));
 }
 
 void CyfWriter::writeRow(const CyfRow& r) {
@@ -510,14 +541,29 @@ static std::string fstr(float v) {
 static void rstripCR(std::string& s) { if (!s.empty() && s.back() == '\r') s.pop_back(); }
 
 void CyfTextWriter::writeHeader(const CellHeader& h) {
-  m_ndcol = h.GetDataTags().size();
+  m_types = h.ColumnTypes();            // capture schema for typed cell rendering
+  m_ndcol = m_types.size();
   m_os << renderHeaderText(h);          // @-lines, tab-delimited, @HD first
 }
 
 void CyfTextWriter::writeCell(const Cell& c) {
   m_os << c.id << '\t' << fstr(c.x) << '\t' << fstr(c.y) << '\t'
        << (uint64_t)c.cflag << '\t' << (uint64_t)c.pflag;
-  for (float v : c.cols) m_os << '\t' << fstr(v);
+  // Render per declared type: integer/Category columns as decimal integers (an 'A'
+  // value's float carries its level index; spec §6 accepts the index rendering),
+  // float/double columns as the shortest round-tripping decimal. Falls back to the
+  // float rendering when the schema is unknown (e.g. a header-less text stream).
+  for (std::size_t k = 0; k < c.cols.size(); ++k) {
+    const float v = c.cols[k];
+    if (k < m_types.size()) {
+      const CyfValueType t = m_types[k];
+      if (cyfIsIntegerCode(cyfTypeCode(t)) || t == CyfValueType::Category) {
+        m_os << '\t' << (int64_t)std::llround((double)v);
+        continue;
+      }
+    }
+    m_os << '\t' << fstr(v);
+  }
   m_os << '\n';
 }
 

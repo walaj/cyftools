@@ -413,6 +413,51 @@ private:
   std::string m_id;         // only the @RO whose ID equals this exactly ("" = all)
 };
 
+// ---- settype: declare per-column value types (docs/CYF_FORMAT.md §3) ---------
+// Read-only pre-pass for `cyftools settype`: for each column being retyped to the
+// categorical type 'A', collect the distinct (integer-rounded) values, so a level
+// list (LV:) can be built before the header is rewritten. Finds each named column's
+// data-column index from the header, then scans the cells. Writes no output.
+class SettypeScanProcessor : public CellProcessor {
+public:
+  void SetParams(const std::vector<std::string>& cat_columns) { m_names = cat_columns; }
+  int ProcessHeader(CellHeader& header) override;
+  int ProcessLine(Cell& cell) override;
+  // name -> sorted distinct values (a std::set is already ordered)
+  const std::map<std::string, std::set<int64_t>>& Distinct() const { return m_seen; }
+  const std::vector<std::string>& missingNames() const { return m_missing; }
+private:
+  std::vector<std::string> m_names;                    // the 'A' target columns
+  std::vector<std::pair<std::string,size_t>> m_idx;    // (name, cols index)
+  std::map<std::string, std::set<int64_t>> m_seen;     // name -> distinct values
+  std::vector<std::string> m_missing;                  // requested but not found
+};
+
+// Main pass for `cyftools settype`: rewrite the header so every @MA/@CA column has an
+// explicit TY: code (an untyped column defaults to TY:f), applying the user's
+// per-column overrides. A column set to 'A' also gets an LV: level list (from the
+// scan) and its per-cell values are remapped from label -> level index on the way
+// out, so the all-float writer encodes the index. Cells are otherwise unchanged;
+// stamps @PG provenance. Refuses files carrying a String('Z')/Array('B') column.
+class SettypeProcessor : public CellProcessor {
+public:
+  // type_changes: column name -> single-char type code. levels: for each 'A' column,
+  // the sorted distinct label values used to build LV: and the label->index remap.
+  void SetParams(const std::map<std::string,char>& type_changes,
+                 const std::map<std::string,std::vector<int64_t>>& levels) {
+    m_changes = type_changes; m_levels = levels;
+  }
+  int ProcessHeader(CellHeader& header) override;
+  int ProcessLine(Cell& cell) override;
+  bool aborted() const { return m_aborted; }
+private:
+  std::map<std::string,char> m_changes;
+  std::map<std::string,std::vector<int64_t>> m_levels;
+  // per 'A' column: (cols index, label->index map) for the ProcessLine remap
+  std::vector<std::pair<size_t, std::map<int64_t,uint32_t>>> m_remap;
+  bool m_aborted = false;
+};
+
 // Read-only header reader for `cyftools roiinfo`: walks the @RO tags and records
 // each region's id, name, vertex count and polygon area (in the file's coordinate
 // units, via the shoelace formula). Also captures @HD MP/UN so the caller can
@@ -575,6 +620,18 @@ private:
   // pflag bit -> @MA marker name by column order (the convention the viewers use:
   // 1st marker = bit 0). Fallback for files with no @FL pflag declarations.
   std::map<int,std::string> m_pflag_auto;
+
+  // Categorical (@CA TY:A) columns to stratify the cohort by (e.g. IC immune
+  // clusters). For each, its name, its index into cell.cols, and its LV: levels.
+  // m_catvals[c][i] is the level index of cell i for categorical column c — the
+  // per-cell store parallel to m_x/m_cflag, kept small (one u32 per cell).
+  struct CatCol {
+    std::string              name;
+    size_t                   col = 0;     // index into cell.cols
+    std::vector<std::string> levels;      // LV: label per level index
+  };
+  std::vector<CatCol>                m_catcols;
+  std::vector<std::vector<uint32_t>> m_catvals;   // parallel to m_catcols
 };
 
 // a single collection of value to calculate a mean on

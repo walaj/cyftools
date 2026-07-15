@@ -1498,12 +1498,14 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file,
         else if (s == "CellID")            { kind[i] = CerealProcessor::COL_ID; id_index = (int)i; }
         else if (s == "Region")            { kind[i] = CerealProcessor::COL_REGION; }
         else if (s == "IC") {
+          // stored numeric here (float); make it categorical after with
+          // `cyftools settype in out --set IC:A`.
           kind[i] = CerealProcessor::COL_IC;
-          m_header.addTag(Tag(Tag::CA_TAG, "IC", "", (int)i));
+          m_header.addTag(Tag(Tag::CA_TAG, "IC", "TY:f", (int)i));
         }
         else if (markers.count(s)) {                       // declared marker -> @MA
           kind[i] = CerealProcessor::COL_MARKER;
-          m_header.addTag(Tag(Tag::MA_TAG, clean_marker_string(s), "", (int)i));
+          m_header.addTag(Tag(Tag::MA_TAG, clean_marker_string(s), "TY:f", (int)i));
           marker_bit[s] = ma_index++;
         }
         else if (!s.empty() && s.back() == 'p') {          // gate candidate (*p)
@@ -1511,7 +1513,7 @@ void CellTable::StreamTableCSV(CerealProcessor& proc, const std::string& file,
         }
         else {                                             // anything else -> CA annotation
           kind[i] = CerealProcessor::COL_CA;
-          m_header.addTag(Tag(Tag::CA_TAG, clean_marker_string(s), "", (int)i));
+          m_header.addTag(Tag(Tag::CA_TAG, clean_marker_string(s), "TY:f", (int)i));
         }
       }
 

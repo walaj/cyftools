@@ -182,6 +182,54 @@ int main() {
     check(ok, "typed row round-trip (string/category/array preserved)");
   }
 
+  std::cout << "typed columns via the all-float Cell path (numeric + categorical):\n";
+  {
+    // A float marker, an int CA column, and a categorical CA column — the types
+    // representable from the all-float in-memory Cell. These must round-trip through
+    // the relaxed writeCell and the OutArchive text+binary adapters (this is the
+    // path `settype`/`cohort`/`clean` use on a typed file).
+    CellHeader th; int i = 0;
+    th.appendRawTag(mk(Tag::HD_TAG, "",      "VN:1.0",           i++));
+    th.appendRawTag(mk(Tag::MA_TAG, "DAPI",  "TY:f",             i++));
+    th.appendRawTag(mk(Tag::CA_TAG, "count", "TY:i",             i++));
+    th.appendRawTag(mk(Tag::CA_TAG, "IC",    "TY:A\tLV:0,1,2,3", i++));
+
+    std::vector<Cell> tcells;
+    { Cell a; a.id = 1; a.x = 1.0f; a.y = 2.0f; a.cflag = 3; a.pflag = 4; a.cols = {12.5f, 42.0f, 2.0f}; tcells.push_back(a); }
+    { Cell b; b.id = 2; b.x = 3.0f; b.y = 4.0f; b.cflag = 0; b.pflag = 0; b.cols = { 0.0f,  0.0f, 0.0f}; tcells.push_back(b); }
+
+    const std::vector<CyfValueType> want = {CyfValueType::Float, CyfValueType::Int32, CyfValueType::Category};
+
+    // direct CyfWriter::writeCell (binary) -> readCell (all-float) round-trip
+    {
+      std::ostringstream os(std::ios::binary);
+      { cyf::CyfWriter w(os); w.writeHeader(th); for (auto& c : tcells) w.writeCell(c); }
+      std::istringstream is(os.str(), std::ios::binary);
+      cyf::CyfReader r(is); CellHeader h2;
+      check(r.readHeader(h2), "writeCell typed: readHeader");
+      check(r.columnTypes() == want, "writeCell typed: on-disk codes are f,i,A");
+      std::vector<Cell> got; Cell c; cyf::CyfReader::Status st;
+      while ((st = r.readCell(c)) == cyf::CyfReader::OK) got.push_back(c);
+      bool ok = (st == cyf::CyfReader::END) && got.size() == tcells.size();
+      for (size_t k = 0; ok && k < tcells.size(); ++k) ok &= cellEq(tcells[k], got[k]);
+      check(ok, "writeCell typed: numeric+categorical cell round-trip");
+    }
+
+    // OutArchive text + binary adapters round-trip the typed all-float cells
+    for (FmtCase fc : { FmtCase{cyf::OutFormat::Binary, "binary .byf"},
+                        FmtCase{cyf::OutFormat::Text,   "text .cyf"} }) {
+      std::ostringstream os(std::ios::binary);
+      { OutArchive ar(os, fc.fmt); ar(th); for (auto& c : tcells) ar(c); }
+      std::istringstream is(os.str(), std::ios::binary);
+      InArchive ar(is); CellHeader h2; ar(h2);
+      std::vector<Cell> got; Cell c;
+      while (ar.next(c)) got.push_back(c);
+      bool ok = got.size() == tcells.size();
+      for (size_t k = 0; ok && k < tcells.size(); ++k) ok &= cellEq(tcells[k], got[k]);
+      check(ok, (std::string("writeCell typed via OutArchive(") + fc.name + ")").c_str());
+    }
+  }
+
   std::cout << "self-describing flags (@FL):\n";
   {
     CellHeader h; int i = 0;

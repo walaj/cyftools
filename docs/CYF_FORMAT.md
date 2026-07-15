@@ -58,8 +58,17 @@ Every data column declares a single-character **type code**. Codes follow BAM's 
 
 Notes:
 
+- Every data column has a type. A reader treats a missing `TY:` as `f` (float) for
+  backward compatibility, but a **writer should emit an explicit `TY:` on every data
+  column** (`cyftools convert` stamps `TY:f`; `cyftools settype` sets any other type).
 - `MA` (marker) columns default to `f` when `TY:` is omitted, and may declare any numeric type.
-- `A` (categorical) stores an integer index on disk; the levels are held in the column's `LV:` field (e.g. `LV:tumor,stroma,immune`).
+- `A` (categorical) is the representation for **label columns that must not be treated as
+  numbers** — a cell-type name, or an integer cluster id (e.g. an immune-cluster `IC`).
+  It stores a small integer index on disk; the labels are held in the column's `LV:` field
+  (e.g. `LV:tumor,stroma,immune`, or `LV:0,1,2,17,28` for integer cluster ids). The index
+  is a position into `LV:`, **not** the label value, so non-contiguous integer labels are
+  fine. `cyftools settype <in> <out> --set <col>:A` builds `LV:` from the column's distinct
+  values and rewrites each record's index.
 - `B` (array) carries a variable-length per-cell vector. Its subtype must be one of the fixed-width numeric codes (`i I l L f d`).
 - Missing values: for `f`/`d`, missing is IEEE NaN. For integer and `A` columns, a column may declare `NA:<value>` in its header tag to reserve a sentinel; absent that, all values are significant.
 

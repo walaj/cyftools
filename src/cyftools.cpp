@@ -80,6 +80,7 @@ static const char *RUN_USAGE_MESSAGE =
 "  cut         - Select only given markers and metas\n"
 "  reheader    - Change the header\n"
 "  addtag      - Add/update a header tag (e.g. @IM image metadata)\n"
+"  settype     - Declare per-column value types (e.g. IC:A categorical, area:f float)\n"
 "  export      - Export to a packed columnar binary for a viewer (CYFV)\n"
 "  clean       - Remove classes of data (e.g. all meta)\n"
 "  cat         - Concatenate multiple files\n"
@@ -165,6 +166,7 @@ static int scramblefunc(int argc, char** argv);
 static int scatterfunc(int argc, char** argv);
 static int plotpngfunc(int argc, char** argv);
 static int reheaderfunc(int argc, char** argv);
+static int settypefunc(int argc, char** argv);
 static int dividefunc(int argc, char** argv);
 static int sortfunc(int argc, char** argv);
 static int headfunc(int argc, char** argv);
@@ -329,6 +331,8 @@ int main(int argc, char **argv) {
     val = delaunayfunc(argc, argv);
   } else if (opt::module == "reheader") {
     val = reheaderfunc(argc, argv);
+  } else if (opt::module == "settype") {
+    val = settypefunc(argc, argv);
   } else if (opt::module == "addtag") {
     val = addtagfunc(argc, argv);
   } else if (opt::module == "addroi") {
@@ -863,6 +867,125 @@ static int reheaderfunc(int argc, char** argv) {
   int length = is.tellg() - is.tellg(); // calculate the remaining bytes in the file
   is.seekg(is.tellg(), is.beg); // go to the current position
   */
+
+  return 0;
+}
+
+static int settypefunc(int argc, char** argv) {
+
+  static const struct option settype_longopts[] = {
+    {"set", required_argument, NULL, 's'},
+    {NULL, 0, NULL, 0}
+  };
+  const char* shortopts = "vs:";
+
+  std::vector<std::string> sets;   // "NAME:CODE" specs
+  for (int c; (c = getopt_long(argc, argv, shortopts, settype_longopts, NULL)) != -1;) {
+    switch (c) {
+    case 'v' : opt::verbose = true; break;
+    case 's' : if (optarg) sets.push_back(optarg); break;
+    default: die = true;
+    }
+  }
+
+  if (die || in_out_process(argc, argv) || sets.empty()) {
+    const char *USAGE_MESSAGE =
+      "Usage: cyftools settype <in> <out> --set NAME:CODE [--set NAME:CODE ...]\n"
+      "  Declare the value TYPE of one or more data columns and re-encode the file.\n"
+      "  Every @MA/@CA column that lacks an explicit TY: is also stamped TY:f, so the\n"
+      "  output is fully typed. Reading is content-detected; the OUTPUT extension picks\n"
+      "  the form (.byf binary, .cyf text).\n"
+      "\n"
+      "  Type codes (docs/CYF_FORMAT.md §3):\n"
+      "    f d           32/64-bit float        i I l L   signed/unsigned 32/64-bit int\n"
+      "    A             categorical: the column's distinct values become an LV: level\n"
+      "                  list and each cell stores the level index (use for labels such\n"
+      "                  as cluster ids that must NOT be treated as a number)\n"
+      "\n"
+      "  A column set to :A is scanned for its distinct (integer-rounded) values to\n"
+      "  build the LV: list, so the input must be a seekable file (not '-'). String(Z)\n"
+      "  and Array(B) columns cannot be produced by settype.\n"
+      "\n"
+      "Options:\n"
+      "  -s, --set NAME:CODE   Set column NAME to type CODE (repeatable).\n"
+      "  -v, --verbose\n"
+      "\n"
+      "Example (make IC categorical, morphology floats):\n"
+      "  cyftools settype in.byf out.byf --set IC:A \\\n"
+      "      --set Area:f --set MajorAxisLength:f --set Eccentricity:f\n";
+    std::cerr << USAGE_MESSAGE;
+    return 1;
+  }
+
+  // parse NAME:CODE specs into a map; collect the 'A' targets for the scan pass
+  std::map<std::string, char> changes;
+  std::vector<std::string> cat_cols;
+  for (const auto& s : sets) {
+    const size_t colon = s.find_last_of(':');
+    if (colon == std::string::npos || colon + 2 != s.size()) {
+      std::cerr << "cyftools settype: malformed --set '" << s
+                << "' (expected NAME:CODE, one-letter CODE)" << std::endl;
+      return 1;
+    }
+    const std::string name = s.substr(0, colon);
+    const char code = s[colon + 1];
+    const std::string valid = "fdiIlLAZB";
+    if (valid.find(code) == std::string::npos) {
+      std::cerr << "cyftools settype: unknown type code '" << code << "' for column '"
+                << name << "' (use one of " << valid << ")" << std::endl;
+      return 1;
+    }
+    if (code == 'Z' || code == 'B') {
+      std::cerr << "cyftools settype: type '" << code
+                << "' cannot be produced from the all-float pipeline" << std::endl;
+      return 1;
+    }
+    changes[name] = code;
+    if (code == 'A') cat_cols.push_back(name);
+  }
+
+  // Pass 1: scan distinct values for the 'A' columns to build their LV: level lists.
+  std::map<std::string, std::vector<int64_t>> levels;
+  if (!cat_cols.empty()) {
+    if (opt::infile == "-") {
+      std::cerr << "cyftools settype: --set NAME:A needs a seekable input file (not '-')"
+                << std::endl;
+      return 1;
+    }
+    SettypeScanProcessor scan;
+    scan.SetParams(cat_cols);
+    CellTable t1;
+    t1.setVerbose(opt::verbose);
+    if (t1.StreamTable(scan, opt::infile)) {
+      std::cerr << "cyftools settype: failed to read " << opt::infile << std::endl;
+      return 1;
+    }
+    if (!scan.missingNames().empty()) {
+      std::cerr << "cyftools settype: column(s) not found:";
+      for (const auto& n : scan.missingNames()) std::cerr << " " << n;
+      std::cerr << std::endl;
+      return 1;
+    }
+    for (const auto& kv : scan.Distinct())
+      levels[kv.first] = std::vector<int64_t>(kv.second.begin(), kv.second.end());
+    if (opt::verbose)
+      for (const auto& kv : levels)
+        std::cerr << "cyftools settype: " << kv.first << " -> " << kv.second.size()
+                  << " categorical level(s)" << std::endl;
+  }
+
+  // Pass 2: rewrite the header with explicit types + remap 'A' columns to indices.
+  SettypeProcessor proc;
+  proc.SetCommonParams(opt::outfile, cmd_input, opt::verbose);
+  proc.SetParams(changes, levels);
+  CellTable t2;
+  t2.setVerbose(opt::verbose);
+  if (t2.StreamTable(proc, opt::infile)) {
+    std::cerr << "cyftools settype: failed to process " << opt::infile << std::endl;
+    return 1;
+  }
+  if (proc.aborted())
+    return 1;
 
   return 0;
 }
@@ -1543,12 +1666,14 @@ static int cohortfunc(int argc, char** argv) {
     {"radius",  required_argument, NULL, 'r'},
     {"out",     required_argument, NULL, 'o'},
     {"threads", required_argument, NULL, 't'},
+    {"name",    required_argument, NULL, 'n'},   // optional human-readable cohort name
     {NULL, 0, NULL, 0}
   };
-  const char* shortopts = "vr:p:o:t:";
+  const char* shortopts = "vr:p:o:t:n:";
   double radius = 20.0;          // paint disc radius, microns
   double grid   = 1.0;           // area-raster cell size, microns
   std::string outjson = "-";     // JSON destination; "-" = stdout
+  std::string cohort_name;       // optional cohort label (may contain spaces)
 
   for (int c; (c = getopt_long(argc, argv, shortopts, cohort_longopts, NULL)) != -1;) {
     std::istringstream arg(optarg != NULL ? optarg : "");
@@ -1558,6 +1683,7 @@ static int cohortfunc(int argc, char** argv) {
     case 'p' : arg >> grid; break;
     case 'o' : arg >> outjson; break;
     case 't' : arg >> opt::threads; break;
+    case 'n' : if (optarg) cohort_name = optarg; break;   // keep spaces verbatim
     default: die = true;
     }
   }
@@ -1583,6 +1709,8 @@ static int cohortfunc(int argc, char** argv) {
       "\n"
       "Options:\n"
       "  -o, --out <file.json>  Output JSON path (default: stdout). Progress -> stderr.\n"
+      "  -n, --name <str>       Optional human-readable cohort name, echoed to the JSON\n"
+      "                           top-level \"name\" field (shown by the viewer).\n"
       "  -r, --radius <um>      Paint disc radius in microns (default: 20).\n"
       "  -p, --grid <um>        Area-raster cell size in microns; this is the internal\n"
       "                           rasterization resolution for the painted-area union,\n"
@@ -1660,11 +1788,31 @@ static int cohortfunc(int argc, char** argv) {
     return 1;
   }
 
+  // minimal JSON string escaper for the cohort name (arbitrary CLI text)
+  auto jesc = [](const std::string& s) {
+    std::string o; o.reserve(s.size() + 2);
+    for (char c : s) {
+      switch (c) {
+        case '"':  o += "\\\""; break;
+        case '\\': o += "\\\\"; break;
+        case '\n': o += "\\n";  break;
+        case '\t': o += "\\t";  break;
+        case '\r': o += "\\r";  break;
+        default:
+          if (static_cast<unsigned char>(c) < 0x20) { char b[8];
+            std::snprintf(b, sizeof b, "\\u%04x", static_cast<unsigned char>(c)); o += b; }
+          else o += c;
+      }
+    }
+    return o;
+  };
+
   // emit the cohort document
   (*os) << "{\n";
   (*os) << "  \"tool\": \"cyftools\",\n";
   (*os) << "  \"version\": \"" << CYFTOOLS_VERSION << "\",\n";
   (*os) << "  \"command\": \"cohort\",\n";
+  (*os) << "  \"name\": \"" << jesc(cohort_name) << "\",\n";   // "" if --name not given
   (*os) << "  \"params\": { \"paint_radius_um\": " << radius
         << ", \"paint_pixel_um\": " << grid << " },\n";
   (*os) << "  \"n_samples\": " << sample_jsons.size() << ",\n";
@@ -3152,6 +3300,7 @@ static void parseRunOptions(int argc, char** argv) {
 	 opt::module == "synth" || 
 	 opt::module == "sampleselect" || opt::module == "dbscan" || 
 	 opt::module == "filter" || opt::module == "pheno" ||
+		 opt::module == "settype" ||
 		 opt::module == "cohort")) {
     std::cerr << "Module " << opt::module << " not implemented" << std::endl;
     die = true;
@@ -4331,6 +4480,10 @@ static int convertfunc(int argc, char** argv) {
       "  become @MA marker intensities; CellID/Region/IC keep their special roles;\n"
       "  a <marker>p column becomes that marker's gate bit; --ignore columns are\n"
       "  dropped; EVERY other column is kept as a CA annotation.\n"
+      "\n"
+      "  Every @MA/@CA column is declared float (TY:f). To mark a categorical column\n"
+      "  (e.g. a cluster-id label that must not be treated as a number), retype it\n"
+      "  after: `cyftools settype out.byf typed.byf --set IC:A`.\n"
       "\n"
       "Required:\n"
       "  -c, --mpp <float>           Microns per pixel (> 0).\n"
